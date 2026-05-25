@@ -1,0 +1,199 @@
+#+TITLE: finances
+#+OPTIONS: toc:nil num:nil
+
+Personal finance tool in Emacs Lisp.  ODS spreadsheet is the source of truth; SQLite mirrors it; a dark static HTML dashboard renders reports.
+
+Zero external runtime deps beyond Emacs 29+ stdlib and macOS-bundled =unzip= / =open=.  Python 3 only used for one-shot ODS migrations.
+
+* Setup
+
+Two install paths.  Pick either; they coexist.
+
+** Interactive (Emacs)
+
+Drop one line in =init.el=:
+
+#+begin_src elisp
+(load "/path/to/finances/bootstrap.el")
+#+end_src
+
+=bootstrap.el= self-locates the repo via its own load path, wires =load-path=, and requires =core=.  Move the repo → update one line (or symlink the repo to a stable location once and never touch =init.el= again).
+
+** CLI (batch / cron / scripts)
+
+=bin/finances= is a self-locating shell wrapper.  Link it once:
+
+#+begin_src sh
+make install                # symlinks $(PREFIX)/bin/finances -> bin/finances
+                            # PREFIX defaults to ~/.local
+#+end_src
+
+Then:
+
+#+begin_src sh
+finances fin-dashboard      # regenerate HTML, open in browser
+finances fin-sync-refresh   # ODS → DB only
+finances fin-db-rebuild     # drop + recreate tables
+finances --shell            # ielm REPL with code loaded
+#+end_src
+
+Uninstall: =make uninstall=.
+
+Schema is auto-created on first =M-x fin-db-rebuild= (or =finances fin-db-rebuild=).
+
+* Daily workflow
+
+1. Open =~/Projects/finances/infra/seeds.ods= in LibreOffice.
+2. Add or edit rows (entries / plan / patrimony / accounts).
+3. Save.
+4. =M-x fin= — refreshes the DB and opens the dashboard in your browser.
+
+* M-x commands
+
+| Command            | Action                              |
+|--------------------+-------------------------------------|
+| =fin=              | Refresh DB + dashboard in one shot. |
+| =fin-sync-refresh= | ODS → DB only.                      |
+| =fin-dashboard=    | Regenerate HTML, open in browser.   |
+| =fin-open-ods=     | Open the source ODS in LibreOffice. |
+| =fin-db-rebuild=   | Drop + recreate SQLite tables.      |
+
+* Layout
+
+#+begin_example
+~/Projects/finances/
+├── readme.org  .gitignore  Makefile
+├── bootstrap.el         ; self-locating loader for init.el
+├── bin/finances         ; self-locating shell wrapper (batch CLI)
+├── core.el              ; entry point — (require 'core)
+├── adapters/
+│   ├── parser.el        ; ODS XML reader (outbound port)
+│   └── db.el            ; SQLite schema + helpers
+├── tools/
+│   └── sync.el          ; use case: ODS → DB
+├── domain/              ; pure aggregations (queries only)
+│   ├── cashflow.el
+│   ├── budget.el
+│   ├── patrimony.el
+│   ├── accounts.el
+│   └── stats.el         ; cat/income shares, top-recurring, top-by-count,
+│                        ; yearly-saves, cumulative-networth, rolling-save-rate,
+│                        ; rolling-flow, pareto-spending, monthly-spend-grid, records, period
+├── view/                ; presentation (HTML/SVG/CSS)
+│   ├── fmt.el           ; palette + esc/money/k/pct/ym/cell helpers
+│   ├── style.el         ; CSS (grouped selectors, grid-area map)
+│   ├── charts.el        ; SVG donut/bars/flow/line/multiline/pareto/heatmap
+│   ├── html.el          ; panel/block/pair/table/alist/kv builders
+│   ├── panels.el        ; 5 panel renderers + drilldowns
+│   ├── dashboard.el     ; render + M-x fin-dashboard
+│   └── dashboard.html   ; generated (gitignored)
+├── tests/               ; ERT suite mirroring source layout
+│   ├── helpers.el       ; temp-db fixture + seed inserters
+│   ├── all-tests.el     ; entrypoint
+│   ├── adapters/{test-db,test-parser}.el
+│   ├── domain/{test-budget,test-stats,test-patrimony,test-accounts,test-cashflow}.el
+│   ├── tools/test-sync.el
+│   └── view/{test-fmt,test-charts,test-dashboard}.el
+└── infra/
+    ├── finances.db      ; SQLite mirror (gitignored)
+    └── seeds.ods        ; source of truth
+#+end_example
+
+* ODS layout
+
+Four sheets.  All category/name values *lowercase kebab-case*; item descriptions keep case + accents.  All monetary values are *integer cents*.
+
+** =entries=
+=date | type | category | item | amount | currency | note=
+
+- =type= ∈ {=in=, =out=}
+- CNPJ tax stored as =type=in= with a *negative* amount.
+- =amount= = cents (integer).
+
+** =plan=
+=category | parent | type | amount | share=
+
+- =type= ∈ {=fix=, =var=}
+- Fix rows are driven by =amount=; share derived = amount / liquid.
+- Var rows are driven by =share=; amount derived = share × liquid.
+- Children of a parent (e.g., var children of =investments=) can use either driver.
+- =investments= var children = ODS-declared extras (=family=, =vacations=, =emergency=) + auto-derived patrimony amortization per category.
+
+** =patrimony=
+=category | item | amount | lifespan_months=
+
+- Monthly amortization derived = =amount / lifespan_months=.
+
+** =accounts=
+=category | parent | balance | updated_at=
+
+- Children of a bucket (e.g., =nu=, =bb=, =wanu= under =emergency=) sum into the parent.
+- Reserve target = 12 × fix-monthly; runway derived from =SUM(balance WHERE parent='emergency') / fix=.
+
+* Liquid
+
+=monthly_liquid = AVG(SUM(amount) per month) WHERE type='in' AND item IS NULL=, for the current year.
+CNPJ is netted in by the SUM (it is stored as =type=in= with negative amount).
+
+* Dashboard
+
+=M-x fin-dashboard= writes =view/dashboard.html= and opens it.  Static, dark, no JS.
+
+Five panels:
+- *Stats*: all-time flow bar chart (full width header) + 3-col body — line trends col (net worth, rolling save %, income-vs-expense MA, Pareto, yearly save %, spend heatmap) · share donuts col (category, income) · scoreboard col (Records kv, Recurring by months, Recurring all time).
+- *Objectives*: budget plan with =fix= and =var= side-by-side; each subpanel title shows actual % / target %; sub line shows liquid + runway.  Var =investments= drilldown rolls patrimony amortization into a single =patrimony= leaf alongside ODS-declared extras.
+- *Accounts*: balances + sub-accounts (expandable).
+- *Patrimony*: items + amortization (expandable).
+- *Cashflow* (right, tall): year → month → category drilldown.  Future months in the current year use plan-derived placeholders (dimmed).
+
+Stats charts:
+- /Net worth/ — cumulative Σ(in − out) per month.
+- /Rolling save %/ — trailing 12-month save rate.
+- /Income vs expense (12mo MA)/ — smoothed in / out lines, reveals lifestyle creep.
+- /Pareto/ — top items by spend with cumulative %.
+- /Spend heatmap/ — year × month intensity (log-scaled).
+- /Yearly save %/ — discrete bars per year.
+- /Category share/, /Income share/ — donuts.
+
+* Testing
+
+ERT-based, stdlib only.  Mirrors source layout under =tests/=.  Run:
+
+#+begin_src sh
+make test           # batch, exit code = pass/fail
+make test-verbose   # full trace on failures
+#+end_src
+
+Or directly:
+
+#+begin_src sh
+emacs -Q -batch \
+  -L . -L adapters -L domain -L tools -L view -L tests \
+  -l tests/all-tests.el \
+  -f ert-run-tests-batch-and-exit
+#+end_src
+
+Coverage scope:
+- Pure formatters (=view/fmt.el=): every fn × edge (nil, 0, neg, k-suffix).
+- ODS parser: cell-value precedence (=date-value= > =value= > text), =number-columns-repeated= expansion + cap.
+- DB layer: schema rebuild idempotency, cents-as-integer storage, composite PK semantics.
+- Domain queries: each public fn against seeded fixtures, including =/0=, =NULL=, future-month, multi-year scenarios.
+- SVG charts: every renderer is empty-safe and emits expected structural tags.
+- Dashboard integration: full render parses as HTML via =libxml-parse-html-region= on empty + seeded DBs.
+
+Fixtures live in =tests/helpers.el= (=fin-test-with-db= macro, seed inserters, =fin-test-seed-minimal/multi-year/budget-tree= presets).  No external files needed; sync test stubs =fin-ods-parse= with an in-memory DOM.
+
+* Decisions
+
+- *ODS is canonical*, SQLite is a rebuildable mirror.  Edit in LibreOffice; refresh syncs.
+- *Cents storage*: all money fields are integers (BRL × 100); float drift eliminated for SUMs.
+- *Derived columns over stored*: share % for accounts/budget, monthly amortization for patrimony, fix-monthly for runway, investments amortization, future cashflow placeholders — all computed at query time.
+- *Zero external runtime deps*: Emacs 29 stdlib (=sqlite=, =libxml=, =dom=) + macOS =unzip=.
+- *Static HTML dashboard*: no server, no JS, no port.  =M-x fin= opens the latest.
+- *Currency reserved* (=entry.currency=) but BRL-only for now.
+- =infra/finances.db= gitignored; regeneratable from ODS at any time.
+- *Tests are stdlib*: ERT only, no =buttercup= / =undercover= / external runners.  Keeps the zero-deps invariant honest.
+
+* License
+
+Personal use.  No warranty.

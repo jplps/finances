@@ -1,0 +1,6 @@
+infra/*
+view/dashboard.html
+*.csv
+*.elc
+.DS_Store
+/tmp/

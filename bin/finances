@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# finances --- batch CLI wrapper.  Self-locates repo via $0.
+#
+#   finances fin-dashboard
+#   finances fin-sync-refresh
+#   finances 'fin-db-rebuild'         # any elisp form, quoted
+#   finances --shell                  # drop into an emacs lisp REPL with code loaded
+#
+# Symlink once to a stable spot, e.g.:
+#   ln -s "$PWD/bin/finances" ~/.local/bin/finances
+# After that, moving the repo only requires re-pointing the symlink.
+
+set -euo pipefail
+
+# Resolve $0 through any chain of symlinks, then take its parent and go up one.
+SOURCE="$0"
+while [ -h "$SOURCE" ]; do
+  TARGET="$(readlink "$SOURCE")"
+  case "$TARGET" in
+    /*) SOURCE="$TARGET" ;;
+    *)  SOURCE="$(dirname "$SOURCE")/$TARGET" ;;
+  esac
+done
+ROOT="$(cd "$(dirname "$SOURCE")/.." && pwd)"
+
+EMACS=${EMACS:-emacs}
+
+if [ "${1:-}" = "--shell" ]; then
+  exec "$EMACS" -Q \
+    -L "$ROOT" -L "$ROOT/adapters" -L "$ROOT/domain" -L "$ROOT/tools" -L "$ROOT/view" \
+    -l "$ROOT/core.el" --eval '(ielm)'
+fi
+
+if [ $# -eq 0 ]; then
+  cat >&2 <<EOF
+usage: finances <elisp-form> [args...]
+       finances fin-dashboard
+       finances fin-sync-refresh
+       finances --shell
+EOF
+  exit 64
+fi
+
+# Wrap a bare symbol like `fin-dashboard` into `(fin-dashboard)`.
+FORM="$*"
+case "$FORM" in
+  \(*) ;;            # already a list form
+  *)   FORM="($FORM)" ;;
+esac
+
+exec "$EMACS" -Q --batch \
+  -L "$ROOT" -L "$ROOT/adapters" -L "$ROOT/domain" -L "$ROOT/tools" -L "$ROOT/view" \
+  -l "$ROOT/core.el" \
+  --eval "$FORM"
