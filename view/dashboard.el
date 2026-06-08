@@ -40,7 +40,10 @@
          (first-d (nth 0 period))
          (last-d  (nth 1 period))
          (entries (nth 3 period))
-         (ymd     (and first-d last-d (fin-dashboard--ymd-diff first-d last-d))))
+         (ymd     (and first-d last-d (fin-dashboard--ymd-diff first-d last-d)))
+         (netw    (fin-report--cumulative-networth))
+         (liquid  (or (nth 1 (car (last netw))) 0))
+         (accts   (fin-report--patrimony-total)))
     (concat
      "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">"
      "<title>finances</title>"
@@ -53,6 +56,14 @@
              (or entries 0)
              (fin-dashboard--relative-time ods-ts))
      "</header>"
+     "<section class=\"hero\">"
+     (format "<div class=\"hero-stat\"><span class=\"hero-label\">Final balance (entries)</span><span class=\"hero-value %s\">R$ %s</span></div>"
+             (if (< liquid 0) "neg" "pos")
+             (fin-dashboard--money-str (round liquid)))
+     (format "<div class=\"hero-stat\"><span class=\"hero-label\">Accounts balance (now)</span><span class=\"hero-value %s\">R$ %s</span></div>"
+             (if (< accts 0) "neg" "pos")
+             (fin-dashboard--money-str (round accts)))
+     "</section>"
      "<main>"
      (fin-dashboard--panel-stats)
      (fin-dashboard--panel-objectives)

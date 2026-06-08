@@ -17,7 +17,7 @@
               FROM entry WHERE date IS NOT NULL ORDER BY y DESC")))
 
 (defun fin-report--year-months (year)
-  "Per-month (m, in, out, liquid) for YEAR — summary rows only.  12 rows."
+  "Per-month (m, in, out, liquid) for YEAR  12 rows."
   (let* ((raw (fin-db-query
                "SELECT CAST(strftime('%m', date) AS INTEGER) AS m,
                        SUM(CASE WHEN type='in'  THEN amount ELSE 0 END),
@@ -26,7 +26,6 @@
                      - SUM(CASE WHEN type='out' THEN amount ELSE 0 END)
                   FROM entry
                  WHERE strftime('%Y', date) = ?
-                   AND item IS NULL
                  GROUP BY m
                  ORDER BY m"
                (list (format "%d" year))))
@@ -36,17 +35,18 @@
                          (list m nil nil nil)))))
 
 (defun fin-report--month-items (year month)
-  "Itemized rows for YEAR-MONTH (item IS NOT NULL), ordered by date."
+  "Leaf rows for YEAR-MONTH, ordered by date.  Un-itemized lumps show a
+NULL item and surface under their category in the drilldown."
   (fin-db-query
-   "SELECT item, category, amount
+   "SELECT COALESCE(item, category), category, amount, date
       FROM entry
      WHERE strftime('%Y-%m', date) = printf('%04d-%02d', ?, ?)
-       AND item IS NOT NULL
+       AND type = 'out'
      ORDER BY date ASC, id ASC"
    (list year month)))
 
 (defun fin-report--annual-sums ()
-  "Per-year (year, in, out, liquid, savings %) using summary rows."
+  "Per-year (year, in, out, liquid, savings %)"
   (fin-db-query
    "SELECT CAST(strftime('%Y', date) AS INTEGER) AS y,
            SUM(CASE WHEN type='in'  THEN amount ELSE 0 END),
@@ -59,18 +59,18 @@
                             / SUM(CASE WHEN type='in' THEN amount ELSE 0 END), 1)
                 ELSE NULL END
       FROM entry
-     WHERE item IS NULL
+     WHERE date IS NOT NULL
      GROUP BY y
      ORDER BY y ASC"))
 
 (defun fin-report--monthly-flow ()
-  "All-time per-month (ym, in, out) using summary rows."
+  "All-time per-month (ym, in, out)"
   (fin-db-query
    "SELECT strftime('%Y-%m', date) AS ym,
            SUM(CASE WHEN type='in'  THEN amount ELSE 0 END),
            SUM(CASE WHEN type='out' THEN amount ELSE 0 END)
       FROM entry
-     WHERE item IS NULL AND date IS NOT NULL
+     WHERE date IS NOT NULL
      GROUP BY ym
      ORDER BY ym"))
 

@@ -17,10 +17,19 @@
 (require 'stats)
 (require 'dashboard)
 
-;;;###autoload
-(defun fin ()
-  "Refresh DB from ODS and regenerate + open the dashboard."
+(defun fin-reload ()
+  "Reload every project source file so `fin' picks up edits without restart."
   (interactive)
+  (dolist (sub '("adapters" "tools" "domain" "view"))
+    (dolist (f (directory-files (expand-file-name sub fin--root) t "\\.el\\'"))
+      (load f nil t))))
+
+;;;###autoload
+(defun fin (&optional no-reload)
+  "Reload sources, refresh DB from ODS, then regenerate + open the dashboard.
+With prefix arg NO-RELOAD, skip the reload (use the already-loaded code)."
+  (interactive "P")
+  (unless no-reload (fin-reload))
   (fin-sync-refresh)
   (fin-dashboard))
 

@@ -3,24 +3,24 @@
 (require 'db)
 
 (defun fin-report--cat-shares ()
-  "All-time per-category total out (summary rows)."
+  "All-time per-category total out."
   (fin-db-query
    "SELECT category, SUM(amount)
       FROM entry
-     WHERE type='out' AND item IS NULL
+     WHERE type='out'
      GROUP BY category
      ORDER BY SUM(amount) DESC"))
 
 (defun fin-report--income-shares ()
-  "All-time per-category total (type='in', summary rows)."
+  "All-time per-category total (type='in')."
   (fin-db-query
    "SELECT category, SUM(amount)
-      FROM entry WHERE type='in' AND item IS NULL
+      FROM entry WHERE type='in'
       GROUP BY category ORDER BY SUM(amount) DESC"))
 
 (defun fin-report--top-recurring (&optional limit min-months sort-by)
   "Items appearing in ≥MIN-MONTHS distinct months.
-SORT-BY: 'value sorts by total spend; otherwise by months (default).
+When SORT-BY is `value', sort by total spend; otherwise by months (default).
 Returns (item months_active total_spend avg_per_month)."
   (let* ((order (if (eq sort-by 'value)
                     "SUM(amount)"
@@ -56,14 +56,14 @@ Returns (item count total avg/entry)."
            (or min-count 3) (or limit 10))))
 
 (defun fin-report--yearly-saves ()
-  "Per-year save % (summary rows)."
+  "Per-year save %."
   (fin-db-query
    "SELECT CAST(strftime('%Y',date) AS INTEGER) AS y,
            ROUND(100.0 *
                  (SUM(CASE WHEN type='in'  THEN amount ELSE 0 END)
                 - SUM(CASE WHEN type='out' THEN amount ELSE 0 END))
                  / NULLIF(SUM(CASE WHEN type='in' THEN amount ELSE 0 END),0), 1)
-      FROM entry WHERE item IS NULL AND date IS NOT NULL
+      FROM entry WHERE date IS NOT NULL
       GROUP BY y ORDER BY y ASC"))
 
 (defun fin-report--cumulative-networth ()
@@ -73,7 +73,7 @@ Returns (item count total avg/entry)."
       FROM (SELECT strftime('%Y-%m', date) AS ym,
                    SUM(CASE WHEN type='in'  THEN amount ELSE 0 END)
                  - SUM(CASE WHEN type='out' THEN amount ELSE 0 END) AS net
-              FROM entry WHERE item IS NULL AND date IS NOT NULL
+              FROM entry WHERE date IS NOT NULL
               GROUP BY ym)
      ORDER BY ym"))
 
@@ -84,7 +84,7 @@ Returns (item count total avg/entry)."
       SELECT strftime('%Y-%m', date) AS ym,
              SUM(CASE WHEN type='in'  THEN amount ELSE 0 END) AS i,
              SUM(CASE WHEN type='out' THEN amount ELSE 0 END) AS o
-        FROM entry WHERE item IS NULL AND date IS NOT NULL
+        FROM entry WHERE date IS NOT NULL
         GROUP BY ym)
     SELECT ym,
            CASE WHEN SUM(i) OVER w > 0
@@ -101,7 +101,7 @@ Returns (item count total avg/entry)."
       SELECT strftime('%Y-%m', date) AS ym,
              SUM(CASE WHEN type='in'  THEN amount ELSE 0 END) AS i,
              SUM(CASE WHEN type='out' THEN amount ELSE 0 END) AS o
-        FROM entry WHERE item IS NULL AND date IS NOT NULL
+        FROM entry WHERE date IS NOT NULL
         GROUP BY ym)
     SELECT ym,
            CAST(ROUND(AVG(i) OVER w) AS INTEGER),
@@ -135,11 +135,12 @@ Returns (item count total avg/entry)."
    "SELECT CAST(strftime('%Y', date) AS INTEGER),
            CAST(strftime('%m', date) AS INTEGER),
            SUM(amount)
-      FROM entry WHERE type='out' AND item IS NULL AND date IS NOT NULL
+      FROM entry WHERE type='out' AND date IS NOT NULL
       GROUP BY 1, 2 ORDER BY 1, 2"))
 
 (defun fin-report--period ()
-  "Return (FIRST LAST MONTHS ENTRIES) up to the current month (excludes future placeholders)."
+  "Return (FIRST LAST MONTHS ENTRIES) up to the current month
+\(excludes future placeholders)."
   (car (fin-db-query
         "SELECT MIN(date), MAX(date),
                 COUNT(DISTINCT strftime('%Y-%m', date)),
@@ -159,7 +160,7 @@ Returns (item count total avg/entry)."
                                    SUM(CASE WHEN type='in'  THEN amount ELSE 0 END)
                                  - SUM(CASE WHEN type='out' THEN amount ELSE 0 END) AS liq
                               FROM entry
-                             WHERE item IS NULL
+                             WHERE date IS NOT NULL
                              GROUP BY ym
                              ORDER BY liq DESC LIMIT 1")))
          (worst-mo   (car (fin-db-query
@@ -167,7 +168,7 @@ Returns (item count total avg/entry)."
                                    SUM(CASE WHEN type='in'  THEN amount ELSE 0 END)
                                  - SUM(CASE WHEN type='out' THEN amount ELSE 0 END) AS liq
                               FROM entry
-                             WHERE item IS NULL
+                             WHERE date IS NOT NULL
                              GROUP BY ym
                              ORDER BY liq ASC LIMIT 1")))
          (avg-save   (caar (fin-db-query
@@ -176,13 +177,14 @@ Returns (item count total avg/entry)."
                                  (SUM(CASE WHEN type='in'  THEN amount ELSE 0 END)
                                 - SUM(CASE WHEN type='out' THEN amount ELSE 0 END))
                                  / NULLIF(SUM(CASE WHEN type='in' THEN amount ELSE 0 END),0) AS rate
-                                 FROM entry WHERE item IS NULL
+                                 FROM entry
+                                WHERE date IS NOT NULL
                                  GROUP BY strftime('%Y', date))")))
          (months-tracked (caar (fin-db-query
                                 "SELECT COUNT(DISTINCT strftime('%Y-%m', date)) FROM entry")))
          (biggest-in (car (fin-db-query
                            "SELECT category, amount, date
-                              FROM entry WHERE type='in' AND item IS NULL
+                              FROM entry WHERE type='in'
                               ORDER BY amount DESC LIMIT 1")))
          (rec-share  (caar (fin-db-query
                             "SELECT ROUND(100.0 *
@@ -200,7 +202,8 @@ Returns (item count total avg/entry)."
                                          (SUM(CASE WHEN type='in'  THEN amount ELSE 0 END)
                                         - SUM(CASE WHEN type='out' THEN amount ELSE 0 END))
                                          / NULLIF(SUM(CASE WHEN type='in' THEN amount ELSE 0 END),0), 1) AS sv
-                              FROM entry WHERE item IS NULL
+                              FROM entry
+                             WHERE date IS NOT NULL
                               GROUP BY y
                               ORDER BY sv DESC LIMIT 1")))
          (first-entry (caar (fin-db-query "SELECT MIN(date) FROM entry"))))

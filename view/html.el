@@ -17,8 +17,9 @@
   (format "<dt>%s</dt><dd>%s</dd>" dt dd))
 
 (defun fin-dashboard--block (name title body &optional cls)
-  "Stat-block <div> with H3 NAME (HTML-allowed, callers must pre-escape user data).
-TITLE → hover tooltip.  Optional CLS appended to class list (for grid-area mapping)."
+  "Stat-block <div> with H3 NAME (HTML-allowed, callers must pre-escape user
+data).  TITLE → hover tooltip.  Optional CLS appended to class list (for
+grid-area mapping)."
   (format "<div class=\"stat-block%s\"><h3 title=\"%s\">%s</h3>%s</div>"
           (if cls (concat " " cls) "")
           (fin-dashboard--esc title)

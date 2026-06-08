@@ -66,7 +66,8 @@
         s))))
 
 (defun fin-dashboard--k (cents)
-  "Format CENTS as `X.Yk' for |cents| ≥ R$ 1.000, else full BRL.  Negatives in .neg."
+  "Format CENTS as `X.Yk' for |cents| ≥ R$ 1.000, else full BRL.
+Negatives in .neg."
   (cond ((null cents) "")
         ((not (numberp cents)) (fin-dashboard--esc cents))
         ((zerop cents) "")
@@ -98,6 +99,12 @@
 (defun fin-dashboard--ym (date)
   "Strip day from ISO date (`YYYY-MM-DD' → `YYYY-MM').  Pass-through if shorter."
   (if (and (stringp date) (>= (length date) 7)) (substring date 0 7) (or date "")))
+
+(defun fin-dashboard--dm (date)
+  "Short day/month from ISO date (`YYYY-MM-DD' → `dd/mm').  Empty if malformed."
+  (if (and (stringp date) (>= (length date) 10))
+      (concat (substring date 8 10) "/" (substring date 5 7))
+    ""))
 
 (defun fin-dashboard--pct-signed (v)
   "Signed percentage HTML: `<span class=neg/pos>%.1f%%</span>'.  Nil/0 → bare."

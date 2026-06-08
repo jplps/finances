@@ -22,13 +22,13 @@
 
 ;;; ── --cat-shares / --income-shares (summary rows only) ────
 
-(ert-deftest stats/cat-shares-ignores-non-summary-rows ()
+(ert-deftest stats/cat-shares-sums-all-out-rows ()
   (fin-test-with-db
-    (fin-test-insert-entry "2025-01-31" "out" "food" 100000 nil)
-    (fin-test-insert-entry "2025-01-31" "out" "food" 50000 "bread") ; item set → ignored
+    (fin-test-insert-entry "2025-01-31" "out" "food" 100000 nil)     ; un-itemized lump
+    (fin-test-insert-entry "2025-01-31" "out" "food" 50000 "bread")  ; itemized — every row counts
     (let ((row (car (fin-report--cat-shares))))
       (should (equal (nth 0 row) "food"))
-      (should (= 100000 (nth 1 row))))))
+      (should (= 150000 (nth 1 row))))))
 
 ;;; ── --period (future months excluded) ─────────────────────
 

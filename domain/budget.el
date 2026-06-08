@@ -11,20 +11,25 @@ Var target is the complement (100 - fix-target).")
 Derived from `fin-budget-fix-target' so the two always sum to 100.")
 
 (defun fin-report--monthly-liquid (year)
-  "Average monthly liquid (net in) for YEAR — summary rows only."
+  "Average monthly liquid (net in) for YEAR.
+Nets the cnpj tax outflow, which the source carries inside the In total."
   (or (caar
        (fin-db-query
         "SELECT AVG(t) FROM (
-           SELECT SUM(amount) AS t
+           SELECT SUM(CASE WHEN type='in'       THEN amount
+                           WHEN category='cnpj' THEN -amount
+                           ELSE 0 END) AS t
              FROM entry
-            WHERE type='in' AND strftime('%Y', date)=? AND item IS NULL
+            WHERE strftime('%Y', date)=?
+              AND (type='in' OR category='cnpj')
             GROUP BY strftime('%Y-%m', date))"
         (list (format "%d" year))))
       0))
 
 (defun fin-report--budget-share (year)
   "Top-level budget: (category, type, amount, share-of-liquid %) for YEAR.
-For fix rows: amount stored; share derived.  For var rows: share stored; amount derived."
+For fix rows: amount stored; share derived.  For var rows: share stored;
+amount derived."
   (let ((liquid (fin-report--monthly-liquid year)))
     (fin-db-query
      "SELECT category, type,
@@ -71,6 +76,25 @@ For fix rows: amount stored; share derived.  For var rows: share stored; amount 
                (list liquid)))
         0)))
 
+(defun fin-report--last-distribution ()
+  "Alist (CATEGORY . CENTS) of each category's most recent monthly distribution.
+Distribution = SUM of type=out rows for the category's latest month.
+\"Most recent\" is the latest month not in the future (year-month ≤ current
+year-month), so the current month counts even though its rows are dated
+month-end."
+  (fin-db-query
+   "WITH last AS (
+      SELECT category, MAX(date) AS md
+        FROM entry
+       WHERE type='out'
+         AND strftime('%Y-%m', date) <= strftime('%Y-%m', 'now')
+       GROUP BY category)
+    SELECT e.category, SUM(e.amount)
+      FROM entry e JOIN last l
+        ON e.category = l.category AND e.date = l.md
+     WHERE e.type='out'
+     GROUP BY e.category"))
+
 (defun fin-report--planned-month (year)
   "Plan-derived monthly (in, out, liquid) placeholder for forecast months."
   (let* ((liquid  (round (fin-report--monthly-liquid year)))
@@ -81,8 +105,8 @@ For fix rows: amount stored; share derived.  For var rows: share stored; amount 
 
 (defun fin-report--budget-children (parent year)
   "Sub-rows for PARENT budget category for YEAR.
-For 'investments': UNION of ODS extras + per-category patrimony amortization.
-For other parents: just ODS rows.
+For the investments parent: UNION of ODS extras + per-category patrimony
+amortization.  Other parents: just ODS rows.
 Children can be driven by amount or share-of-parent; the other derived.
 Percentage column is share of the parent's resolved amount."
   (let* ((liquid (fin-report--monthly-liquid year))

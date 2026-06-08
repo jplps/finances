@@ -21,15 +21,17 @@
       (should (= 100000 (nth 1 (nth 5 rows))))
       (should (null (nth 1 (nth 0 rows)))))))    ; Jan empty
 
-(ert-deftest cashflow/month-items-only-non-summary-rows ()
+(ert-deftest cashflow/month-items-returns-all-out-rows ()
   (fin-test-with-db
-    (fin-test-insert-entry "2025-06-10" "out" "food" 100 nil)       ; summary
+    (fin-test-insert-entry "2025-06-10" "out" "food" 100 nil)       ; un-itemized lump → labelled by category
     (fin-test-insert-entry "2025-06-15" "out" "food" 200 "bread")
     (fin-test-insert-entry "2025-06-20" "out" "food" 300 "butter")
     (let ((rows (fin-report--month-items 2025 6)))
-      (should (= 2 (length rows)))
-      (should (equal "bread"  (nth 0 (car rows))))
-      (should (equal "butter" (nth 0 (cadr rows)))))))
+      (should (= 3 (length rows)))
+      (should (equal "food"   (nth 0 (nth 0 rows))))
+      (should (equal "bread"  (nth 0 (nth 1 rows))))
+      (should (equal "butter" (nth 0 (nth 2 rows))))
+      (should (= 600 (apply #'+ (mapcar (lambda (r) (nth 2 r)) rows)))))))
 
 (ert-deftest cashflow/annual-sums-derives-save-pct ()
   (fin-test-with-db

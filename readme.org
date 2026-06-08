@@ -50,13 +50,16 @@ Schema is auto-created on first =M-x fin-db-rebuild= (or =finances fin-db-rebuil
 
 * M-x commands
 
-| Command            | Action                              |
-|--------------------+-------------------------------------|
-| =fin=              | Refresh DB + dashboard in one shot. |
-| =fin-sync-refresh= | ODS → DB only.                      |
-| =fin-dashboard=    | Regenerate HTML, open in browser.   |
-| =fin-open-ods=     | Open the source ODS in LibreOffice. |
-| =fin-db-rebuild=   | Drop + recreate SQLite tables.      |
+| Command            | Action                                         |
+|--------------------+------------------------------------------------|
+| =fin=              | Reload sources, refresh DB, open dashboard.    |
+| =fin-reload=       | Reload every project source file (no restart). |
+| =fin-sync-refresh= | ODS → DB only.                                 |
+| =fin-dashboard=    | Regenerate HTML, open in browser.              |
+| =fin-open-ods=     | Open the source ODS in LibreOffice.            |
+| =fin-db-rebuild=   | Drop + recreate SQLite tables.                 |
+
+=fin= reloads sources before refreshing so edits land without an Emacs restart; a prefix arg (=C-u M-x fin=) skips the reload.
 
 * Layout
 
@@ -107,7 +110,8 @@ Four sheets.  All category/name values *lowercase kebab-case*; item descriptions
 =date | type | category | item | amount | currency | note=
 
 - =type= ∈ {=in=, =out=}
-- CNPJ tax stored as =type=in= with a *negative* amount.
+- CNPJ tax is a normal =type=out= row under =category=cnpj= (positive cents).  It is netted out of gross income in the liquid base (see /Liquid/), not treated as ordinary spend there.
+- Every entry is a leaf; aggregations sum all rows of the relevant =type=.  An un-itemized lump just leaves =item= NULL and surfaces under its category in the cashflow drilldown.
 - =amount= = cents (integer).
 
 ** =plan=
@@ -132,19 +136,21 @@ Four sheets.  All category/name values *lowercase kebab-case*; item descriptions
 
 * Liquid
 
-=monthly_liquid = AVG(SUM(amount) per month) WHERE type='in' AND item IS NULL=, for the current year.
-CNPJ is netted in by the SUM (it is stored as =type=in= with negative amount).
+=monthly_liquid= = AVG over the current year's months of (Σ =type=in= − Σ =category=cnpj=).
+CNPJ tax (a =type=out= row under =category=cnpj=) is subtracted from gross income in this base rather than counted as expense.
 
 * Dashboard
 
 =M-x fin-dashboard= writes =view/dashboard.html= and opens it.  Static, dark, no JS.
 
+A two-stat *hero* tops the page: /Final balance (entries)/ (latest cumulative net worth, Σ in − out) and /Accounts balance (now)/ (patrimony total); each colored pos/neg.
+
 Five panels:
 - *Stats*: all-time flow bar chart (full width header) + 3-col body — line trends col (net worth, rolling save %, income-vs-expense MA, Pareto, yearly save %, spend heatmap) · share donuts col (category, income) · scoreboard col (Records kv, Recurring by months, Recurring all time).
-- *Objectives*: budget plan with =fix= and =var= side-by-side; each subpanel title shows actual % / target %; sub line shows liquid + runway.  Var =investments= drilldown rolls patrimony amortization into a single =patrimony= leaf alongside ODS-declared extras.
+- *Objectives*: budget plan with =fix= and =var= side-by-side; each subpanel title shows actual % / target %; sub line shows liquid + runway.  Var rows split into =target= / % (dimmed plan) and =amount= / % (actual): =investments= reports its latest monthly distribution (ODS extras + patrimony amortization, via =fin-report--last-distribution=); other var cats report the full target allocation.
 - *Accounts*: balances + sub-accounts (expandable).
 - *Patrimony*: items + amortization (expandable).
-- *Cashflow* (right, tall): year → month → category drilldown.  Future months in the current year use plan-derived placeholders (dimmed).
+- *Cashflow* (right, tall): year → month → category → leaf (=item= · =date= · =amount=) drilldown.  Future months in the current year use plan-derived placeholders (dimmed).  The current-year header row reconciles with its months by summing actuals + forecast (in / out / liquid / save %).
 
 Stats charts:
 - /Net worth/ — cumulative Σ(in − out) per month.

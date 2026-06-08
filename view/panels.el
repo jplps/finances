@@ -157,6 +157,7 @@
          (var-cls (if (<= var-pct fin-budget-var-target) "pos" "neg"))
          (fix     (cl-remove-if-not (lambda (b) (equal (nth 1 b) "fix")) budg))
          (var     (cl-remove-if-not (lambda (b) (equal (nth 1 b) "var")) budg))
+         (lastdist (fin-report--last-distribution))
          (mkrow   (lambda (b)
                     (let* ((cat  (nth 0 b))
                            (kids (fin-report--budget-children cat year)))
@@ -169,7 +170,34 @@
                                (mapcar (lambda (k) (list (nth 0 k)
                                                          (fin-dashboard--money-cell (nth 1 k))
                                                          (nth 2 k)))
-                                       kids))))))))
+                                       kids)))))))
+         (mkvarrow (lambda (b)
+                     (let* ((cat  (nth 0 b))
+                            (tgt  (nth 2 b))
+                            (tpct (nth 3 b))
+                            ;; investments tracks its actual distribution (extras +
+                            ;; patrimony amortization); other var cats distribute the
+                            ;; full target allocation.
+                            (real (if (equal cat "investments")
+                                      (or (cadr (assoc cat lastdist)) 0)
+                                    tgt))
+                            (rpct (if (> liquid 0) (/ (* 100.0 real) liquid) 0))
+                            (kids (fin-report--budget-children cat year)))
+                       (list cat
+                             (list (list :raw (format "<span class=\"dim\">%s</span>"
+                                                      (fin-dashboard--money-str tgt)))
+                                   (list :raw (if tpct
+                                                  (format "<span class=\"dim\">%.2f</span>" tpct)
+                                                ""))
+                                   (fin-dashboard--money-cell real)
+                                   (if (> rpct 0) (format "%.2f" rpct) ""))
+                             (when kids
+                               (fin-dashboard--table
+                                '("category" "amount" "%")
+                                (mapcar (lambda (k) (list (nth 0 k)
+                                                          (fin-dashboard--money-cell (nth 1 k))
+                                                          (nth 2 k)))
+                                        kids))))))))
     (fin-dashboard--panel
      "Objectives" "objectives"
      "Budget plan as share of monthly liquid, fix pressure, and emergency runway"
@@ -185,7 +213,7 @@
        (format "Var · <span class=\"%s\">%.1f%%</span> <span class=\"dim\">/ %d%%</span>"
                var-cls var-pct fin-budget-var-target)
        "Variable allocations (driven by share of liquid); expand to see sub-allocations"
-       (fin-dashboard--alist '("category" "amount" "%") (mapcar mkrow var)))))))
+       (fin-dashboard--alist '("category" "target" "%" "amount" "%") (mapcar mkvarrow var)))))))
 
 (defun fin-dashboard--panel-accounts ()
   (let* ((accts (fin-report--accounts))
@@ -254,9 +282,7 @@
          (ranked    (mapcar
                      (lambda (g)
                        (let* ((cat (car g))
-                              (rs  (sort (copy-sequence (cdr g))
-                                         (lambda (a b) (> (or (nth 2 a) 0)
-                                                          (or (nth 2 b) 0)))))
+                              (rs  (cdr g))   ; query already date-ordered; group-by preserves it
                               (tot (apply #'+ (mapcar (lambda (r) (or (nth 2 r) 0)) rs))))
                          (list cat rs tot)))
                      groups))
@@ -271,51 +297,71 @@
                                 (format "%.1f" (if (> month-sum 0)
                                                    (* 100.0 (/ tot (float month-sum))) 0)))
                           (fin-dashboard--table
-                           '("item" "amount")
+                           '("item" "date" "amount")
                            (mapcar (lambda (r) (list (nth 0 r)
+                                                     (fin-dashboard--dm (nth 3 r))
                                                      (fin-dashboard--money-cell (nth 2 r))))
                                    rs)))))
                 sorted)))
-    (fin-dashboard--alist '("category" "items" "total" "%") rows)))
+    (fin-dashboard--alist '("category" "items" "out" "%") rows)))
 
-(defun fin-dashboard--monthly-block (year months now-y now-m)
-  "Year's monthly data as accordion <table>.  Future months use plan-derived placeholders."
-  (let* ((planned (and (= year now-y) (fin-report--planned-month year)))
-         (rows (mapcar
-                (lambda (r)
-                  (let* ((m       (car r))
-                         (future? (and (= year now-y) (numberp m) (> m now-m)))
-                         (in      (if (and future? planned) (nth 0 planned) (nth 1 r)))
-                         (out     (if (and future? planned) (nth 1 planned) (nth 2 r)))
-                         (liq     (if (and future? planned) (nth 2 planned) (nth 3 r)))
-                         (items   (and (not future?) (fin-report--month-items year m))))
-                    (list (fin-dashboard--month-name m)
-                          (list (fin-dashboard--money-cell in)
-                                (fin-dashboard--money-cell out)
-                                (fin-dashboard--money-signed-cell liq))
-                          (when items (fin-dashboard--month-body items))
-                          (when future? "future")
-                          (and (= year now-y) (numberp m) (= m now-m)))))
-                months)))
+(defun fin-dashboard--year-effective-months (year now-y now-m)
+  "(M IN OUT LIQ FUTURE?) per month for YEAR.
+Future months of the current year use the objectives forecast
+\(`fin-report--planned-month'); all other months are actuals."
+  (let ((planned (and (= year now-y) (fin-report--planned-month year))))
+    (mapcar
+     (lambda (r)
+       (let* ((m       (car r))
+              (future? (and (= year now-y) (numberp m) (> m now-m))))
+         (if (and future? planned)
+             (list m (nth 0 planned) (nth 1 planned) (nth 2 planned) t)
+           (list m (nth 1 r) (nth 2 r) (nth 3 r) nil))))
+     (fin-report--year-months year))))
+
+(defun fin-dashboard--monthly-block (year eff now-y now-m)
+  "Accordion <table> of YEAR's effective months EFF (see
+`fin-dashboard--year-effective-months')."
+  (let ((rows (mapcar
+               (lambda (e)
+                 (let* ((m       (nth 0 e))
+                        (future? (nth 4 e))
+                        (items   (and (not future?) (fin-report--month-items year m))))
+                   (list (fin-dashboard--month-name m)
+                         (list (fin-dashboard--money-cell (nth 1 e))
+                               (fin-dashboard--money-cell (nth 2 e))
+                               (fin-dashboard--money-signed-cell (nth 3 e)))
+                         (when items (fin-dashboard--month-body items))
+                         (when future? "future")
+                         (and (= year now-y) (numberp m) (= m now-m)))))
+               eff)))
     (fin-dashboard--alist '("month" "in" "out" "liquid") rows)))
-
-(defun fin-dashboard--year-content (year now-y now-m)
-  (fin-dashboard--monthly-block year (fin-report--year-months year) now-y now-m))
 
 (defun fin-dashboard--panel-cashflow ()
   (let* ((now-y (fin-report--year-now))
          (now-m (fin-report--month-now))
          (rows  (mapcar
                  (lambda (r)
-                   (let ((y (nth 0 r)))
+                   (let* ((y    (nth 0 r))
+                          (cur  (= y now-y))
+                          (eff  (fin-dashboard--year-effective-months y now-y now-m))
+                          ;; Current year reconciles with its month rows by
+                          ;; summing actuals + forecast; past years are actuals.
+                          (in   (if cur (apply #'+ (mapcar (lambda (e) (or (nth 1 e) 0)) eff)) (nth 1 r)))
+                          (out  (if cur (apply #'+ (mapcar (lambda (e) (or (nth 2 e) 0)) eff)) (nth 2 r)))
+                          (liq  (if cur (- in out) (nth 3 r)))
+                          (sav  (if cur
+                                    (and (> in 0)
+                                         (/ (fround (/ (* 1000.0 (- in out)) in)) 10.0))
+                                  (nth 4 r))))
                      (list (number-to-string y)
-                           (list (fin-dashboard--money-cell (nth 1 r))
-                                 (fin-dashboard--money-cell (nth 2 r))
-                                 (fin-dashboard--money-signed-cell (nth 3 r))
-                                 (nth 4 r))
-                           (fin-dashboard--year-content y now-y now-m)
+                           (list (fin-dashboard--money-cell in)
+                                 (fin-dashboard--money-cell out)
+                                 (fin-dashboard--money-signed-cell liq)
+                                 sav)
+                           (fin-dashboard--monthly-block y eff now-y now-m)
                            nil
-                           (= y now-y))))
+                           cur)))
                  (fin-report--annual-sums))))
     (fin-dashboard--panel
      "Cashflow" "cashflow"

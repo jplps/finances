@@ -26,7 +26,8 @@
         (t (mapconcat #'fin-ods-cell-text (dom-children cell) ""))))
 
 (defun fin-ods-cell-value (cell)
-  "Return ISO string for date cells, float for numeric, trimmed string for text, nil for empty."
+  "Return ISO string for date cells, float for numeric, trimmed string for
+text, nil for empty."
   (let ((dv  (dom-attr cell 'date-value))
         (v   (dom-attr cell 'value))
         (txt (string-trim (fin-ods-cell-text cell))))

@@ -10,12 +10,12 @@
   (fin-test-with-db
     (should (= 0 (fin-report--monthly-liquid 2025)))))
 
-(ert-deftest budget/monthly-liquid-averages-summary-in-rows ()
+(ert-deftest budget/monthly-liquid-averages-monthly-in ()
   (fin-test-with-db
-    (fin-test-insert-entry "2025-01-31" "in" "salary" 600000 nil)
+    (fin-test-insert-entry "2025-01-31" "in" "salary" 500000 nil)
+    ;; mid-month row in the same month — every row counts → Jan = 600000
+    (fin-test-insert-entry "2025-01-15" "in" "salary" 100000 "bonus")
     (fin-test-insert-entry "2025-02-28" "in" "salary" 400000 nil)
-    ;; non-summary (item ≠ NULL) must be ignored
-    (fin-test-insert-entry "2025-03-31" "in" "salary" 9000000 "side-gig")
     (should (= 500000 (fin-report--monthly-liquid 2025)))))
 
 ;;; ── --budget-share ──────────────────────────────────────────
