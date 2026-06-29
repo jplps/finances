@@ -50,25 +50,6 @@ header {
 }
 header .meta { color: var(--muted); font-size: 10.5px; }
 
-/* ── hero ───────────────────────────────────────────── */
-.hero {
-  display: grid; grid-template-columns: 1fr 1fr; gap: var(--gap);
-  background: var(--border); border-bottom: 1px solid var(--border);
-}
-.hero-stat {
-  background: var(--panel-2); padding: 1rem 1.25rem;
-  display: flex; flex-direction: column; gap: 0.25rem;
-}
-.hero-label {
-  color: var(--muted); font-size: var(--font-h);
-  text-transform: uppercase; letter-spacing: 1px;
-}
-.hero-value {
-  font-size: clamp(1.5rem, 3vw, 2.5rem); font-weight: 500;
-  font-variant-numeric: tabular-nums; letter-spacing: -0.5px;
-}
-@media (max-width: 700px) { .hero { grid-template-columns: 1fr; } }
-
 /* ── headings (h1, h2, h3, th) ─────────────────────── */
 h1, h2, h3, th { margin: 0; font-weight: 500; text-transform: uppercase; }
 h1 { font-size: 0.75rem; letter-spacing: 0.3px; text-transform: none; }
