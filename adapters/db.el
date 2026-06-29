@@ -50,10 +50,11 @@
     "CREATE INDEX patrimony_cat ON patrimony(category)"
 
     "CREATE TABLE account (
-       category    TEXT PRIMARY KEY,
+       category    TEXT NOT NULL,
        parent      TEXT,
        balance     INTEGER NOT NULL,
-       updated_at  TEXT)"
+       updated_at  TEXT,
+       PRIMARY KEY (category, parent))"
 
     "CREATE TABLE refresh_log (
        id         INTEGER PRIMARY KEY,
