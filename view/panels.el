@@ -148,16 +148,19 @@
 
 (defun fin-dashboard--panel-objectives ()
   (let* ((year    (fin-report--year-now))
-         (liquid  (fin-report--monthly-liquid year))
+         (inc     (fin-report--monthly-income year))
+         (liquid  (nth 2 inc))
          (budg    (fin-report--budget-share year))
          (rw      (fin-report--runway))
-         (fix-pct (if (> liquid 0) (* 100.0 (/ (nth 1 rw) liquid)) 0))
-         (var-pct (if (> liquid 0) (* 100.0 (/ (fin-report--var-total year) liquid)) 0))
-         (fix-cls (if (<= fix-pct fin-budget-fix-target) "pos" "neg"))
-         (var-cls (if (<= var-pct fin-budget-var-target) "pos" "neg"))
          (fix     (cl-remove-if-not (lambda (b) (equal (nth 1 b) "fix")) budg))
          (var     (cl-remove-if-not (lambda (b) (equal (nth 1 b) "var")) budg))
-         (lastdist (fin-report--last-distribution))
+         (sumpct  (lambda (rows) (cl-reduce #'+ rows
+                                            :key (lambda (b) (or (nth 3 b) 0))
+                                            :initial-value 0)))
+         (fix-pct (funcall sumpct fix))
+         (var-pct (funcall sumpct var))
+         (fix-cls (if (<= fix-pct fin-budget-fix-target) "pos" "neg"))
+         (var-cls (if (<= var-pct fin-budget-var-target) "pos" "neg"))
          (mkrow   (lambda (b)
                     (let* ((cat  (nth 0 b))
                            (kids (fin-report--budget-children cat year)))
@@ -166,54 +169,36 @@
                                   (nth 3 b))
                             (when kids
                               (fin-dashboard--table
-                               '("category" "amount" "%")
+                               '("category" "target" "%")
                                (mapcar (lambda (k) (list (nth 0 k)
                                                          (fin-dashboard--money-cell (nth 1 k))
                                                          (nth 2 k)))
                                        kids)))))))
-         (mkvarrow (lambda (b)
-                     (let* ((cat  (nth 0 b))
-                            (tgt  (nth 2 b))
-                            (tpct (nth 3 b))
-                            ;; investments tracks its actual distribution (extras +
-                            ;; patrimony amortization); other var cats distribute the
-                            ;; full target allocation.
-                            (real (if (equal cat "investments")
-                                      (or (cadr (assoc cat lastdist)) 0)
-                                    tgt))
-                            (rpct (if (> liquid 0) (/ (* 100.0 real) liquid) 0))
-                            (kids (fin-report--budget-children cat year)))
-                       (list cat
-                             (list (list :raw (format "<span class=\"dim\">%s</span>"
-                                                      (fin-dashboard--money-str tgt)))
-                                   (list :raw (if tpct
-                                                  (format "<span class=\"dim\">%.2f</span>" tpct)
-                                                ""))
-                                   (fin-dashboard--money-cell real)
-                                   (if (> rpct 0) (format "%.2f" rpct) ""))
-                             (when kids
-                               (fin-dashboard--table
-                                '("category" "amount" "%")
-                                (mapcar (lambda (k) (list (nth 0 k)
-                                                          (fin-dashboard--money-cell (nth 1 k))
-                                                          (nth 2 k)))
-                                        kids))))))))
+         (unalloc  (- 100.0 fix-pct var-pct))
+         (var-rows (if (< (abs unalloc) 0.05)
+                       (mapcar mkrow var)
+                     (append (mapcar mkrow var)
+                             (list (list "unallocated"
+                                         (list (fin-dashboard--money-cell
+                                                (round (* liquid unalloc 0.01)))
+                                               unalloc)
+                                         nil "dim"))))))
     (fin-dashboard--panel
      "Objectives" "objectives"
      "Budget plan as share of monthly liquid, fix pressure, and emergency runway"
      (format "<p class=\"sub\">Plan · liquid <b>R$ %s</b> · runway <b>%.1f months</b></p>"
-             (fin-dashboard--money-str (round liquid)) (nth 2 rw))
+             (fin-dashboard--money-str liquid) (nth 2 rw))
      (fin-dashboard--pair
       (fin-dashboard--block
        (format "Fix · <span class=\"%s\">%.1f%%</span> <span class=\"dim\">/ %d%%</span>"
                fix-cls fix-pct fin-budget-fix-target)
        "Fixed monthly outflows (driven by amount)"
-       (fin-dashboard--alist '("category" "amount" "%") (mapcar mkrow fix)))
+       (fin-dashboard--alist '("category" "target" "%") (mapcar mkrow fix)))
       (fin-dashboard--block
        (format "Var · <span class=\"%s\">%.1f%%</span> <span class=\"dim\">/ %d%%</span>"
                var-cls var-pct fin-budget-var-target)
        "Variable allocations (driven by share of liquid); expand to see sub-allocations"
-       (fin-dashboard--alist '("category" "target" "%" "amount" "%") (mapcar mkvarrow var)))))))
+       (fin-dashboard--alist '("category" "target" "%") var-rows))))))
 
 (defun fin-dashboard--panel-accounts ()
   (let* ((accts (fin-report--accounts))

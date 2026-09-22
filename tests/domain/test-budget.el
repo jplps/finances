@@ -18,6 +18,47 @@
     (fin-test-insert-entry "2025-02-28" "in" "salary" 400000 nil)
     (should (= 500000 (fin-report--monthly-liquid 2025)))))
 
+(ert-deftest budget/monthly-income-prefers-declared-plan ()
+  (fin-test-with-db
+    (fin-test-insert-entry "2025-01-31" "in" "salary" 500000 nil)
+    (fin-test-insert-budget "brute" nil "income" 1300000 nil)
+    (fin-test-insert-budget "cnpj"  nil "income" 139000  nil)
+    (let ((inc (fin-report--monthly-income 2025)))
+      (should (= 1300000 (nth 0 inc)))
+      (should (= 139000  (nth 1 inc)))
+      (should (= 1161000 (nth 2 inc)))
+      (should (eq 'plan  (nth 3 inc))))))
+
+(ert-deftest budget/monthly-income-falls-back-to-realized ()
+  (fin-test-with-db
+    (fin-test-insert-entry "2025-01-31" "in"  "salary" 1000000 nil)
+    (fin-test-insert-entry "2025-01-31" "out" "cnpj"    100000 nil)
+    (let ((inc (fin-report--monthly-income 2025)))
+      (should (= 1000000 (nth 0 inc)))
+      (should (= 100000  (nth 1 inc)))
+      (should (= 900000  (nth 2 inc)))
+      (should (eq 'actual (nth 3 inc))))))
+
+(ert-deftest budget/monthly-liquid-excludes-current-partial-month ()
+  "The running month is incomplete; it must not drag the average down."
+  (fin-test-with-db
+    (let* ((now  (decode-time))
+           (year (nth 5 now))
+           (mon  (nth 4 now)))
+      (skip-unless (> mon 1))
+      (fin-test-insert-entry (format "%d-%02d-28" year (1- mon)) "in" "salary" 1000000 nil)
+      (fin-test-insert-entry (format "%d-%02d-05" year mon)      "in" "salary"   10000 nil)
+      (should (= 1000000 (fin-report--monthly-liquid year))))))
+
+(ert-deftest budget/monthly-liquid-falls-back-when-no-complete-month ()
+  "January has no complete month yet, so the partial one still counts."
+  (fin-test-with-db
+    (let* ((now  (decode-time))
+           (year (nth 5 now))
+           (mon  (nth 4 now)))
+      (fin-test-insert-entry (format "%d-%02d-05" year mon) "in" "salary" 300000 nil)
+      (should (= 300000 (fin-report--monthly-liquid year))))))
+
 ;;; ── --budget-share ──────────────────────────────────────────
 
 (ert-deftest budget/share-uses-amount-for-fix-and-derives-share ()
@@ -37,6 +78,15 @@
     (let* ((row (car (fin-report--budget-share 2025))))
       (should (= 250000 (nth 2 row)))
       (should (= 25.0   (nth 3 row))))))
+
+(ert-deftest budget/share-excludes-income-rows ()
+  (fin-test-with-db
+    (fin-test-insert-budget "brute" nil "income" 1000000 nil)
+    (fin-test-insert-budget "house" nil "fix"     200000 nil)
+    (let ((rows (fin-report--budget-share 2025)))
+      (should (= 1 (length rows)))
+      (should (equal "house" (nth 0 (car rows))))
+      (should (= 20.0 (nth 3 (car rows)))))))
 
 ;;; ── --runway ────────────────────────────────────────────────
 
