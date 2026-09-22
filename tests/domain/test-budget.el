@@ -143,6 +143,38 @@ all per-row amortizations (amount / lifespan_months)."
       ;; SUM amortization becomes NULL → row may be missing or amt = nil; must NOT crash.
       (should (or (null patri) (null (nth 1 patri)) (zerop (nth 1 patri)))))))
 
+(ert-deftest budget/base-subtracts-fixed-draws-from-parent ()
+  (fin-test-with-db
+    (fin-test-insert-budget "brute" nil "income" 1160000 nil)
+    (fin-test-insert-budget "investments" nil "var" nil 0.2)      ; 232000
+    (fin-test-insert-budget "family" "investments" "var" 20000 nil)
+    (fin-test-insert-patrimony "car" "wheels" 1200000 60)         ; 20000/mo
+    (should (equal (list 232000 192000)
+                   (fin-report--budget-base "investments" 2026)))))
+
+(ert-deftest budget/children-shares-divide-uncommitted-base ()
+  "Share children split what patrimony left behind, so they sum to the parent."
+  (fin-test-with-db
+    (fin-test-insert-budget "brute" nil "income" 1160000 nil)
+    (fin-test-insert-budget "investments" nil "var" nil 0.2)      ; 232000
+    (fin-test-insert-budget "family"    "investments" "var" nil 0.5)
+    (fin-test-insert-budget "emergency" "investments" "var" nil 0.25)
+    (fin-test-insert-budget "vacations" "investments" "var" nil 0.25)
+    (fin-test-insert-patrimony "car" "wheels" 6781920 60)         ; 113032/mo
+    (let ((kids (fin-report--budget-children "investments" 2026)))
+      (should (= 113032 (nth 1 (assoc "patrimony" kids))))
+      (should (= 59484  (nth 1 (assoc "family" kids))))
+      (should (= 29742  (nth 1 (assoc "emergency" kids))))
+      (should (= 232000 (apply #'+ (mapcar (lambda (k) (nth 1 k)) kids)))))))
+
+(ert-deftest budget/base-goes-negative-when-fixed-draws-overrun ()
+  "An overrun is reported, not clamped \u2014 the panel renders it red."
+  (fin-test-with-db
+    (fin-test-insert-budget "brute" nil "income" 1160000 nil)
+    (fin-test-insert-budget "investments" nil "var" nil 0.2)      ; 232000
+    (fin-test-insert-patrimony "house" "roof" 30000000 60)        ; 500000/mo
+    (should (= -268000 (nth 1 (fin-report--budget-base "investments" 2026))))))
+
 ;;; ── --var-total ─────────────────────────────────────────────
 
 (ert-deftest budget/var-total-empty-is-zero ()
@@ -158,6 +190,15 @@ all per-row amortizations (amount / lifespan_months)."
     (let ((total (fin-report--var-total 2025)))
       ;; expected = 100000 (retirement) + 20000 (car amortization)
       (should (= 120000 (round total))))))
+
+(ert-deftest budget/var-total-counts-children-over-parent ()
+  "A parent with children contributes the children; a childless one, itself."
+  (fin-test-with-db
+    (fin-test-insert-budget "brute" nil "income" 1000000 nil)
+    (fin-test-insert-budget "investments" nil "var" nil 0.2)      ; 200000
+    (fin-test-insert-budget "family" "investments" "var" nil 1.0)
+    (fin-test-insert-budget "free" nil "var" nil 0.1)             ; 100000, childless
+    (should (= 300000 (fin-report--var-total 2026)))))
 
 ;;; ── --planned-month ─────────────────────────────────────────
 

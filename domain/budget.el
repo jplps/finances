@@ -70,69 +70,41 @@ amount derived."
        ORDER BY type, amt DESC"
      (list liquid))))
 
-(defun fin-report--var-total (year)
-  "Sum of var leaves.  Investments leaves = ODS extras + patrimony amortization."
-  (let ((liquid (fin-report--monthly-liquid year)))
-    (or (caar (fin-db-query
-               "SELECT SUM(v) FROM (
-                  -- top-level var rows that are leaves (no children) AND not 'investments'
-                  SELECT COALESCE(amount, share * ?1) AS v
-                    FROM budget b
-                   WHERE parent IS NULL AND type='var'
-                     AND category <> 'investments'
-                     AND NOT EXISTS (SELECT 1 FROM budget WHERE parent = b.category)
-                  UNION ALL
-                  -- children of non-investments var parents
-                  SELECT COALESCE(c.amount, c.share *
-                                  (SELECT COALESCE(amount, share * ?1)
-                                     FROM budget WHERE category = c.parent AND parent IS NULL)) AS v
-                    FROM budget c
-                   WHERE c.parent IN (SELECT category FROM budget
-                                       WHERE parent IS NULL AND type='var'
-                                         AND category <> 'investments')
-                  UNION ALL
-                  -- investments: ODS extras
-                  SELECT COALESCE(c.amount, c.share *
-                                  (SELECT COALESCE(amount, share * ?1)
-                                     FROM budget WHERE category = 'investments' AND parent IS NULL)) AS v
-                    FROM budget c
-                   WHERE c.parent = 'investments'
-                  UNION ALL
-                  -- investments: patrimony amortization
-                  SELECT SUM(amount * 1.0 / NULLIF(lifespan_months,0)) AS v
-                    FROM patrimony)"
-               (list liquid)))
-        0)))
-
-(defun fin-report--planned-month (year)
-  "Plan-derived monthly (in, out, liquid) placeholder for forecast months."
-  (let* ((liquid  (round (fin-report--monthly-liquid year)))
-         (fix     (or (nth 1 (fin-report--runway)) 0))
-         (var     (round (fin-report--var-total year)))
-         (out     (+ fix var)))
-    (list liquid out (- liquid out))))
+(defun fin-report--budget-base (parent year)
+  "Return (PARENT-AMT BASE) for the PARENT budget category in YEAR, in cents.
+BASE is what PARENT's share-driven children divide: the parent amount less
+what is already committed \u2014 children carrying an explicit amount, plus the
+patrimony amortization injected into `investments'.  A negative BASE is
+returned as-is so an overrun surfaces instead of silently clamping."
+  (or (car (fin-db-query
+            "SELECT amt,
+                    amt
+                    - COALESCE((SELECT SUM(s.amount) FROM budget s
+                                 WHERE s.parent = ?2 AND s.amount IS NOT NULL), 0)
+                    - COALESCE((SELECT CAST(ROUND(SUM(p.amount * 1.0
+                                                      / NULLIF(p.lifespan_months,0))) AS INTEGER)
+                                  FROM patrimony p WHERE ?2 = 'investments'), 0)
+               FROM (SELECT CAST(ROUND(COALESCE(amount, share * ?1)) AS INTEGER) AS amt
+                       FROM budget WHERE category = ?2 AND parent IS NULL)"
+            (list (fin-report--monthly-liquid year) parent)))
+      (list 0 0)))
 
 (defun fin-report--budget-children (parent year)
-  "Sub-rows for PARENT budget category for YEAR.
+  "Sub-rows (category, amount, % of parent) for PARENT budget category in YEAR.
 For the investments parent: UNION of ODS extras + per-category patrimony
 amortization.  Other parents: just ODS rows.
-Children can be driven by amount or share-of-parent; the other derived.
-Percentage column is share of the parent's resolved amount."
-  (let* ((liquid (fin-report--monthly-liquid year))
-         (parent-amt (or (caar
-                          (fin-db-query
-                           "SELECT CAST(ROUND(COALESCE(amount, share * ?1)) AS INTEGER)
-                              FROM budget WHERE category = ?2 AND parent IS NULL"
-                           (list liquid parent)))
-                         0)))
+Children are driven by amount or by share; a share resolves against the
+parent's uncommitted base (see `fin-report--budget-base'), so fixed draws are
+never double-counted.  Percentage column is share of the parent's amount."
+  (let* ((b          (fin-report--budget-base parent year))
+         (parent-amt (nth 0 b))
+         (base       (nth 1 b)))
     (fin-db-query
      "SELECT category, amt,
              CASE WHEN ?3 > 0 THEN 100.0 * amt / ?3 ELSE NULL END AS pct
         FROM (
           SELECT c.category,
-                 CAST(ROUND(COALESCE(c.amount, c.share *
-                                     (SELECT COALESCE(amount, share * ?1)
-                                        FROM budget WHERE category = ?2 AND parent IS NULL))) AS INTEGER) AS amt
+                 CAST(ROUND(COALESCE(c.amount, c.share * ?1)) AS INTEGER) AS amt
             FROM budget c
            WHERE c.parent = ?2
           UNION ALL
@@ -143,7 +115,29 @@ Percentage column is share of the parent's resolved amount."
           HAVING SUM(amount) > 0
         )
        ORDER BY amt DESC"
-     (list liquid parent parent-amt))))
+     (list base parent parent-amt))))
+
+(defun fin-report--var-total (year)
+  "Sum of var leaves for YEAR, in cents.
+A parent with children contributes those children \u2014 investments' patrimony
+amortization among them; a childless parent contributes its own amount."
+  (let ((total 0))
+    (dolist (row (fin-report--budget-share year) total)
+      (when (equal (nth 1 row) "var")
+        (let ((kids (fin-report--budget-children (nth 0 row) year)))
+          (setq total
+                (+ total
+                   (if kids
+                       (apply #'+ (mapcar (lambda (k) (or (nth 1 k) 0)) kids))
+                     (or (nth 2 row) 0)))))))))
+
+(defun fin-report--planned-month (year)
+  "Plan-derived monthly (in, out, liquid) placeholder for forecast months."
+  (let* ((liquid  (round (fin-report--monthly-liquid year)))
+         (fix     (or (nth 1 (fin-report--runway)) 0))
+         (var     (round (fin-report--var-total year)))
+         (out     (+ fix var)))
+    (list liquid out (- liquid out))))
 
 (defun fin-report--runway ()
   "Return (RESERVE FIX-MONTHLY MONTHS)."
