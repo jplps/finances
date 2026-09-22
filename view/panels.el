@@ -175,19 +175,17 @@
                                                          (nth 2 k)))
                                        kids)))))))
          (unalloc  (- 100.0 fix-pct var-pct))
-         (var-rows (if (< (abs unalloc) 0.05)
-                       (mapcar mkrow var)
-                     (append (mapcar mkrow var)
-                             (list (list "unallocated"
-                                         (list (fin-dashboard--money-cell
-                                                (round (* liquid unalloc 0.01)))
-                                               unalloc)
-                                         nil "dim"))))))
+         (slack    (if (< (abs unalloc) 0.05)
+                       ""
+                     (format (concat " \u00b7 unallocated <b>R$ %s</b>"
+                                     " <span class=\"dim\">(%.2f%%)</span>")
+                             (fin-dashboard--money (round (* liquid unalloc 0.01)))
+                             unalloc))))
     (fin-dashboard--panel
      "Objectives" "objectives"
      "Budget plan as share of monthly liquid, fix pressure, and emergency runway"
-     (format "<p class=\"sub\">Plan · liquid <b>R$ %s</b> · runway <b>%.1f months</b></p>"
-             (fin-dashboard--money-str liquid) (nth 2 rw))
+     (format "<p class=\"sub\">Plan · liquid <b>R$ %s</b> · runway <b>%.1f months</b>%s</p>"
+             (fin-dashboard--money-str liquid) (nth 2 rw) slack)
      (fin-dashboard--pair
       (fin-dashboard--block
        (format "Fix · <span class=\"%s\">%.1f%%</span> <span class=\"dim\">/ %d%%</span>"
@@ -198,7 +196,7 @@
        (format "Var · <span class=\"%s\">%.1f%%</span> <span class=\"dim\">/ %d%%</span>"
                var-cls var-pct fin-budget-var-target)
        "Variable allocations (driven by share of liquid); expand to see sub-allocations"
-       (fin-dashboard--alist '("category" "target" "%") var-rows))))))
+       (fin-dashboard--alist '("category" "target" "%") (mapcar mkrow var)))))))
 
 (defun fin-dashboard--panel-accounts ()
   (let* ((accts (fin-report--accounts))
