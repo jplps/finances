@@ -65,13 +65,13 @@ h1::before, h2::before, h3::before { color: var(--muted); }
 main {
   display: grid; grid-template-columns: 1fr 1fr; gap: var(--gap);
   padding: 0; background: var(--border);
-  grid-template-areas: \"stats stats\" \"objectives cashflow\" \"accounts cashflow\" \"patrimony cashflow\";
+  grid-template-areas: \"objectives cashflow\" \"accounts cashflow\" \"patrimony cashflow\" \"stats stats\";
   grid-template-rows: auto auto auto 1fr;
 }
 " (fin-dashboard--grid-area-rules) "
 @media (max-width: 900px) {
   main { grid-template-columns: 1fr;
-         grid-template-areas: \"stats\" \"cashflow\" \"objectives\" \"accounts\" \"patrimony\"; }
+         grid-template-areas: \"cashflow\" \"objectives\" \"accounts\" \"patrimony\" \"stats\"; }
 }
 
 section  { background: var(--bg); border: 0; padding: var(--panel-pad); overflow: auto; }

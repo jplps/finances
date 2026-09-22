@@ -54,11 +54,11 @@
              (fin-dashboard--relative-time ods-ts))
      "</header>"
      "<main>"
-     (fin-dashboard--panel-stats)
      (fin-dashboard--panel-objectives)
      (fin-dashboard--panel-accounts)
-     (fin-dashboard--panel-cashflow)
      (fin-dashboard--panel-patrimony)
+     (fin-dashboard--panel-cashflow)
+     (fin-dashboard--panel-stats)
      "</main></body></html>")))
 
 ;;;###autoload
