@@ -96,7 +96,8 @@
 
 (defconst test-bank--ofx
   "ENCODING:UTF-8
-<BANKACCTFROM><BANKTRANLIST>
+<DTSERVER>20261002101930[0:GMT]</DTSERVER>
+<BANKACCTFROM><BANKTRANLIST><DTSTART>20250601</DTSTART><DTEND>20250630</DTEND>
 <STMTTRN><DTPOSTED>20250610</DTPOSTED><TRNAMT>-10.00</TRNAMT><FITID>a</FITID><MEMO>Padaria</MEMO></STMTTRN>
 <STMTTRN><DTPOSTED>20250610</DTPOSTED><TRNAMT>25.50</TRNAMT><FITID>b</FITID><MEMO>Pix recebido</MEMO></STMTTRN>
 <STMTTRN><DTPOSTED>20250610</DTPOSTED><TRNAMT>0.00</TRNAMT><FITID>z</FITID><MEMO>Zero</MEMO></STMTTRN>
@@ -159,8 +160,34 @@ the last two rows are a genuine double charge.")
                             (expand-file-name "a.OFX" fin-bank-inbox))
               (write-region "ignored" nil
                             (expand-file-name "notes.txt" fin-bank-inbox)))
-            (should (= 2 (fin-bank-import))))
+            (should (= 2 (fin-bank-import)))
+            (should (equal '("notes.txt" "nubank-account-2025-06-01_2025-06-30.ofx")
+                           (directory-files fin-bank-inbox nil "\\`[^.]"))))
         (delete-directory fin-bank-inbox t)))))
+
+(ert-deftest bank/import-removes-re-export-and-refuses-conflict ()
+  (fin-test-with-db
+    (let ((fin-bank-inbox (make-temp-file "fin-inbox-" t))
+          (coding-system-for-write 'utf-8))
+      (unwind-protect
+          (cl-flet ((put (name text) (write-region text nil (expand-file-name name fin-bank-inbox))))
+            (put "a.ofx" test-bank--ofx)
+            (put "b.ofx" (replace-regexp-in-string "20261002101930" "20261003000000" test-bank--ofx))
+            (fin-bank-import)
+            (should (equal '("nubank-account-2025-06-01_2025-06-30.ofx")
+                           (directory-files fin-bank-inbox nil "\\.ofx\\'")))
+            (put "c.ofx" (replace-regexp-in-string "Padaria" "Mercado" test-bank--ofx))
+            (should-error (fin-bank-import) :type 'user-error)
+            (should (file-exists-p (expand-file-name "c.ofx" fin-bank-inbox))))
+        (delete-directory fin-bank-inbox t)))))
+
+(ert-deftest bank/own-transfers-ignored-except-salary ()
+  (let ((fin-bank-own-regexps '("JOAO P"))
+        (fin-conv-salary-regexps '("\\`Transferência Recebida - JOAO PEDRO")))
+    (should (fin-bank--ignored-p '("a" "2025-06-10" "in" 100 "Transferência recebida pelo Pix - JOAO P LIMA")))
+    (should-not (fin-bank--ignored-p '("b" "2025-06-10" "in" 100 "Transferência Recebida - JOAO PEDRO LIMA")))
+    (should (fin-bank--ignored-p '("c" "2025-06-10" "in" 100 "Valor adicionado na conta por cartão de crédito")))
+    (should-not (fin-bank--ignored-p '("d" "2025-06-10" "out" 100 "Padaria")))))
 
 (ert-deftest bank/ignored-descriptions-skip-reconcile ()
   (fin-test-with-db

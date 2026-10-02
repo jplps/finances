@@ -26,8 +26,11 @@
 (require 'sync)
 (require 'bankdb)
 (require 'ofx)
+(require 'odswrite)
 (require 'reconcile)
+(require 'conventions)
 (require 'bank)
+(require 'bankfix)
 
 ;;; ── DB fixture ──────────────────────────────────────────────
 

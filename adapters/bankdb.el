@@ -84,6 +84,19 @@ any write.  Return the number of rows actually inserted."
    "INSERT INTO bank_import (file_sha1, path, rows_in) VALUES (?,?,?)"
    (list sha1 path rows-in)))
 
+(defun fin-bankdb-since (from)
+  "Bank rows dated FROM (ISO) up to today, as `fin-bankdb-year' returns them."
+  (unless (and (stringp from) (string-match-p fin-bankdb--date-re from))
+    (error "fin-bankdb: bad date %S" from))
+  (fin-bankdb-ensure)
+  (fin-db-query
+   "SELECT id, date, type, amount, description
+      FROM bank_txn
+     WHERE date >= ?
+       AND date <= date('now', 'localtime')
+     ORDER BY date, id"
+   (list from)))
+
 (defun fin-bankdb-year (year)
   "Bank rows of YEAR up to today as (id date type amount description), by date.
 Open card bills list future installments not charged yet; they are skipped."

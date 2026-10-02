@@ -76,6 +76,13 @@ ENCODING:UTF-8
                      ("c2" "2025-01-06" 300 ""))
                    (plist-get p :txns)))))
 
+(ert-deftest ofx/period-reads-kind-and-range ()
+  (should (equal '("account" "2026-09-01" "2026-09-30")
+                 (fin-ofx-period "<BANKACCTFROM><BANKTRANLIST><DTSTART>20260901000000[-3:BRT]</DTSTART><DTEND>20260930</DTEND>")))
+  (should (equal '("card" "2026-08-06" "2026-09-06")
+                 (fin-ofx-period "<CCACCTFROM><BANKTRANLIST><DTSTART>20260806<DTEND>20260906")))
+  (should-error (fin-ofx-period "<BANKACCTFROM><BANKTRANLIST>")))
+
 (ert-deftest ofx/parse-rejects-missing-fitid ()
   (should-error
    (fin-ofx-parse "<BANKACCTFROM><BANKTRANLIST><STMTTRN><DTPOSTED>20250101<TRNAMT>1</STMTTRN>")))

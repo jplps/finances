@@ -14,12 +14,20 @@
 (require 'ofx)
 (require 'reconcile)
 (require 'bank)
+(require 'conventions)
+(require 'odswrite)
+(require 'bankfix)
 (require 'cashflow)
 (require 'budget)
 (require 'patrimony)
 (require 'accounts)
 (require 'stats)
 (require 'dashboard)
+
+;; Personal settings (own accounts, salary payer, payee aliases) stay out of
+;; the repo, in the gitignored infra/.
+(let ((config (expand-file-name "infra/config.el" fin--root)))
+  (when (file-readable-p config) (load config nil t)))
 
 (defun fin-reload ()
   "Reload every project source file so `fin' picks up edits without restart."

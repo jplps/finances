@@ -3,7 +3,7 @@
 
 Personal finance tool in Emacs Lisp.  ODS spreadsheet is the source of truth; SQLite mirrors it; a dark static HTML dashboard renders reports.
 
-Zero external runtime deps beyond Emacs 29+ stdlib and macOS-bundled =unzip= / =open=.  Python 3 only used for one-shot ODS migrations.
+Zero external runtime deps beyond Emacs 29+ stdlib and macOS-bundled =unzip= / =zip= / =open=.  Python 3 only used for one-shot ODS migrations.
 
 * Setup
 
@@ -61,6 +61,7 @@ Schema is auto-created on first =M-x fin-db-rebuild= (or =finances fin-db-rebuil
 | =fin-bank-import=       | Import new OFX statements from the inbox.      |
 | =fin-bank-reconcile=    | Bank vs ledger review buffer for a year.       |
 | =fin-bank-copy-missing= | Copy a year's bank-only rows as TSV.           |
+| =fin-bank-fix=          | Fix the ODS from bank rows (=C-u=: dry run).   |
 
 =fin= reloads sources before refreshing so edits land without an Emacs restart; a prefix arg (=C-u M-x fin=) skips the reload.
 
@@ -76,16 +77,19 @@ Schema is auto-created on first =M-x fin-db-rebuild= (or =finances fin-db-rebuil
 │   ├── parser.el        ; ODS XML reader (outbound port)
 │   ├── db.el            ; SQLite schema + helpers
 │   ├── bankdb.el        ; bank staging tables (survive rebuild)
+│   ├── odswrite.el      ; edit entries sheet in place, backup, re-zip
 │   └── ofx.el           ; OFX statement parser
 ├── tools/
 │   ├── sync.el          ; use case: ODS → DB
-│   └── bank.el          ; use case: OFX → bank tables, reconcile review
+│   ├── bank.el          ; use case: inbox → bank tables, reconcile review
+│   └── bankfix.el       ; use case: bank rows → ODS fixes
 ├── domain/              ; pure aggregations (queries only)
 │   ├── cashflow.el
 │   ├── budget.el
 │   ├── patrimony.el
 │   ├── accounts.el
 │   ├── reconcile.el     ; bank ↔ ledger matching (pure)
+│   ├── conventions.el   ; how bank rows become ledger fixes (pure)
 │   └── stats.el         ; cat/income shares, top-recurring, top-by-count,
 │                        ; yearly-saves, cumulative-networth, rolling-save-rate,
 │                        ; rolling-flow, pareto-spending, monthly-spend-grid, records, period
@@ -100,13 +104,15 @@ Schema is auto-created on first =M-x fin-db-rebuild= (or =finances fin-db-rebuil
 ├── tests/               ; ERT suite mirroring source layout
 │   ├── helpers.el       ; temp-db fixture + seed inserters
 │   ├── all-tests.el     ; entrypoint
-│   ├── adapters/{test-db,test-parser,test-bankdb,test-ofx}.el
-│   ├── domain/{test-budget,test-stats,test-patrimony,test-accounts,test-cashflow,test-reconcile}.el
-│   ├── tools/{test-sync,test-bank}.el
+│   ├── adapters/{test-db,test-parser,test-bankdb,test-ofx,test-odswrite}.el
+│   ├── domain/{test-budget,test-stats,test-patrimony,test-accounts,test-cashflow,test-reconcile,test-conventions}.el
+│   ├── tools/{test-sync,test-bank,test-bankfix}.el
 │   └── view/{test-fmt,test-charts,test-dashboard}.el
 └── infra/
     ├── finances.db      ; SQLite mirror + bank tables (gitignored)
     ├── inbox/           ; bank OFX statements to import (gitignored)
+    ├── backup/          ; ODS copies taken before each fix (gitignored)
+    ├── config.el        ; personal settings (gitignored, optional)
     └── seeds.ods        ; source of truth
 #+end_example
 
@@ -149,7 +155,7 @@ CNPJ tax (a =type=out= row under =category=cnpj=) is subtracted from gross incom
 
 * Bank reconciliation
 
-Bank statements check the ODS; they never write to it.  Differences are shown for review and fixed by hand in the ODS.
+The ODS stays canonical; bank statements fix it.  =M-x fin-bank-fix= compares every bank row since =fin-bank-fix-from= (2024-01-01) with the ledger, writes the fixes into the ODS and shows what it did.  Running it again changes nothing.
 
 ** Sources (Nubank, free)
 
@@ -157,23 +163,42 @@ Bank statements check the ODS; they never write to it.  Differences are shown fo
 - *Card*: app → Cartão de crédito → Resumo de faturas → closed bill → Enviar fatura por e-mail → OFX.  One bill per file, sent as an email attachment.
 - History older than the app allows: LGPD request to Nubank's DPO (=dponubank.zendesk.com=).
 
-** Flow
+** Monthly flow
 
-1. Save statements to =infra/inbox/=.
-2. =M-x fin-bank-import= — parses every =.ofx= into =bank_txn=.  Re-importing is safe: rows dedup by =FITID=, files by content hash.
-3. =M-x fin-bank-reconcile= — review buffer for one year: month totals, near matches, bank-only, ledger-only.
-4. =M-x fin-bank-copy-missing= — bank-only rows as TSV in =entries= column order (=category= left empty); paste into the ODS.
-5. Fix the ODS, then =M-x fin=.
+1. Export last month's account statement and the closed card bill; copy both into =infra/inbox/=.
+2. Close the ODS in LibreOffice: its next save would undo the fix (=fin-bank-fix= refuses while the lock file exists).
+3. =M-x fin-bank-import= — renames files to =nubank-<account|card>-<start>_<end>.ofx= from the statement period, removes a re-export of a statement already there, imports new rows into =bank_txn=.  Rows dedup by =FITID= plus date, amount and memo (Nubank reuses a =FITID= across installments and refunds).
+4. =M-x fin-bank-fix= — writes the fixes; backup in =infra/backup/=.  =C-u M-x fin-bank-fix= is a dry run.
+5. Read /Needs a look/ in the report (salary gaps, refunds with no purchase), fix those by hand if needed.
+6. =M-x fin=.
 
-** Matching
+=M-x fin-bank-reconcile= (one year's review buffer) and =M-x fin-bank-copy-missing= (bank-only rows as TSV) remain for reading without writing.
 
-- Ledger compared only within the bank's date span (± window).  Future-dated rows are skipped on both sides: ledger plan placeholders, and installments an open card bill lists before they are charged.
-- *Exact*: same =type= and =amount=, dates within =fin-reconcile-window= (3 days).  Closest date wins; each ledger row matches once.
-- *Near*: same =type=, within the window, amount gap ≤ =fin-reconcile-near-ratio= (5%), and either a word shared by bank description and ledger =item= (case and accents ignored) or a gap ≤ =fin-reconcile-near-close-ratio= (1%).  Review only, never auto-fixed.
-- *Net rules* (=fin-reconcile-net-rules=, default =bp= − =cnpj=): each month's gross income and its booked deduction fold into one net row, since the bank only receives the net.
-- *Ignored* (=fin-bank-ignore-regexps=): "Pagamento de fatura" / "Pagamento recebido" — the bill payment seen from both sides; card purchases are reconciled from the bill instead.  Rows stay stored.
-- Investment moves (=Aplicação RDB=, =Resgate RDB=, crypto) are reconciled, since the ledger books them as =investments= entries.
-- Pre-2022 ledger holds monthly lumps: rely on the month totals section there.
+** What a fix does
+
+Before matching, bank rows the ledger never books on their own are folded or dropped:
+- a refund cancels its purchase; a partial refund reduces it; a refunded purchase already in the ledger is deleted from it;
+- IOF adds to, an installment discount (/Desconto Antecipação/) subtracts from, its purchase;
+- a Pix paid with /Pix no Crédito/ counts once, on the card;
+- card bill payments, card credit moved to the account and back, and transfers between own accounts (=fin-bank-own-regexps=) are ignored.
+
+Matching, in order:
+- *Exact*: same =type= and =amount=, dates within =fin-reconcile-window= (3 days).
+- *Near*: within the window, amount gap ≤ =fin-reconcile-near-ratio= (5%) with a word shared by bank payee and ledger =item= (case and accents ignored), or gap ≤ =fin-reconcile-near-close-ratio= (1%).
+- *Shifted*: the ledger date is off: same amount (≤ 1%) within =fin-reconcile-shift-window= (14 days) and the ledger row names the payee; or an exact amount of at least R$100 with cents within =fin-reconcile-exact-window= (31 days).
+- *Combined*: one ledger row booking two bank rows of the same payee.
+
+Then the fix:
+- *adds* each bank-only row under the category the ledger history books that payee under, else =fin-conv-default-category= (=free=); money received under =fin-conv-inflow-category= (=extras=); installments carry =installment x/y= in =note=;
+- *edits* a near or shifted ledger amount only when its =item= names the payee;
+- books savings moves (=fin-conv-savings-regexps=) as one net row per month, =investments= / =rdb= / note =net of month=, and rewrites it when the month changes;
+- *reports* a salary deposit (=fin-conv-salary-regexps=) that differs from =bp= − =cnpj=: the tax booked is a fact the bank cannot tell.  Net rules (=fin-reconcile-net-rules=) fold only item-less =cnpj= rows; a =cnpj= row with an item was paid on its own.
+
+Future-dated rows are skipped on both sides: ledger plan placeholders, and installments an open card bill lists before they are charged.
+
+** Personal settings
+
+=infra/config.el= (gitignored, loaded by =core.el= when present) holds what identifies you: =fin-bank-own-regexps= (own name, own company), =fin-conv-salary-regexps=, and =fin-conv-aliases= — payee words mapped to ledger item words (=("veronica" . "aluguel")=).
 
 ** Encoding
 
@@ -221,7 +246,7 @@ emacs -Q -batch \
 
 Coverage scope:
 - Pure formatters (=view/fmt.el=): every fn × edge (nil, 0, neg, k-suffix).
-- Bank: OFX parsing (closed and bare SGML, cents without floats, encoding detection), idempotent import, matching buckets (exact, near, net, ignored), review buffer and TSV export.
+- Bank: OFX parsing (closed and bare SGML, cents without floats, encoding detection, statement period), inbox naming and re-export removal, idempotent import, matching buckets (exact, near, shifted, net, ignored), conventions (refunds, IOF, discounts, Pix via card, combined rows, savings nets, salary reports), ODS writer (row identity, date order, fail-loud on ambiguity, re-zip round trip, backup), review buffer and TSV export.
 - ODS parser: cell-value precedence (=date-value= > =value= > text), =number-columns-repeated= expansion + cap.
 - DB layer: schema rebuild idempotency, cents-as-integer storage, composite PK semantics.
 - Domain queries: each public fn against seeded fixtures, including =/0=, =NULL=, future-month, multi-year scenarios.
@@ -235,11 +260,11 @@ Fixtures live in =tests/helpers.el= (=fin-test-with-db= macro, seed inserters, =
 - *ODS is canonical*, SQLite is a rebuildable mirror.  Edit in LibreOffice; refresh syncs.
 - *Cents storage*: all money fields are integers (BRL × 100); float drift eliminated for SUMs.
 - *Derived columns over stored*: share % for accounts/budget, monthly amortization for patrimony, fix-monthly for runway, investments amortization, future cashflow placeholders — all computed at query time.
-- *Zero external runtime deps*: Emacs 29 stdlib (=sqlite=, =libxml=, =dom=) + macOS =unzip=.
+- *Zero external runtime deps*: Emacs 29 stdlib (=sqlite=, =libxml=, =dom=) + macOS =unzip= / =zip=.
 - *Static HTML dashboard*: no server, no JS, no port.  =M-x fin= opens the latest.
 - *Currency reserved* (=entry.currency=) but BRL-only for now.
 - =infra/finances.db= gitignored; ODS tables regeneratable from the ODS, bank tables from =infra/inbox/= (=fin-db-rebuild= leaves them alone).
-- *Bank data fixes, never writes*: the ODS stays canonical; reconciliation only reports.
+- *Bank fixes the ODS, the ODS stays canonical*: =fin-bank-fix= edits =content.xml= as text so untouched rows stay byte-identical, keeps a backup, never touches the DB; =fin= then mirrors the fixed ODS.  It re-zips with =zip(1)=, the counterpart of the =unzip(1)= the reader uses.
 - *Tests are stdlib*: ERT only, no =buttercup= / =undercover= / external runners.  Keeps the zero-deps invariant honest.
 
 * License

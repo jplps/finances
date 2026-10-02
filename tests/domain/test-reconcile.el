@@ -178,6 +178,14 @@
                      (4 "2026-09-04" "in" "bp" nil 1015500 nil))
                    out))))
 
+(ert-deftest reconcile/net-leaves-itemized-deductions-alone ()
+  (let ((out (fin-reconcile-net
+              (list (test-reconcile--ledger 1 "2024-03-05" "in"  1015500 "bp")
+                    (test-reconcile--ledger 2 "2024-03-05" "out"  121830 "cnpj")
+                    (test-reconcile--ledger 3 "2024-03-12" "out"   16900 "cnpj" "goedert"))
+              '(("bp" . "cnpj")))))
+    (should (equal '(893670 16900) (mapcar (lambda (r) (nth 5 r)) out)))))
+
 (ert-deftest reconcile/net-sums-multiple-rows-in-month ()
   (let ((out (fin-reconcile-net
               (list (test-reconcile--ledger 1 "2026-10-01" "in"  1000 "bp")
@@ -207,6 +215,32 @@
                ledger 3)))
     (should (= 1 (length (plist-get res :matched))))
     (should (null (plist-get res :entry-only)))))
+
+(ert-deftest reconcile/shifted-pairs-related-rows-within-window ()
+  (let* ((fin-reconcile-shift-window 14) (fin-reconcile-near-close-ratio 0.01)
+         (res (fin-reconcile-shifted
+               (list (test-reconcile--bank "b1" "2025-05-06" "out" 36739 "KOMPRAO")
+                     (test-reconcile--bank "b2" "2025-05-06" "out" 2000 "Padaria"))
+               (list (test-reconcile--ledger 1 "2025-05-13" "out" 36739 "food" "komprão")
+                     (test-reconcile--ledger 2 "2025-05-25" "out" 2000 "food" "padaria"))
+               (lambda (b l) (fin-reconcile--share-word-p (nth 4 b) (nth 4 l))))))
+    (should (equal '(("b1" . 1)) (mapcar (lambda (p) (cons (caar p) (cadr p)))
+                                         (plist-get res :shifted))))
+    (should (equal '("b2") (mapcar #'car (plist-get res :bank-only))))
+    (should (equal '(2) (mapcar #'car (plist-get res :entry-only))))))
+
+(ert-deftest reconcile/shifted-exact-distinct-amount-ignores-words ()
+  (let* ((fin-reconcile-exact-window 31) (fin-reconcile-exact-min 10000)
+         (none (lambda (_b _l) nil))
+         (res (fin-reconcile-shifted
+               (list (test-reconcile--bank "rent" "2024-03-05" "out" 187797 "ZOOP BRASIL")
+                     (test-reconcile--bank "round" "2024-03-05" "out" 160000 "Pix"))
+               (list (test-reconcile--ledger 1 "2024-03-28" "out" 187797 "house" "aluguel")
+                     (test-reconcile--ledger 2 "2024-03-20" "out" 160000 "house" "aluguel"))
+               none)))
+    (should (equal '(("rent" . 1)) (mapcar (lambda (p) (cons (caar p) (cadr p)))
+                                           (plist-get res :shifted))))
+    (should (equal '("round") (mapcar #'car (plist-get res :bank-only))))))
 
 (provide 'test-reconcile)
 ;;; test-reconcile.el ends here

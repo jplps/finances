@@ -16,7 +16,8 @@
 ;; shown for review, never auto-fixed.
 ;;
 ;; Before matching, `fin-reconcile-net' folds each month's gross income and
-;; its booked deductions into one net row, since the bank only sees the net.
+;; its withheld deductions (item-less rows) into one net row, since the bank
+;; only sees the net.  A deduction with an item was paid on its own.
 
 (require 'cl-lib)
 (require 'calendar)
@@ -162,16 +163,16 @@ Every input row lands in exactly one bucket."
 
 (defun fin-reconcile--net-groups (ledger rules)
   "Hash (YYYY-MM . income-category) -> (INCOMES . DEDUCTIONS) for RULES.
-Only months holding both an income and a deduction row are kept."
+Deductions are item-less rows.  Only months holding both are kept."
   (let ((groups (make-hash-table :test #'equal)))
     (dolist (r ledger)
-      (pcase-let ((`(,_id ,date ,type ,cat . ,_) r))
+      (pcase-let ((`(,_id ,date ,type ,cat ,item . ,_) r))
         (dolist (rule rules)
           (let ((key (cons (substring date 0 7) (car rule))))
             (cond ((and (equal type "in") (equal cat (car rule)))
                    (push r (car (or (gethash key groups)
                                     (puthash key (cons nil nil) groups)))))
-                  ((and (equal type "out") (equal cat (cdr rule)))
+                  ((and (equal type "out") (equal cat (cdr rule)) (null item))
                    (push r (cdr (or (gethash key groups)
                                     (puthash key (cons nil nil) groups))))))))))
     (maphash (lambda (key g)
@@ -214,6 +215,59 @@ to `fin-reconcile-net-rules'.  Months whose net is not positive stay as is."
         (cond ((gethash (car r) first) (push (gethash (car r) first) out))
               ((not (gethash (car r) gone)) (push r out))))
       (nreverse out))))
+
+(defcustom fin-reconcile-shift-window 14
+  "Max day distance for a ledger row logged on a date other than the bank's."
+  :type 'natnum :group 'fin)
+
+(defcustom fin-reconcile-exact-window 31
+  "Max day distance for an exact, non-round amount of at least
+`fin-reconcile-exact-min' to count as the same transaction."
+  :type 'natnum :group 'fin)
+
+(defcustom fin-reconcile-exact-min 10000
+  "Smallest amount, in cents, for the exact-amount rule."
+  :type 'natnum :group 'fin)
+
+(defun fin-reconcile--distinct-amount-p (cents)
+  "Non-nil if CENTS is large and has cents, so unlikely to coincide."
+  (and (>= cents fin-reconcile-exact-min) (/= 0 (% cents 100))))
+
+(defun fin-reconcile--shift-pick (b entries used related)
+  "First unused row of ENTRIES that is the same transaction as bank row B.
+Either the amounts are equal and distinct within the exact window, or they
+differ by at most `fin-reconcile-near-close-ratio' within the shift window
+and RELATED holds for (B row)."
+  (let ((day (fin-reconcile--day (nth 1 b))) (a (nth 3 b)))
+    (cl-find-if
+     (lambda (l)
+       (and (not (gethash (car l) used))
+            (equal (nth 2 l) (nth 2 b))
+            (let ((dist (abs (- day (fin-reconcile--day (nth 1 l)))))
+                  (gap  (abs (- a (nth 5 l)))))
+              (or (and (= gap 0) (fin-reconcile--distinct-amount-p a)
+                       (<= dist fin-reconcile-exact-window))
+                  (and (<= dist fin-reconcile-shift-window)
+                       (<= gap (* fin-reconcile-near-close-ratio (max a (nth 5 l))))
+                       (funcall related b l))))))
+     entries)))
+
+(defun fin-reconcile-shifted (bank-only entry-only related)
+  "Pair leftovers whose ledger date differs from the bank's.
+BANK-ONLY and ENTRY-ONLY are the leftovers of `fin-reconcile-match'.
+RELATED is a predicate on (bank-row ledger-row).  Return a plist with
+:shifted (pairs), :bank-only and :entry-only."
+  (cl-assert (functionp related))
+  (let ((used (make-hash-table :test #'equal)) pairs rest)
+    (dolist (b bank-only)
+      (let ((l (fin-reconcile--shift-pick b entry-only used related)))
+        (if (not l)
+            (push b rest)
+          (puthash (car l) t used)
+          (push (cons b l) pairs))))
+    (list :shifted (nreverse pairs)
+          :bank-only (nreverse rest)
+          :entry-only (cl-remove-if (lambda (l) (gethash (car l) used)) entry-only))))
 
 (defun fin-reconcile-month-totals (bank ledger)
   "Per (month, type) sums of BANK and LEDGER amounts.

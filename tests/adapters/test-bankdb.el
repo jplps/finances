@@ -46,6 +46,14 @@
     (should (null (fin-bankdb-year 2099)))
     (should (= 2 (fin-db-count "bank_txn")))))
 
+(ert-deftest bankdb/since-filters-from-date-to-today ()
+  (fin-test-with-db
+    (fin-bankdb-insert (list (test-bankdb--row "old" "2023-12-31")
+                             (test-bankdb--row "new" "2024-01-01")
+                             (test-bankdb--row "future" "2099-01-01")))
+    (should (equal '("new") (mapcar #'car (fin-bankdb-since "2024-01-01"))))
+    (should-error (fin-bankdb-since "2024/01/01"))))
+
 (ert-deftest bankdb/file-import-recorded ()
   (fin-test-with-db
     (should-not (fin-bankdb-file-imported-p "abc"))

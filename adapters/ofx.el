@@ -52,6 +52,12 @@ UTF-8.  Invalid UTF-8 decodes to eight-bit raw bytes, which flags it."
         ((string-match-p "<BANKACCTFROM>" text) "account")
         (t (error "fin-ofx: no BANKACCTFROM/CCACCTFROM block"))))
 
+(defun fin-ofx-period (text)
+  "(KIND START END) of OFX TEXT: statement kind and ISO period dates."
+  (list (fin-ofx--kind text)
+        (fin-ofx--date (fin-ofx--field text "DTSTART"))
+        (fin-ofx--date (fin-ofx--field text "DTEND"))))
+
 (defun fin-ofx--txn (block)
   "STMTTRN BLOCK as (fitid date cents memo)."
   (let ((fitid (fin-ofx--field block "FITID")))
