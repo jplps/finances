@@ -21,6 +21,32 @@
 it, and the ledger lists single purchases from there on."
   :type 'string :group 'fin)
 
+(defcustom fin-bank-fix-unspent-categories '("investments" "retirement" "reserve" "cnpj")
+  "Ledger categories that are not Nubank spending: savings goals, withheld
+tax.  Left out when comparing a month's ledger with the bank."
+  :type '(repeat string) :group 'fin)
+
+(defun fin-bank-fix--ledger-out (from)
+  "Alist YYYY-MM -> ledger outflows since FROM, spent categories only."
+  (mapcar (lambda (r) (cons (car r) (cadr r)))
+          (fin-db-query
+           (format "SELECT strftime('%%Y-%%m', date), SUM(amount) FROM entry
+                     WHERE type = 'out' AND date >= ? AND date <= date('now', 'localtime')
+                       AND category NOT IN (%s)
+                     GROUP BY 1"
+                   (mapconcat (lambda (_) "?") fin-bank-fix-unspent-categories ","))
+           (cons from fin-bank-fix-unspent-categories))))
+
+(defun fin-bank-fix--months (bank from)
+  "(YYYY-MM bank-out ledger-out) per month of BANK rows, savings excluded."
+  (let ((sums (make-hash-table :test #'equal)) (ledger (fin-bank-fix--ledger-out from)) out)
+    (dolist (b bank)
+      (when (and (equal (nth 2 b) "out") (not (fin-conv--savings-p b)))
+        (let ((ym (substring (nth 1 b) 0 7)))
+          (puthash ym (+ (gethash ym sums 0) (nth 3 b)) sums))))
+    (maphash (lambda (ym v) (push (list ym v (or (cdr (assoc ym ledger)) 0)) out)) sums)
+    (sort out (lambda (a b) (string< (car a) (car b))))))
+
 (defun fin-bank-fix--history ()
   "(category item count) of every itemized outflow in the ledger."
   (fin-db-query
@@ -36,15 +62,13 @@ it, and the ledger lists single purchases from there on."
 
 (defun fin-bank-fix--reconcile (from)
   "Reconcile bank rows since FROM.  Return plist of match buckets and
-:notes (normalize removals), :history."
+:notes (normalize removals), :months, :history."
   (let* ((norm   (fin-conv-normalize (fin-bankdb-since from)))
          (bank   (cl-remove-if #'fin-bank--ignored-p (plist-get norm :rows)))
          (span   (fin-bank--date-span bank))
          (raw    (fin-bank--ledger-span span (max fin-reconcile-shift-window
                                                   fin-reconcile-exact-window)))
-         ;; Monthly savings nets are compared by month, never row by row.
-         (nets   (cl-remove-if-not #'fin-conv--savings-ledger-p raw))
-         (ledger (fin-reconcile-net (cl-set-difference raw nets)))
+         (ledger (fin-reconcile-net raw))
          (hist   (fin-bank-fix--history))
          (res    (fin-reconcile-match bank ledger))
          (saving (cl-remove-if-not #'fin-conv--savings-p (plist-get res :bank-only)))
@@ -54,7 +78,8 @@ it, and the ledger lists single purchases from there on."
     (list :matched (plist-get res :matched) :near (plist-get res :near)
           :shifted (plist-get sh :shifted)
           :bank-only (append (plist-get sh :bank-only) saving)
-          :entry-only (append (plist-get sh :entry-only) nets) :notes (plist-get norm :notes)
+          :entry-only (plist-get sh :entry-only) :notes (plist-get norm :notes)
+          :months (fin-bank-fix--months bank from)
           :history hist)))
 
 (defun fin-bank-fix--key (l)
@@ -70,8 +95,8 @@ it, and the ledger lists single purchases from there on."
     (dolist (a actions)
       (pcase a
         (`(:add ,fields ,_)
-         (pcase-let ((`(,date ,type ,cat ,item ,amount ,note) fields))
-           (push (list :add (list date type cat (or item "") amount note)) out)))
+         (pcase-let ((`(,date ,type ,cat ,item ,amount ,k ,n) fields))
+           (push (list :add (list date type cat (or item "") amount k n)) out)))
         (`(:edit ,l ,new ,_)
          (let ((k (fin-bank-fix--key l)))
            (unless (or (member k deleted) (member k edited) (= new (nth 4 k)))
@@ -97,9 +122,9 @@ it, and the ledger lists single purchases from there on."
                     "Dry run: nothing written.\n"))
           (fin-bank-fix--insert-section
            "Added" (of :add)
-           (lambda (a) (pcase-let ((`(,d ,ty ,c ,i ,amt ,n) (cadr a)))
+           (lambda (a) (pcase-let ((`(,d ,ty ,c ,i ,amt ,k ,n) (cadr a)))
                          (format "%s %-3s %10s  %s / %s%s  ← %s" d ty (money amt) c (or i "-")
-                                 (if n (format " (%s)" n) "") (caddr a)))))
+                                 (if k (format " (%d/%d)" k n) "") (caddr a)))))
           (fin-bank-fix--insert-section
            "Edited" (of :edit)
            (lambda (a) (let ((l (cadr a)))
@@ -136,7 +161,7 @@ With prefix arg DRY-RUN, only report.  Run `fin' afterwards."
                                  :shifted (plist-get r :shifted) :bank-only (plist-get r :bank-only)
                                  :entry-only (plist-get r :entry-only)
                                  :history (plist-get r :history)
-                                 :today (format-time-string "%Y-%m-%d")))
+                                 :months (plist-get r :months)))
          (changes (fin-bank-fix--changes actions))
          (backup (when (and changes (not dry-run))
                    (fin-odsw-save fin-ods-path (fin-odsw-apply (fin-odsw-read fin-ods-path) changes)))))

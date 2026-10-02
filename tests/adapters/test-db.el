@@ -48,13 +48,20 @@ parts are actual values."
     (should-error
      (fin-test-insert-budget "retirement" "investments" "var" 999 nil))))
 
+(ert-deftest db/entry-installment-must-be-whole-k-of-n ()
+  (fin-test-with-db
+    (fin-test-insert-entry "2025-01-01" "out" "car" 100 "seguro" 3 10)
+    (should-error (fin-test-insert-entry "2025-01-01" "out" "car" 100 "seguro" 11 10))
+    (should-error (fin-test-insert-entry "2025-01-01" "out" "car" 100 "seguro" 3 nil))
+    (should-error (fin-test-insert-entry "2025-01-01" "out" "car" 100 "seguro" 0 10))))
+
 (ert-deftest db/bulk-insert-and-truncate ()
   (fin-test-with-db
     (fin-db-bulk-insert
-     "entry" '("date" "type" "category" "amount" "currency")
-     '(("2025-01-01" "in"  "salary" 100 "BRL")
-       ("2025-01-02" "out" "food"    50 "BRL")
-       ("2025-01-03" "out" "food"    30 "BRL")))
+     "entry" '("date" "type" "category" "amount")
+     '(("2025-01-01" "in"  "salary" 100)
+       ("2025-01-02" "out" "food"    50)
+       ("2025-01-03" "out" "food"    30)))
     (should (= 3 (fin-db-count "entry")))
     (fin-db-truncate "entry")
     (should (= 0 (fin-db-count "entry")))))

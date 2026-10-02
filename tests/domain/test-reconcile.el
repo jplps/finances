@@ -242,5 +242,17 @@
                                            (plist-get res :shifted))))
     (should (equal '("round") (mapcar #'car (plist-get res :bank-only))))))
 
+(ert-deftest reconcile/shifted-installment-matches-on-k-of-n ()
+  (let* ((none (lambda (_b _l) nil))
+         (res (fin-reconcile-shifted
+               (list (test-reconcile--bank "rc" "2024-06-02" "out" 28008 "Rc Brazil Ltda. - Parcela 1/10")
+                     (test-reconcile--bank "x"  "2024-06-02" "out" 28008 "Rc Brazil Ltda. - Parcela 2/10"))
+               (list (list 1 "2024-05-23" "out" "free" "long john" 27999 "1/10"))
+               none)))
+    (should (equal '(("rc" . 1)) (mapcar (lambda (p) (cons (caar p) (cadr p))) (plist-get res :shifted))))
+    (should (equal "3/10" (fin-reconcile-installment "Mp *X - Parcela 3/10")))
+    (should (equal "3/10" (fin-reconcile-installment "3/10")))
+    (should (null (fin-reconcile-installment "Padaria 3/10")))))
+
 (provide 'test-reconcile)
 ;;; test-reconcile.el ends here

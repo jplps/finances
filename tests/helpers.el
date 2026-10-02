@@ -46,12 +46,12 @@ Closes connection and deletes the file after."
        (fin-db-close)
        (ignore-errors (delete-file tmp)))))
 
-(defun fin-test-insert-entry (date type cat amount &optional item note)
+(defun fin-test-insert-entry (date type cat amount &optional item installment installments)
   "Insert one row into entry. AMOUNT in cents."
   (fin-db-exec
-   "INSERT INTO entry(date,type,category,item,amount,note,currency)
-    VALUES(?,?,?,?,?,?, 'BRL')"
-   (list date type cat item amount note)))
+   "INSERT INTO entry(date,type,category,item,amount,installment,installments)
+    VALUES(?,?,?,?,?,?,?)"
+   (list date type cat item amount installment installments)))
 
 (defun fin-test-insert-budget (cat parent type amount share)
   (fin-db-exec

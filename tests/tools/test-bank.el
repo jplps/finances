@@ -11,7 +11,7 @@
   (should (equal "0.00"     (fin-bank--cents 0))))
 
 (ert-deftest bank/tsv-row-follows-ods-entry-columns ()
-  (should (equal "2025-06-10\tout\t\tpadaria x\t1234\tBRL\t"
+  (should (equal "2025-06-10\tout\t\tpadaria x\t1234\t\t"
                  (fin-bank--tsv-row
                   '("id1" "2025-06-10" "out" 1234 "  Padaria X ")))))
 
@@ -42,7 +42,11 @@
                          ("b" "test" "card" "2025-06-12" "out" 2500 "Mercado")))
     (let ((kill-ring nil))
       (fin-bank-copy-missing 2025)
-      (should (equal "2025-06-12\tout\t\tmercado\t2500\tBRL\t" (car kill-ring))))))
+      (should (equal "2025-06-12\tout\t\tmercado\t2500\t\t" (car kill-ring))))))
+
+(ert-deftest bank/tsv-row-carries-installment ()
+  (should (equal "2025-06-10\tout\t\tdecathlon - parcela 2/6\t6499\t2\t6"
+                 (fin-bank--tsv-row '("id" "2025-06-10" "out" 6499 "Decathlon - Parcela 2/6")))))
 
 (ert-deftest bank/reconcile-rejects-bad-year ()
   (should-error (fin-bank-reconcile 25) :type 'user-error))

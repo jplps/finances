@@ -70,7 +70,8 @@ Return (FIRST LAST ROWS): rows must be contiguous."
         (t "")))
 
 (defun fin-odsw--row-values (row)
-  "(date type category item amount currency note) of ROW; \"\" for empty."
+  "(date type category item amount installment installments) of ROW;
+\"\" for empty."
   (let ((pos 0) vals)
     (while (and (< (length vals) 7) (string-match fin-odsw--cell-re row pos))
       ;; Capture before `fin-odsw--attr' clobbers the match data.
@@ -92,18 +93,28 @@ Return (FIRST LAST ROWS): rows must be contiguous."
     (format "<table:table-cell office:value-type=\"string\" calcext:value-type=\"string\"><text:p>%s</text:p></table:table-cell>"
             (xml-escape-string s))))
 
-(defun fin-odsw-row-xml (date type category item amount note)
-  "Entries row in the sheet's own cell format.  AMOUNT in cents."
+(defun fin-odsw--number-cell (n)
+  (if (null n)
+      "<table:table-cell/>"
+    (format "<table:table-cell office:value-type=\"float\" office:value=\"%d\" calcext:value-type=\"float\"><text:p>%d</text:p></table:table-cell>"
+            n n)))
+
+(defun fin-odsw-row-xml (date type category item amount installment installments)
+  "Entries row in the sheet's own cell format.  AMOUNT in cents;
+INSTALLMENT of INSTALLMENTS both nil or 1 <= INSTALLMENT <= INSTALLMENTS."
   (cl-assert (string-match-p "\\`[0-9]\\{4\\}-[0-9]\\{2\\}-[0-9]\\{2\\}\\'" date))
   (cl-assert (and (integerp amount) (> amount 0)))
   (cl-assert (member type '("in" "out")))
+  (cl-assert (or (and (null installment) (null installments))
+                 (and (integerp installment) (integerp installments)
+                      (<= 1 installment installments)))
+             nil "fin-odsw: bad installment %S/%S" installment installments)
   (concat "<table:table-row table:style-name=\"ro1\">"
           (format "<table:table-cell office:value-type=\"date\" office:date-value=\"%s\" calcext:value-type=\"date\"><text:p>%s/%s/%s 12:00 AM</text:p></table:table-cell>"
                   date (substring date 5 7) (substring date 8 10) (substring date 2 4))
           (fin-odsw--string-cell type) (fin-odsw--string-cell category) (fin-odsw--string-cell item)
-          (format "<table:table-cell office:value-type=\"float\" office:value=\"%d\" calcext:value-type=\"float\"><text:p>%d</text:p></table:table-cell>"
-                  amount amount)
-          (fin-odsw--string-cell "BRL") (fin-odsw--string-cell note)
+          (fin-odsw--number-cell amount)
+          (fin-odsw--number-cell installment) (fin-odsw--number-cell installments)
           "</table:table-row>"))
 
 ;;; ── Apply ──────────────────────────────────────────────────
@@ -139,7 +150,7 @@ Within one date, existing rows come first."
   "CONTENT with CHANGES applied to the entries sheet.  Each change is
   (:edit (date type category item amount) NEW-AMOUNT)
   (:delete (date type category item amount))
-  (:add (date type category item amount note))
+  (:add (date type category item amount installment installments))
 Item is \"\" when empty.  Signals unless every edit and delete hits one row."
   (pcase-let* ((`(,start . ,end) (fin-odsw--sheet-bounds content))
                (`(,first ,last ,rows) (fin-odsw--rows content start end))

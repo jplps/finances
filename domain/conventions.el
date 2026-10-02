@@ -10,17 +10,22 @@
 ;; - Salary is booked gross under `bp' with the tax under `cnpj'; a deposit
 ;;   that differs from `bp' − `cnpj' is reported, never fixed: the tax
 ;;   booked is a fact the bank cannot tell.
-;; - Savings moves are booked as one net row per month.
+;; - Savings moves are transfers between own accounts: the ledger books them
+;;   per goal (`investments', `retirement', `reserve'), never from the bank.
+;; - Money received from people is booked as income under
+;;   `fin-conv-inflow-category'.
+;; - A month never gets more outflows added than the bank spent beyond what
+;;   the ledger already holds; otherwise its bank-only rows are reported.
 ;; - Anything else is added under the category its words suggest from the
 ;;   ledger's history, else `fin-conv-default-category'.
 ;;
 ;; Bank row:   (id date type amount description)
-;; Ledger row: (id date type category item amount note)
+;; Ledger row: (id date type category item amount "k/n"-or-nil)
 
 (require 'cl-lib)
 (require 'reconcile)
 
-(defcustom fin-conv-refund-re "\\`\\(Estorno\\|Reembolso recebido\\|Devolução\\)"
+(defcustom fin-conv-refund-re "\\`\\(Estorno\\|Reembolso recebido\\|Devolução\\|Crédito de Confiança\\)"
   "Bank descriptions of money returned for a purchase."
   :type 'regexp :group 'fin)
 
@@ -35,10 +40,6 @@
     "\\`Dinheiro guardado" "\\`Dinheiro resgatado")
   "Bank descriptions of moves between the account and savings."
   :type '(repeat regexp) :group 'fin)
-
-(defcustom fin-conv-savings-row '("investments" "rdb" "net of month")
-  "(CATEGORY ITEM NOTE) of the monthly net savings row."
-  :type '(list string string string) :group 'fin)
 
 (defcustom fin-conv-salary-regexps nil
   "Bank descriptions of salary deposits, checked against `bp' − `cnpj'."
@@ -136,15 +137,16 @@ Shared word, alias, or the category the history suggests for the payee."
          (d (replace-regexp-in-string "\\*.*\\'" "" d)))
     (downcase (string-trim d "[ \".]+" "[ \".]+"))))
 
-(defun fin-conv-installment (desc)
-  "Ledger note for an installment DESC, or nil."
-  (when (string-match "Parcela \\([0-9]+\\)/\\([0-9]+\\)" desc)
-    (format "installment %s/%s" (match-string 1 desc) (match-string 2 desc))))
-
 (defun fin-conv--payer (desc)
   "First name of the person in a received-transfer DESC."
   (let ((who (cadr (split-string desc " - "))))
     (downcase (car (split-string (or who (fin-conv-item desc)))))))
+
+(defun fin-conv-installment (desc)
+  "(K N) of the installment named in bank DESC, or (nil nil)."
+  (if (string-match "Parcela \\([0-9]+\\)/\\([0-9]+\\)" desc)
+      (list (string-to-number (match-string 1 desc)) (string-to-number (match-string 2 desc)))
+    (list nil nil)))
 
 ;;; ── Normalize: before matching ─────────────────────────────
 
@@ -301,19 +303,22 @@ Return (BOOKED-BANK-ROWS . USED-LEDGER-ROWS)."
   (list :report net (format "salary received %s, ledger bp − cnpj %s"
                             (fin-conv--money bank-amount) (fin-conv--money (nth 5 net)))))
 
+(defun fin-conv--names-payee-p (b l)
+  "Non-nil if ledger row L's item names the payee of bank row B."
+  (and (nth 4 l) (fin-conv--item-hit-p (nth 4 b) (fin-conv--bank-words (nth 4 b)) (nth 4 l))))
+
 (defun fin-conv--pair-actions (near shifted)
-  "Edits from NEAR and SHIFTED pairs when the ledger item names the payee;
-salary gaps are reported."
+  "Edits setting the bank amount on NEAR and SHIFTED pairs whose ledger item
+names the payee; salary gaps are reported."
   (let (acts)
     (dolist (p near)
       (let ((b (car p)) (l (cdr p)))
         (cond ((fin-conv--net-row-p l) (push (fin-conv--salary-report l (nth 3 b)) acts))
-              ((and (nth 4 l) (fin-conv--item-hit-p (nth 4 b) (fin-conv--bank-words (nth 4 b)) (nth 4 l)))
+              ((fin-conv--names-payee-p b l)
                (push (list :edit l (nth 3 b) (concat "bank: " (nth 4 b))) acts)))))
     (dolist (p shifted)
       (let ((b (car p)) (l (cdr p)))
-        (when (and (/= (nth 3 b) (nth 5 l)) (not (fin-conv--net-row-p l)) (nth 4 l)
-                   (fin-conv--item-hit-p (nth 4 b) (fin-conv--bank-words (nth 4 b)) (nth 4 l)))
+        (when (and (/= (nth 3 b) (nth 5 l)) (not (fin-conv--net-row-p l)) (fin-conv--names-payee-p b l))
           (push (list :edit l (nth 3 b) (concat "bank: " (nth 4 b))) acts))))
     (nreverse acts)))
 
@@ -328,64 +333,61 @@ salary gaps are reported."
     (if p (list :delete (cdr p) (concat "refunded: " (nth 4 refund)))
       (list :report refund "refund with no purchase found"))))
 
-(defun fin-conv--savings-actions (rows existing today)
-  "Monthly net of savings ROWS against EXISTING net rows (ledger rows)."
-  (pcase-let ((`(,cat ,item ,note) fin-conv-savings-row)
-              (net (make-hash-table :test #'equal)) (acts nil))
-    (dolist (r rows)
-      (let ((ym (substring (nth 1 r) 0 7)))
-        (puthash ym (+ (gethash ym net 0) (if (equal (nth 2 r) "out") (nth 3 r) (- (nth 3 r)))) net)))
-    (maphash
-     (lambda (ym n)
-       (let ((old (cl-find-if (lambda (l) (string-prefix-p ym (nth 1 l))) existing))
-             (type (if (> n 0) "out" "in")))
-         (cond ((zerop n) (when old (push (list :delete old "savings net is zero") acts)))
-               ((null old)
-                (push (list :add (list (if (string-prefix-p ym today) today (concat ym "-28"))
-                                       type cat item (abs n) note)
-                            "savings net")
-                      acts))
-               ((not (and (equal (nth 2 old) type) (= (nth 5 old) (abs n))))
-                (push (list :delete old "savings net changed") acts)
-                (push (list :add (list (nth 1 old) type cat item (abs n) note) "savings net") acts)))))
-     net)
-    (nreverse acts)))
+;;; ── Plan: adds within the month's room ─────────────────────
 
 (defun fin-conv--add-action (b history)
-  "Add bank row B: money in as an inflow, else its suggested category."
-  (if (equal (nth 2 b) "in")
-      (list :add (list (nth 1 b) "in" fin-conv-inflow-category
-                       (if (string-match-p "Transferência" (nth 4 b))
-                           (fin-conv--payer (nth 4 b))
-                         (fin-conv-item (nth 4 b)))
-                       (nth 3 b) nil)
-            (nth 4 b))
-    (let ((s (fin-conv-suggest (nth 4 b) history)))
-      (list :add (list (nth 1 b) (nth 2 b) (or (car s) fin-conv-default-category)
-                       (or (cdr s) (fin-conv-item (nth 4 b))) (nth 3 b)
+  "Add out row B under its suggested category, else the default."
+  (let ((s (fin-conv-suggest (nth 4 b) history)))
+    (list :add (append (list (nth 1 b) "out" (or (car s) fin-conv-default-category)
+                             (or (cdr s) (fin-conv-item (nth 4 b))) (nth 3 b))
                        (fin-conv-installment (nth 4 b)))
-            (nth 4 b)))))
+          (nth 4 b))))
 
-(defun fin-conv--savings-ledger-p (l)
-  (pcase-let ((`(,cat ,item ,note) fin-conv-savings-row))
-    (and (equal (nth 3 l) cat) (equal (nth 4 l) item) (equal (nth 6 l) note))))
+(defun fin-conv--inflow-action (b)
+  "Add money received B as income from its payer."
+  (list :add (list (nth 1 b) "in" fin-conv-inflow-category
+                   (if (string-match-p "Transferência" (nth 4 b))
+                       (fin-conv--payer (nth 4 b))
+                     (fin-conv-item (nth 4 b)))
+                   (nth 3 b) nil nil)
+        (nth 4 b)))
 
-(cl-defun fin-conv-plan (&key matched near shifted bank-only entry-only history today)
+(defun fin-conv--within-room (adds months)
+  "ADDS kept for months whose room holds them all; the others reported.
+MONTHS is a list of (YYYY-MM bank-out ledger-out): room is their gap."
+  (let ((sums (make-hash-table :test #'equal)))
+    (dolist (a adds)
+      (let ((ym (substring (car (cadr a)) 0 7)))
+        (puthash ym (+ (gethash ym sums 0) (nth 4 (cadr a))) sums)))
+    (mapcar
+     (lambda (a)
+       (pcase-let* ((fields (cadr a))
+                    (`(,ym ,bank ,ledger) (or (assoc (substring (car fields) 0 7) months)
+                                              (list (substring (car fields) 0 7) 0 0))))
+         (if (<= (+ ledger (gethash ym sums)) bank)
+             a
+           (list :report (list nil (car fields) "out" (nth 4 fields) (caddr a))
+                 (format "%s: ledger %s + bank-only %s > bank %s"
+                         ym (fin-conv--money ledger) (fin-conv--money (gethash ym sums))
+                         (fin-conv--money bank))))))
+     adds)))
+
+(cl-defun fin-conv-plan (&key matched near shifted bank-only entry-only history months)
   "Actions fixing the ledger from a reconcile result.
 MATCHED, NEAR, SHIFTED are (bank . ledger) pairs; BANK-ONLY and ENTRY-ONLY
-leftovers; HISTORY (category item count) rows; TODAY an ISO date.
+leftovers; HISTORY (category item count) rows; MONTHS (YYYY-MM bank-out
+ledger-out) totals bounding what a month may get added.
 Each action is one of
-  (:add (date type category item amount note) source)
+  (:add (date type category item amount installment installments) source)
   (:edit ledger-row new-amount reason)
   (:delete ledger-row reason)
   (:report row reason)   needs a look
   (:skip row reason)     left out on purpose"
-  (cl-assert (stringp today))
   (let* ((pairs (append matched shifted near))
          (nets (cl-remove-if-not #'fin-conv--net-row-p entry-only))
          (comb (fin-conv--combined bank-only entry-only))
          (bank-only (cl-set-difference bank-only (car comb)))
-         (savings nil) (acts nil))
+         (adds nil) (acts nil))
     (dolist (b bank-only)
       (cond
        ((fin-conv--salary-p b)
@@ -395,12 +397,12 @@ Each action is one of
             (setq nets (delq n nets))
             (push (fin-conv--salary-report n (nth 3 b)) acts))))
        ((fin-conv--refund-p b) (push (fin-conv--refund-action b pairs) acts))
-       ((fin-conv--savings-p b) (push b savings))
-       (t (push (fin-conv--add-action b history) acts))))
+       ((fin-conv--savings-p b) (push (list :skip b "savings move, booked per goal") acts))
+       ((equal (nth 2 b) "in") (push (fin-conv--inflow-action b) acts))
+       (t (push (fin-conv--add-action b history) adds))))
     (append (fin-conv--pair-actions near shifted)
             (nreverse acts)
-            (fin-conv--savings-actions savings (cl-remove-if-not #'fin-conv--savings-ledger-p entry-only)
-                                       today))))
+            (fin-conv--within-room (nreverse adds) months))))
 
 (provide 'conventions)
 ;;; conventions.el ends here

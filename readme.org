@@ -121,12 +121,13 @@ Schema is auto-created on first =M-x fin-db-rebuild= (or =finances fin-db-rebuil
 Four sheets.  All category/name values *lowercase kebab-case*; item descriptions keep case + accents.  All monetary values are *integer cents*.
 
 ** =entries=
-=date | type | category | item | amount | currency | note=
+=date | type | category | item | amount | installment | installments=
 
 - =type= ∈ {=in=, =out=}
 - CNPJ tax is a normal =type=out= row under =category=cnpj= (positive cents).  It is netted out of gross income in the liquid base (see /Liquid/), not treated as ordinary spend there.
 - Every entry is a leaf; aggregations sum all rows of the relevant =type=.  An un-itemized lump just leaves =item= NULL and surfaces under its category in the cashflow drilldown.
 - =amount= = cents (integer).
+- =installment= / =installments=: whole numbers /k/ of /n/ for a purchase paid in installments, one row per installment; both empty otherwise.  Sync rejects anything but 1 ≤ k ≤ n.
 
 ** =plan=
 =category | parent | type | amount | share=
@@ -180,18 +181,19 @@ Before matching, bank rows the ledger never books on their own are folded or dro
 - a refund cancels its purchase; a partial refund reduces it; a refunded purchase already in the ledger is deleted from it;
 - IOF adds to, an installment discount (/Desconto Antecipação/) subtracts from, its purchase;
 - a Pix paid with /Pix no Crédito/ counts once, on the card;
-- card bill payments, card credit moved to the account and back, and transfers between own accounts (=fin-bank-own-regexps=) are ignored.
+- card bill payments, card credit moved to the account and back, cent-level debt adjustments, and transfers between own accounts (=fin-bank-own-regexps=) are ignored;
+- savings moves (=fin-conv-savings-regexps=: RDB, crypto, ETF) are skipped: the ledger books savings per goal (=investments= / =retirement= / =reserve=, balances in the =accounts= sheet).
 
 Matching, in order:
 - *Exact*: same =type= and =amount=, dates within =fin-reconcile-window= (3 days).
 - *Near*: within the window, amount gap ≤ =fin-reconcile-near-ratio= (5%) with a word shared by bank payee and ledger =item= (case and accents ignored), or gap ≤ =fin-reconcile-near-close-ratio= (1%).
-- *Shifted*: the ledger date is off: same amount (≤ 1%) within =fin-reconcile-shift-window= (14 days) and the ledger row names the payee; or an exact amount of at least R$100 with cents within =fin-reconcile-exact-window= (31 days).
+- *Shifted*: the ledger date is off: same amount (≤ 1%) within =fin-reconcile-shift-window= (14 days) and the ledger row names the payee; the same installment (bank =Parcela k/n=, ledger =installment= / =installments=, amount ≤ 1%) within =fin-reconcile-exact-window= (31 days), since the ledger names installments after the item and dates the first at purchase; or an exact amount of at least R$100 with cents within 31 days.
 - *Combined*: one ledger row booking two bank rows of the same payee.
 
 Then the fix:
-- *adds* each bank-only row under the category the ledger history books that payee under, else =fin-conv-default-category= (=free=); money received under =fin-conv-inflow-category= (=extras=); installments carry =installment x/y= in =note=;
-- *edits* a near or shifted ledger amount only when its =item= names the payee;
-- books savings moves (=fin-conv-savings-regexps=) as one net row per month, =investments= / =rdb= / note =net of month=, and rewrites it when the month changes;
+- *adds* each bank-only outflow under the category the ledger history books that payee under, else =fin-conv-default-category= (=free=), installments with /k/ and /n/ from the bank's =Parcela k/n= — but only while the month's ledger spending stays within the bank's (categories in =fin-bank-fix-unspent-categories= left out); a month already at the bank's total gets its bank-only rows reported instead, since the ledger books them in its own shape;
+- *adds* money received from people under =fin-conv-inflow-category= (=extras=);
+- *edits* a near or shifted ledger amount to the bank's when its =item= names the payee;
 - *reports* a salary deposit (=fin-conv-salary-regexps=) that differs from =bp= − =cnpj=: the tax booked is a fact the bank cannot tell.  Net rules (=fin-reconcile-net-rules=) fold only item-less =cnpj= rows; a =cnpj= row with an item was paid on its own.
 
 Future-dated rows are skipped on both sides: ledger plan placeholders, and installments an open card bill lists before they are charged.
@@ -262,7 +264,7 @@ Fixtures live in =tests/helpers.el= (=fin-test-with-db= macro, seed inserters, =
 - *Derived columns over stored*: share % for accounts/budget, monthly amortization for patrimony, fix-monthly for runway, investments amortization, future cashflow placeholders — all computed at query time.
 - *Zero external runtime deps*: Emacs 29 stdlib (=sqlite=, =libxml=, =dom=) + macOS =unzip= / =zip=.
 - *Static HTML dashboard*: no server, no JS, no port.  =M-x fin= opens the latest.
-- *Currency reserved* (=entry.currency=) but BRL-only for now.
+- *BRL only*: no currency column; every amount is BRL cents.
 - =infra/finances.db= gitignored; ODS tables regeneratable from the ODS, bank tables from =infra/inbox/= (=fin-db-rebuild= leaves them alone).
 - *Bank fixes the ODS, the ODS stays canonical*: =fin-bank-fix= edits =content.xml= as text so untouched rows stay byte-identical, keeps a backup, never touches the DB; =fin= then mirrors the fixed ODS.  It re-zips with =zip(1)=, the counterpart of the =unzip(1)= the reader uses.
 - *Tests are stdlib*: ERT only, no =buttercup= / =undercover= / external runners.  Keeps the zero-deps invariant honest.

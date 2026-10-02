@@ -26,9 +26,12 @@
        category   TEXT NOT NULL,
        item       TEXT,
        amount     INTEGER NOT NULL,
-       currency   TEXT NOT NULL DEFAULT 'BRL',
-       note       TEXT,
-       created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S','now')))"
+       installment  INTEGER,
+       installments INTEGER,
+       created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S','now')),
+       CHECK ((installment IS NULL AND installments IS NULL)
+              OR (installment IS NOT NULL AND installments IS NOT NULL
+                  AND installment BETWEEN 1 AND installments)))"
     "CREATE INDEX entry_date ON entry(date)"
     "CREATE INDEX entry_cat  ON entry(category)"
     "CREATE INDEX entry_item ON entry(item)"

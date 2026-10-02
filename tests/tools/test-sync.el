@@ -27,23 +27,34 @@ Cells must be strings; numerics expressed as <table-cell value=\"X\">."
 
 ;;; ── --entries row builder ──────────────────────────────────
 
-(ert-deftest sync/entries-builder-rounds-amount-defaults-currency ()
+(ert-deftest sync/entries-builder-rounds-amount-reads-installments ()
   (let* ((dom (fin-test--sheet-dom
                "entries"
-               '(("date" "type" "category" "item" "amount" "currency" "note")
-                 ("2025-01-31" "in" "salary" nil 5000.51 nil nil))))
+               '(("date" "type" "category" "item" "amount" "installment" "installments")
+                 ("2025-01-31" "in" "salary" nil 5000.51 nil nil)
+                 ("2025-02-02" "out" "car" "seguro" 14023 3 10))))
          (out (car (fin-sync--entries dom))))
+    (should (equal '("2025-02-02" "out" "car" "seguro" 14023 3 10) (cadr (fin-sync--entries dom))))
     (should (equal "2025-01-31" (nth 0 out)))
     (should (equal "in"         (nth 1 out)))
     (should (equal "salary"     (nth 2 out)))
     (should (null              (nth 3 out)))
     (should (= 5001            (nth 4 out)))   ; rounded
-    (should (equal "BRL"        (nth 5 out))))) ; default
+    (should (equal '(nil nil)   (nthcdr 5 out)))))
+
+(ert-deftest sync/entries-builder-rejects-bad-installments ()
+  (dolist (kn '((3 nil) (nil 10) (11 10) (0 10) (1.5 10)))
+    (should-error
+     (fin-sync--entries (fin-test--sheet-dom
+                         "entries"
+                         `(("date" "type" "category" "item" "amount" "installment" "installments")
+                           ("2025-01-31" "out" "car" "x" 100 ,@kn))))
+     :type 'user-error)))
 
 (ert-deftest sync/entries-builder-skips-blank-date-rows ()
   (let* ((dom (fin-test--sheet-dom
                "entries"
-               '(("date" "type" "category" "item" "amount" "currency" "note")
+               '(("date" "type" "category" "item" "amount" "installment" "installments")
                  (nil    "in"   "salary"   nil    1000.0 nil nil)
                  ("2025-01-31" "in" "salary" nil 1000.0 nil nil)))))
     (should (= 1 (length (fin-sync--entries dom))))))
@@ -94,8 +105,8 @@ Cells must be strings; numerics expressed as <table-cell value=\"X\">."
                    "  <table-cell><p>category</p></table-cell>"
                    "  <table-cell><p>item</p></table-cell>"
                    "  <table-cell><p>amount</p></table-cell>"
-                   "  <table-cell><p>currency</p></table-cell>"
-                   "  <table-cell><p>note</p></table-cell>"
+                   "  <table-cell><p>installment</p></table-cell>"
+                   "  <table-cell><p>installments</p></table-cell>"
                    "</table-row>"
                    "<table-row>"
                    "  <table-cell date-value=\"2025-01-31\"><p>2025-01-31</p></table-cell>"

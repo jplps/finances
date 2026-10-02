@@ -14,14 +14,22 @@
 (defun fin-sync--sheet-rows (dom name)
   (cdr (fin-ods-rows-trimmed (fin-ods-sheet dom name))))
 
+(defun fin-sync--installment (row)
+  "(K N) of entries ROW's installment columns, or (nil nil) when both empty.
+Signals unless both are whole numbers with 1 <= K <= N."
+  (let ((k (nth 5 row)) (n (nth 6 row)))
+    (cond ((and (null k) (null n)) (list nil nil))
+          ((and (numberp k) (numberp n) (= k (round k)) (= n (round n)) (<= 1 k n))
+           (list (round k) (round n)))
+          (t (user-error "entries: bad installment %S/%S in row %S" k n row)))))
+
 (defun fin-sync--entries (dom)
   (let (out)
     (dolist (r (fin-sync--sheet-rows dom "entries"))
       (when (car r)
-        (push (list (nth 0 r) (nth 1 r) (nth 2 r) (nth 3 r)
-                    (and (numberp (nth 4 r)) (round (nth 4 r)))
-                    (or (nth 5 r) "BRL")
-                    (nth 6 r))
+        (push (append (list (nth 0 r) (nth 1 r) (nth 2 r) (nth 3 r)
+                            (and (numberp (nth 4 r)) (round (nth 4 r))))
+                      (fin-sync--installment r))
               out)))
     (nreverse out)))
 
@@ -56,7 +64,7 @@
     (nreverse out)))
 
 (defconst fin-sync--entry-cols
-  '("date" "type" "category" "item" "amount" "currency" "note"))
+  '("date" "type" "category" "item" "amount" "installment" "installments"))
 
 (defconst fin-sync--plan-cols
   '("category" "parent" "type" "amount" "share"))

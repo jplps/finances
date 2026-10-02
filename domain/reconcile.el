@@ -3,7 +3,7 @@
 ;; Pure functions over row lists; no DB access.
 ;;
 ;; Bank row:   (id date type amount description)
-;; Ledger row: (id date type category item amount note)
+;; Ledger row: (id date type category item amount "k/n"-or-nil)
 ;;
 ;; A bank row matches a ledger row with the same type and amount whose date
 ;; lies within `fin-reconcile-window' days.  Each ledger row matches at most
@@ -233,12 +233,21 @@ to `fin-reconcile-net-rules'.  Months whose net is not positive stay as is."
   "Non-nil if CENTS is large and has cents, so unlikely to coincide."
   (and (>= cents fin-reconcile-exact-min) (/= 0 (% cents 100))))
 
+(defun fin-reconcile-installment (s)
+  "\"k/n\" of an installment: bank \"... Parcela 3/10\" or ledger \"3/10\"; or nil."
+  (when (and s (or (string-match "Parcela \\([0-9]+\\)/\\([0-9]+\\)" s)
+                   (string-match "\\`\\([0-9]+\\)/\\([0-9]+\\)\\'" s)))
+    (format "%s/%s" (match-string 1 s) (match-string 2 s))))
+
 (defun fin-reconcile--shift-pick (b entries used related)
   "First unused row of ENTRIES that is the same transaction as bank row B.
-Either the amounts are equal and distinct within the exact window, or they
-differ by at most `fin-reconcile-near-close-ratio' within the shift window
-and RELATED holds for (B row)."
-  (let ((day (fin-reconcile--day (nth 1 b))) (a (nth 3 b)))
+Either the amounts are equal and distinct within the exact window; or the
+same installment k/n within the exact window; or they differ by at most
+`fin-reconcile-near-close-ratio' within the shift window and RELATED holds
+for (B row).  The ledger names installments after the item bought, the bank
+after the merchant, and dates the first one at purchase, the bank at bill."
+  (let ((day (fin-reconcile--day (nth 1 b))) (a (nth 3 b))
+        (inst (fin-reconcile-installment (nth 4 b))))
     (cl-find-if
      (lambda (l)
        (and (not (gethash (car l) used))
@@ -247,6 +256,9 @@ and RELATED holds for (B row)."
                   (gap  (abs (- a (nth 5 l)))))
               (or (and (= gap 0) (fin-reconcile--distinct-amount-p a)
                        (<= dist fin-reconcile-exact-window))
+                  (and inst (equal inst (fin-reconcile-installment (nth 6 l)))
+                       (<= dist fin-reconcile-exact-window)
+                       (<= gap (* fin-reconcile-near-close-ratio (max a (nth 5 l)))))
                   (and (<= dist fin-reconcile-shift-window)
                        (<= gap (* fin-reconcile-near-close-ratio (max a (nth 5 l))))
                        (funcall related b l))))))

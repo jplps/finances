@@ -29,8 +29,8 @@
                  (fin-conv-item "Transferência enviada pelo Pix - Academia Tutubarao Ltda - 04.871")))
   (should (equal "auvpescola" (fin-conv-item "Mp *Auvpescola - Parcela 3/12")))
   (should (equal "linode . akamai" (fin-conv-item "Linode . Akamai")))
-  (should (equal "installment 3/12" (fin-conv-installment "Mp *Auvpescola - Parcela 3/12")))
-  (should (null (fin-conv-installment "Padaria"))))
+  (should (equal '(3 12) (fin-conv-installment "Mp *Auvpescola - Parcela 3/12")))
+  (should (equal '(nil nil) (fin-conv-installment "Padaria"))))
 
 (ert-deftest conv/related-by-word-alias-or-suggested-category ()
   (let ((rel (fin-conv-related-fn test-conv--history))
@@ -93,17 +93,30 @@
 ;;; ── Plan ───────────────────────────────────────────────────
 
 (defun test-conv--plan (&rest args)
-  (apply #'fin-conv-plan :history test-conv--history :today "2026-10-02" args))
+  (apply #'fin-conv-plan :history test-conv--history
+         :months '(("2025-05" 1000000 0) ("2024-02" 1000000 0) ("2026-09" 1000000 0)
+                   ("2026-05" 1000000 0) ("2026-06" 1000000 0) ("2026-07" 1000000 0)
+                   ("2026-10" 1000000 0) ("2024-10" 1000000 0))
+         args))
 
-(ert-deftest conv/plan-adds-with-suggested-or-default-category ()
+(ert-deftest conv/plan-adds-out-and-money-received ()
   (let ((acts (test-conv--plan
                :bank-only (list (test-conv--b "a" "2025-05-06" "out" 36739 "Compra no débito - KOMPRAO KOCH")
                                 (test-conv--b "b" "2025-05-07" "out" 1300 "Lucio Joaquim Eller")
                                 (test-conv--b "c" "2025-05-08" "in" 3500 "Transferência recebida pelo Pix - ZULEIKA BAJORINAS - •••")))))
-    (should (equal '((:add ("2025-05-06" "out" "food" "komprão" 36739 nil))
-                     (:add ("2025-05-07" "out" "free" "lucio joaquim eller" 1300 nil))
-                     (:add ("2025-05-08" "in" "extras" "zuleika" 3500 nil)))
+    (should (equal '((:add ("2025-05-08" "in" "extras" "zuleika" 3500 nil nil))
+                     (:add ("2025-05-06" "out" "food" "komprão" 36739 nil nil))
+                     (:add ("2025-05-07" "out" "free" "lucio joaquim eller" 1300 nil nil)))
                    (mapcar (lambda (a) (seq-take a 2)) acts)))))
+
+(ert-deftest conv/plan-adds-only-within-month-room ()
+  (let* ((bank (list (test-conv--b "a" "2024-03-02" "out" 4200 "Logbank*Mercearia")
+                     (test-conv--b "b" "2024-03-17" "out" 1900 "Logbank*Mercearia")
+                     (test-conv--b "c" "2024-04-02" "out" 500 "Padaria")))
+         (acts (fin-conv-plan :history test-conv--history :bank-only bank
+                              :months '(("2024-03" 800000 795000) ("2024-04" 600000 500000)))))
+    (should (equal '(:report :report :add) (mapcar #'car acts)))
+    (should (string-match-p "2024-03: ledger 7950.00 \\+ bank-only 61.00 > bank 8000.00" (caddr (car acts))))))
 
 (ert-deftest conv/plan-refund-deletes-matched-purchase ()
   (let* ((purchase (test-conv--b "p" "2025-04-13" "out" 10498 "Compra no débito via NuPay - TUNA*AnotaAi"))
@@ -161,25 +174,15 @@
                :bank-only (list (test-conv--b "a" "2026-09-04" "out" 6337 "Decathlon - Parcela 6/6")
                                 (test-conv--b "b" "2026-09-04" "out" 6499 "Decathlon - Parcela 5/6")
                                 (test-conv--b "c" "2026-09-04" "out" 500 "Padaria"))
-               :entry-only (list (test-conv--l 1 "2026-09-04" "out" "patrimony" "decathlon" 12836 "installment 5,6/6")))))
-    (should (equal '("2026-09-04" "out" "free" "padaria" 500 nil) (cadr (car acts))))
+               :entry-only (list (test-conv--l 1 "2026-09-04" "out" "patrimony" "decathlon" 12836 nil)))))
+    (should (equal '("2026-09-04" "out" "free" "padaria" 500 nil nil) (cadr (car acts))))
     (should (= 1 (length acts)))))
 
-(ert-deftest conv/plan-savings-net-adds-replaces-or-keeps ()
-  (let* ((old (test-conv--l 5 "2026-06-28" "in" "investments" "rdb" 1000 "net of month"))
-         (same (test-conv--l 6 "2026-07-28" "out" "investments" "rdb" 300 "net of month"))
-         (acts (test-conv--plan
-                :bank-only (list (test-conv--b "a" "2026-05-05" "out" 5000 "Aplicação RDB")
-                                 (test-conv--b "b" "2026-05-06" "in" 2000 "Resgate RDB")
-                                 (test-conv--b "c" "2026-06-05" "in" 1500 "Resgate RDB")
-                                 (test-conv--b "d" "2026-07-05" "out" 300 "Aplicação RDB")
-                                 (test-conv--b "e" "2026-10-01" "out" 700 "Aplicação RDB"))
-                :entry-only (list old same))))
-    (should (member '(:add ("2026-05-28" "out" "investments" "rdb" 3000 "net of month") "savings net") acts))
-    (should (member (list :delete old "savings net changed") acts))
-    (should (member '(:add ("2026-06-28" "in" "investments" "rdb" 1500 "net of month") "savings net") acts))
-    (should (member '(:add ("2026-10-02" "out" "investments" "rdb" 700 "net of month") "savings net") acts))
-    (should-not (cl-find-if (lambda (a) (and (eq (car a) :delete) (equal (cadr a) same))) acts))))
+(ert-deftest conv/plan-skips-savings-moves ()
+  (let ((acts (test-conv--plan
+               :bank-only (list (test-conv--b "a" "2026-05-05" "out" 5000 "Aplicação RDB")
+                                (test-conv--b "b" "2026-05-06" "in" 2000 "Resgate RDB")))))
+    (should (equal '(:skip :skip) (mapcar #'car acts)))))
 
 (provide 'test-conventions)
 ;;; test-conventions.el ends here

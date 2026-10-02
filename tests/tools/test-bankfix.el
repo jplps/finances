@@ -11,9 +11,9 @@
                    (list (list :edit l1 10498 "near")
                          (list :delete l1 "refunded")
                          (list :edit l2 15357 "a") (list :edit l2 15358 "b")
-                         (list :add '("2025-05-06" "out" "food" nil 100 nil) "src")
+                         (list :add '("2025-05-06" "out" "food" nil 100 nil nil) "src")
                          (list :report '("r" "2025-05-06" "in" 5 "x") "look")))))
-    (should (equal '((:add ("2025-05-06" "out" "food" "" 100 nil))
+    (should (equal '((:add ("2025-05-06" "out" "food" "" 100 nil nil))
                      (:delete ("2025-04-14" "out" "free" "sushi" 10500))
                      (:edit ("2025-05-02" "out" "car" "seguro" 15353) 15357))
                    (sort (copy-sequence changes) (lambda (a b) (string< (symbol-name (car a)) (symbol-name (car b)))))))))
@@ -25,7 +25,7 @@
 (ert-deftest bankfix/report-renders-every-kind ()
   (save-window-excursion
     (fin-bank-fix--report
-     (list (list :add '("2025-05-06" "out" "food" "komprão" 100 "installment 1/2") "KOMPRAO")
+     (list (list :add '("2025-05-06" "out" "food" "komprão" 100 1 2) "KOMPRAO")
            (list :edit '(1 "2025-05-02" "out" "car" "seguro" 15353 nil) 15357 "bank")
            (list :delete '(2 "2025-04-14" "out" "free" "sushi" 10500 nil) "refunded")
            (list :report '("r" "2025-04-13" "in" 3800 "Reembolso") "refund with no purchase found")

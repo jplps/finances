@@ -27,14 +27,15 @@
     "\\`Pagamento recebido\\'"
     "\\`Valor adicionado na conta por cartão"
     "\\`Valor enviado como crédito na fatura"
-    "\\`Estorno de pagamento")
+    "\\`Estorno de pagamento"
+    "\\`Ajuste a crédito" "\\`Encerramento de dívida")
   "Bank descriptions excluded from reconciliation.
 Moves with no ledger counterpart: the card bill payment, seen as paid on
 the account and received on the card, would double-count purchases
 already reconciled from the card statement; card credit moved to the
-account for a Pix, and back.  Investment moves are not listed, since the
-ledger records them as entries.  Rows stay stored; only reconciliation
-skips them."
+account for a Pix, and back; cent-level debt adjustments.  Investment
+moves are not listed: bankfix.el skips them as savings.  Rows stay
+stored; only reconciliation skips them."
   :type '(repeat regexp) :group 'fin)
 
 (defcustom fin-bank-own-regexps nil
@@ -165,7 +166,8 @@ reach a bank."
     (let* ((days (or pad-days fin-reconcile-window))
            (pad (format "%+d days" days)))
       (fin-db-query
-       "SELECT id, date, type, category, item, amount, note
+       "SELECT id, date, type, category, item, amount,
+                CASE WHEN installment IS NOT NULL THEN installment || '/' || installments END
           FROM entry
          WHERE date >= date(?, ?)
            AND date <= date(?, ?)
@@ -194,11 +196,15 @@ reach a bank."
 
 (defun fin-bank--tsv-row (bank-row)
   "BANK-ROW as one TSV line in ODS entries column order.
-Category is left empty for the user to fill; note stays empty."
+Category is left empty for the user to fill; installments come from
+the bank's \"Parcela k/n\"."
   (pcase-let ((`(,_id ,date ,type ,amount ,desc) bank-row))
     (mapconcat #'identity
-               (list date type "" (downcase (string-trim desc))
-                     (number-to-string amount) "BRL" "")
+               (append (list date type "" (downcase (string-trim desc))
+                             (number-to-string amount))
+                       (if (string-match "Parcela \\([0-9]+\\)/\\([0-9]+\\)" desc)
+                           (list (match-string 1 desc) (match-string 2 desc))
+                         (list "" "")))
                "\t")))
 
 (defun fin-bank--insert-month-totals (bank ledger)
