@@ -3,9 +3,19 @@
 (require 'cl-lib)
 (require 'fmt)
 
+(defun fin-dashboard--fold-slices (slices n)
+  "SLICES largest first, the N largest kept and the rest summed as \"other\"."
+  (let* ((sorted (sort (cl-remove-if-not (lambda (s) (and (cdr s) (> (cdr s) 0))) (copy-sequence slices))
+                       (lambda (a b) (> (cdr a) (cdr b)))))
+         (rest (nthcdr n sorted)))
+    (if (null rest) sorted
+      (append (seq-take sorted n) (list (cons "other" (apply #'+ (mapcar #'cdr rest))))))))
+
 (defun fin-dashboard--svg-donut (slices)
-  "Pie chart with leader-line labels.  SLICES = ((label . value) ...)."
-  (let* ((g        fin-dashboard--pie-geom)
+  "Pie chart with leader-line labels.  SLICES = ((label . value) ...).
+Categorical slots in fixed order; past them one neutral \"other\" slice."
+  (let* ((slices   (fin-dashboard--fold-slices slices (length fin-dashboard--chart-palette)))
+         (g        fin-dashboard--pie-geom)
          (w        (fin-dashboard--g g :w))
          (h        (fin-dashboard--g g :h))
          (cx       (fin-dashboard--g g :cx))
@@ -19,7 +29,7 @@
          (c-text   (fin-dashboard--c 'text))
          (total    (apply #'+ (mapcar (lambda (s) (or (cdr s) 0)) slices)))
          (a        0.0)
-         (paths    (list (format "<svg viewBox=\"0 0 %d %d\" xmlns=\"http://www.w3.org/2000/svg\" class=\"chart\">" w h))))
+         (paths    (list (format "<svg viewBox=\"0 0 %d %d\" xmlns=\"http://www.w3.org/2000/svg\" class=\"chart pie\">" w h))))
     (when (> total 0)
       (cl-loop
        for s in slices
@@ -30,7 +40,7 @@
                  (a2     (+ a (* 2 float-pi frac)))
                  (mid    (/ (+ a1 a2) 2.0))
                  (large  (if (> frac 0.5) 1 0))
-                 (color  (nth (mod i (length palette)) palette))
+                 (color  (or (nth i palette) (fin-dashboard--c 'other)))
                  (x1 (+ cx (* r (cos a1))))   (y1 (+ cy (* r (sin a1))))
                  (x2 (+ cx (* r (cos a2))))   (y2 (+ cy (* r (sin a2))))
                  (px (+ cx (* r (cos mid))))  (py (+ cy (* r (sin mid))))
@@ -65,13 +75,13 @@ Positive: green up; negative: red down."
          (col-w  (/ (- vw (* 2 pad-x)) (float n)))
          (bar-w  (max 1.0 (* col-w 0.7)))
          (gap    (/ (- col-w bar-w) 2.0))
-         (green  (fin-dashboard--c 'green))
-         (red    (fin-dashboard--c 'red))
+         (green  (fin-dashboard--c 'pos))
+         (red    (fin-dashboard--c 'neg))
          (i      -1))
     (concat
      (format "<svg viewBox=\"0 0 %d %d\" xmlns=\"http://www.w3.org/2000/svg\" class=\"chart bars\" preserveAspectRatio=\"none\">" vw vh)
      (format "<line x1=\"%d\" y1=\"%d\" x2=\"%d\" y2=\"%d\" stroke=\"%s\" stroke-width=\"0.5\"/>"
-             pad-x mid (- vw pad-x) mid (fin-dashboard--c 'border-2))
+             pad-x mid (- vw pad-x) mid (fin-dashboard--c 'grid))
      (mapconcat
       (lambda (r)
         (cl-incf i)
@@ -106,13 +116,13 @@ MONTHS = (ym in out).  Months past current month rendered dimmed."
          (col-w  (/ (- vw (* 2 pad-x)) (float n)))
          (bar-w  (max 1.0 (* col-w 0.7)))
          (gap    (/ (- col-w bar-w) 2.0))
-         (green  (fin-dashboard--c 'green))
-         (red    (fin-dashboard--c 'red))
+         (green  (fin-dashboard--c 'pos))
+         (red    (fin-dashboard--c 'neg))
          (i      -1))
     (concat
      (format "<svg viewBox=\"0 0 %d %d\" xmlns=\"http://www.w3.org/2000/svg\" class=\"chart flow\" preserveAspectRatio=\"none\">" vw vh)
      (format "<line x1=\"%d\" y1=\"%d\" x2=\"%d\" y2=\"%d\" stroke=\"%s\" stroke-width=\"0.5\"/>"
-             pad-x mid (- vw pad-x) mid (fin-dashboard--c 'border-2))
+             pad-x mid (- vw pad-x) mid (fin-dashboard--c 'grid))
      (mapconcat
       (lambda (r)
         (cl-incf i)
@@ -158,7 +168,7 @@ MONTHS = (ym in out).  Months past current month rendered dimmed."
      (format "<svg viewBox=\"0 0 %d %d\" xmlns=\"http://www.w3.org/2000/svg\" class=\"chart line\" preserveAspectRatio=\"none\">" vw vh)
      (when zero-y
        (format "<line x1=\"%d\" y1=\"%.1f\" x2=\"%d\" y2=\"%.1f\" stroke=\"%s\" stroke-width=\"0.5\"/>"
-               pad-x zero-y (- vw pad-x) zero-y (fin-dashboard--c 'border-2)))
+               pad-x zero-y (- vw pad-x) zero-y (fin-dashboard--c 'grid)))
      (format "<polyline points=\"%s\" stroke=\"%s\" stroke-width=\"1.5\" fill=\"none\"/>" coords col)
      "</svg>")))
 
@@ -203,8 +213,8 @@ MONTHS = (ym in out).  Months past current month rendered dimmed."
          (col-w (/ (- vw (* 2 pad-x)) (float (max 1 n))))
          (bar-w (max 1.0 (* col-w 0.7)))
          (gap   (/ (- col-w bar-w) 2.0))
-         (red    (fin-dashboard--c 'red))
-         (accent (fin-dashboard--c 'accent))
+         (bar    (fin-dashboard--c 'neg))
+         (line   (fin-dashboard--c 'accent))
          (i -1)
          (line-pts
           (mapconcat
@@ -228,13 +238,14 @@ MONTHS = (ym in out).  Months past current month rendered dimmed."
                (x0   (+ pad-x gap (* i2 col-w)))
                (y    (- vh pad-y h)))
           (format "<rect x=\"%.2f\" y=\"%.2f\" width=\"%.2f\" height=\"%.2f\" fill=\"%s\"><title>%s · R$ %.2f · cum %.1f%%</title></rect>"
-                  x0 y bar-w h red (fin-dashboard--esc item) (/ v 100.0) cp)))
+                  x0 y bar-w h bar (fin-dashboard--esc item) (/ v 100.0) cp)))
       rows "")
-     (format "<polyline points=\"%s\" stroke=\"%s\" stroke-width=\"1.2\" fill=\"none\"/>" line-pts accent)
+     (format "<polyline points=\"%s\" stroke=\"%s\" stroke-width=\"2\" fill=\"none\"/>" line-pts line)
      "</svg>")))
 
 (defun fin-dashboard--svg-heatmap (cells)
-  "Year × month grid colored by spend intensity.  CELLS = (year month value)."
+  "Year × month grid colored by spend intensity.  CELLS = (year month value).
+Spend magnitude: the out hue, light to dark."
   (let* ((years (sort (delete-dups (mapcar (lambda (c) (nth 0 c)) cells)) #'<))
          (ny (max 1 (length years)))
          (pad 12) (cell-h 14) (cell-gap 2)
@@ -246,7 +257,7 @@ MONTHS = (ym in out).  Months past current month rendered dimmed."
          (log-max (log (+ 1.0 max-v)))
          (yidx (let ((h (make-hash-table)) (i 0))
                  (dolist (y years) (puthash y i h) (cl-incf i)) h))
-         (red (fin-dashboard--c 'red)))
+         (hue (fin-dashboard--c 'neg)))
     (concat
      (format "<svg viewBox=\"0 0 %d %d\" xmlns=\"http://www.w3.org/2000/svg\" class=\"chart heatmap\" preserveAspectRatio=\"none\">" vw vh)
      (mapconcat
@@ -257,8 +268,36 @@ MONTHS = (ym in out).  Months past current month rendered dimmed."
                (yy  (+ pad (* row cell-h)))
                (op  (max 0.08 (/ (log (+ 1.0 v)) log-max))))
           (format "<rect x=\"%.2f\" y=\"%.2f\" width=\"%.2f\" height=\"%.2f\" fill=\"%s\" opacity=\"%.2f\"><title>%d-%02d · R$ %.2f</title></rect>"
-                  x yy (- cell-w cell-gap) (- cell-h cell-gap) red op y m (/ v 100.0))))
+                  x yy (- cell-w cell-gap) (- cell-h cell-gap) hue op y m (/ v 100.0))))
       cells "")
+     "</svg>")))
+
+(defconst fin-dashboard--bullet-geom '(:w 240 :h 16 :bar 10)
+  "Bullet chart geometry (SVG units).")
+
+(defun fin-dashboard--svg-bullet (target mtd save title)
+  "Progress bar: the full width is TARGET; MTD fills it green.  Spending
+past TARGET grows red from the right end, by the overrun's share of
+TARGET; a saving row (SAVE) never turns red.  TITLE is the hover text.
+Amounts in cents."
+  (let* ((g (fin-dashboard--g fin-dashboard--bullet-geom :w))
+         (h (fin-dashboard--g fin-dashboard--bullet-geom :h))
+         (bh (fin-dashboard--g fin-dashboard--bullet-geom :bar))
+         (frac (lambda (v) (if (> target 0) (min 1.0 (/ (max 0 v) (float target))) (if (> v 0) 1.0 0.0))))
+         (fill (funcall frac mtd))
+         (over (if save 0.0 (funcall frac (- mtd (max 0 target)))))
+         (rect (lambda (cls x w color)
+                 (format "<rect class=\"%s\" x=\"%.1f\" y=\"%.1f\" width=\"%.1f\" height=\"%d\" rx=\"1\" fill=\"%s\"/>"
+                         cls x (/ (- h bh) 2.0) w bh color))))
+    (concat
+     (format "<svg viewBox=\"0 0 %d %d\" xmlns=\"http://www.w3.org/2000/svg\" class=\"bullet\" preserveAspectRatio=\"none\" role=\"img\"><title>%s</title>"
+             g h (fin-dashboard--esc title))
+     (funcall rect "track" 0 g (fin-dashboard--c 'track))
+     (when (> fill 0)
+       (funcall rect "mtd good" 0 (max 2 (* g fill)) (fin-dashboard--c 'pos)))
+     (when (> over 0)
+       (let ((w (max 2 (* g over))))
+         (funcall rect "mtd bad" (- g w) w (fin-dashboard--c 'neg))))
      "</svg>")))
 
 (provide 'charts)

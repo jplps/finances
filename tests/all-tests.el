@@ -21,6 +21,7 @@
 (require 'test-odswrite)
 (require 'test-reconcile)
 (require 'test-conventions)
+(require 'test-goals)
 (require 'test-bank)
 (require 'test-bankfix)
 (require 'test-fmt)

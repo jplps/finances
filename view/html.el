@@ -4,11 +4,12 @@
 (require 'fmt)
 
 (defun fin-dashboard--panel (name class-suffix title &rest body)
-  "<section class=\"SUFFIX\"> with H2 NAME + tooltip TITLE."
-  (concat (format "<section class=\"%s\"><h2 title=\"%s\">%s</h2>"
-                  class-suffix
-                  (fin-dashboard--esc title)
-                  (fin-dashboard--esc name))
+  "<section id=SUFFIX class=SUFFIX> labelled NAME, described by TITLE.
+No visible heading: the status bar names the current panel."
+  (concat (format "<section id=\"%s\" class=\"%s\" aria-label=\"%s\" aria-description=\"%s\">"
+                  class-suffix class-suffix
+                  (fin-dashboard--esc name)
+                  (fin-dashboard--esc title))
           (apply #'concat body)
           "</section>"))
 
@@ -50,10 +51,12 @@ grid-area mapping)."
       rows "")
      "</tbody></table>")))
 
-(defun fin-dashboard--alist (header rows)
+(defun fin-dashboard--alist (header rows &optional foot)
   "Accordion <table>.  HEADER = column labels.
 ROWS = list of (LABEL CELLS BODY &optional CLASS OPEN).
-BODY non-nil wraps LABEL in <details>; a <tr.body> follows in a colspan'd <td>."
+BODY non-nil wraps LABEL in <details>; a <tr.body> follows in a colspan'd <td>.
+FOOT, when non-nil, is a (LABEL . CELLS) totals row in <tfoot>."
+  (cl-assert (or (null foot) (= (length foot) (length header))))
   (let ((ncols (length header))
         (i 0))
     (concat
@@ -84,7 +87,13 @@ BODY non-nil wraps LABEL in <details>; a <tr.body> follows in a colspan'd <td>."
              (format "<tr class=\"body\"><td colspan=\"%d\">%s</td></tr>"
                      ncols body)))))
       rows "")
-     "</tbody></table>")))
+     "</tbody>"
+     (when foot
+       (concat "<tfoot><tr>"
+               (format "<td>%s</td>" (fin-dashboard--esc (car foot)))
+               (mapconcat (lambda (c) (format "<td>%s</td>" (fin-dashboard--fmt c))) (cdr foot) "")
+               "</tr></tfoot>"))
+     "</table>")))
 
 (provide 'html)
 ;;; html.el ends here

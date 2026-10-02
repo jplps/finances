@@ -27,7 +27,8 @@
 ;;; ── --money / --money-str (cents → R$) ─────────────────────
 
 (ert-deftest fmt/money-str-formats-cents ()
-  (should (equal (fin-dashboard--money-str 100000)    "1000.00"))
+  (should (equal (fin-dashboard--money-str 100000)    "1,000.00"))
+  (should (equal (fin-dashboard--money-str -123456789) "-1,234,567.89"))
   (should (equal (fin-dashboard--money-str 12345)     "123.45"))
   (should (equal (fin-dashboard--money-str 0)         "0.00")))
 
@@ -36,6 +37,11 @@
 (ert-deftest fmt/k-empty-for-nil-and-zero ()
   (should (equal (fin-dashboard--k nil) ""))
   (should (equal (fin-dashboard--k 0)   "")))
+
+(ert-deftest fmt/grouped-rounds-to-whole-reais ()
+  (should (equal "0" (fin-dashboard--grouped 0)))
+  (should (equal "2,552" (fin-dashboard--grouped 255172)))
+  (should (equal "-1,000" (fin-dashboard--grouped -100000))))
 
 (ert-deftest fmt/k-under-1k-uses-money-str ()
   (should (equal (fin-dashboard--k 99999) "999.99")))

@@ -1,20 +1,40 @@
 ;;; fmt.el --- Palette + string formatters (esc, money, k, fmt)  -*- lexical-binding: t; -*-
 
+;; Colors are theme tokens: each role has a light and a dark value, emitted as
+;; CSS custom properties, and markup refers to them as var(--role) so one
+;; stylesheet switch flips the whole page.  Dark is the default: a plain
+;; terminal look with the original pastel green/red for polarity (in /
+;; positive / on target vs out / negative / off target), an aqua accent for
+;; structure and a yellow prompt.
+;; Categorical slots follow the validated dataviz order, without green or red.
 (defconst fin-dashboard--palette
-  '((bg          . "#000000")
-    (panel       . "#0a0a0a")
-    (panel-2     . "#050505")
-    (border      . "#161616")
-    (border-2    . "#222222")
-    (text        . "#d4d4d4")
-    (muted       . "#6b6b6b")
-    (accent      . "#b3b8c1")
-    (green       . "#a6e3a1")
-    (red         . "#f38ba8")
-    (amber       . "#d4c290")
-    (magenta     . "#9aa0a6")
-    (cyan        . "#8a8d9f"))
-  "Theme colors.  Single source of truth.")
+  '((page      "#f3f1ea" "#0c0c0c")
+    (surface   "#fbfaf5" "#0c0c0c")
+    (surface-2 "#ecebe3" "#1a1a1a")
+    (border    "#d8d6cc" "#303030")
+    (grid      "#c9c7bc" "#3a3a3a")
+    (track     "#e4e2d8" "#1e1e1e")
+    (text      "#111111" "#cccccc")
+    (text-2    "#3d3c38" "#a8a8a8")
+    (muted     "#5f5e58" "#8a8a8a")
+    (accent    "#2f6f6a" "#8abeb7")
+    (accent-2  "#8a6d00" "#f0c674")
+    (pos       "#1d7a24" "#a6e3a1")
+    (neg       "#b4233c" "#f38ba8")
+    (line-2    "#8a6d00" "#d4c290")
+    (good      "#1d7a24" "#a6e3a1")
+    (warn      "#8a6d00" "#d4c290")
+    (bad       "#b4233c" "#f38ba8")
+    (good-text "#1d7a24" "#a6e3a1")
+    (bad-text  "#b4233c" "#f38ba8")
+    (other     "#8a8984" "#4d5566")
+    (cat-1     "#eb6834" "#d95926")
+    (cat-2     "#1baf7a" "#199e70")
+    (cat-3     "#4a3aa7" "#9085e9")
+    (cat-4     "#eda100" "#c98500")
+    (cat-5     "#e87ba4" "#d55181")
+    (cat-6     "#2a78d6" "#3987e5"))
+  "Theme roles: (ROLE LIGHT DARK).  Single source of truth.")
 
 (defconst fin-dashboard--month-names
   '("january" "february" "march" "april" "may" "june"
@@ -25,16 +45,19 @@
   (nth (1- m) fin-dashboard--month-names))
 
 (defconst fin-dashboard--chart-palette
-  '("#89b4fa" "#a6e3a1" "#f38ba8" "#f9e2af" "#cba6f7"
-    "#94e2d5" "#89dceb" "#fab387" "#f5c2e7" "#b4befe")
-  "Category palette for pie slices.")
+  (mapcar (lambda (i) (format "var(--cat-%d)" i)) '(1 2 3 4 5 6))
+  "Categorical slots in fixed order.  Six named series at most: the rest
+fold into one neutral `other' slice, never a cycled hue.")
 
 (defconst fin-dashboard--pie-geom
   '(:w 400 :h 260 :cx 200 :cy 130 :r 100 :rl 120
     :lx-right 320 :lx-left 80 :min-label-frac 0.012)
   "Pie chart geometry (SVG units).")
 
-(defun fin-dashboard--c (key) (cdr (assq key fin-dashboard--palette)))
+(defun fin-dashboard--c (key)
+  "CSS value of theme role KEY, as var(--KEY)."
+  (unless (assq key fin-dashboard--palette) (error "fin-dashboard: no color role %S" key))
+  (format "var(--%s)" key))
 (defun fin-dashboard--g (plist key) (plist-get plist key))
 
 (defun fin-dashboard--esc (s)
@@ -47,13 +70,18 @@
        s)
     (format "%s" (or s ""))))
 
+(defun fin-dashboard--group (n)
+  "Non-negative integer N with comma thousands: 1234567 → \"1,234,567\"."
+  (let ((s (number-to-string n)) (out ""))
+    (while (> (length s) 3)
+      (setq out (concat "," (substring s -3) out) s (substring s 0 -3)))
+    (concat s out)))
+
 (defun fin-dashboard--money-str (cents)
-  "Plain string from CENTS (signed integer).  E.g., '1234.56' or '-12.00'."
+  "Plain string from CENTS (signed integer).  E.g., '1,234.56' or '-12.00'."
   (let* ((neg (< cents 0))
          (a   (abs cents))
-         (int (/ a 100))
-         (cs  (mod a 100))
-         (s   (format "%d.%02d" int cs)))
+         (s   (format "%s.%02d" (fin-dashboard--group (/ a 100)) (mod a 100))))
     (if neg (concat "-" s) s)))
 
 (defun fin-dashboard--money (cents)
@@ -64,6 +92,10 @@
       (if (< cents 0)
           (format "<span class=\"neg\">%s</span>" s)
         s))))
+
+(defun fin-dashboard--grouped (cents)
+  "Whole BRL from CENTS with thousands grouped: 255172 → \"2,552\"."
+  (concat (if (< cents 0) "-" "") (fin-dashboard--group (round (abs cents) 100))))
 
 (defun fin-dashboard--k (cents)
   "Format CENTS as `X.Yk' for |cents| ≥ R$ 1.000, else full BRL.

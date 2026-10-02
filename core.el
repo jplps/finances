@@ -22,19 +22,26 @@
 (require 'patrimony)
 (require 'accounts)
 (require 'stats)
+(require 'goals)
 (require 'dashboard)
 
 ;; Personal settings (own accounts, salary payer, payee aliases) stay out of
 ;; the repo, in the gitignored infra/.
-(let ((config (expand-file-name "infra/config.el" fin--root)))
-  (when (file-readable-p config) (load config nil t)))
+(defun fin--load-config ()
+  "Load infra/config.el when present."
+  (let ((config (expand-file-name "infra/config.el" fin--root)))
+    (when (file-readable-p config) (load config nil t))))
+
+(fin--load-config)
 
 (defun fin-reload ()
-  "Reload every project source file so `fin' picks up edits without restart."
+  "Reload every project source file and infra/config.el so `fin' picks up
+edits without restart."
   (interactive)
   (dolist (sub '("adapters" "tools" "domain" "view"))
     (dolist (f (directory-files (expand-file-name sub fin--root) t "\\.el\\'"))
-      (load f nil t))))
+      (load f nil t)))
+  (fin--load-config))
 
 ;;;###autoload
 (defun fin (&optional no-reload)

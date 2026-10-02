@@ -29,6 +29,7 @@
 (require 'odswrite)
 (require 'reconcile)
 (require 'conventions)
+(require 'goals)
 (require 'bank)
 (require 'bankfix)
 

@@ -7,6 +7,7 @@
 ;; domain
 (require 'cashflow)
 (require 'budget)
+(require 'goals)
 (require 'patrimony)
 (require 'accounts)
 (require 'stats)
@@ -21,7 +22,19 @@
           (push (cons k (list r)) out))))
     (nreverse out)))
 
-(defun fin-dashboard--records-dl (recs nw)
+(defun fin-dashboard--tick (label value &optional n)
+  "One ticker item: LABEL, VALUE (HTML), and an up/down triangle when N is a
+signed number (drawn in CSS so it centers on the text)."
+  (format "<span class=\"tick\"><b>%s</b> %s%s</span>"
+          label
+          (cond ((not (numberp n)) "")
+                ((> n 0) "<span class=\"arrow up pos\" role=\"img\" aria-label=\"up\"></span> ")
+                ((< n 0) "<span class=\"arrow down neg\" role=\"img\" aria-label=\"down\"></span> ")
+                (t ""))
+          value))
+
+(defun fin-dashboard--records-items (recs nw)
+  "Ticker items for the headline RECS and net worth NW."
   (let ((biggest    (plist-get recs :biggest))
         (biggest-in (plist-get recs :biggest-in))
         (best       (plist-get recs :best-mo))
@@ -32,30 +45,33 @@
         (first-e    (plist-get recs :first-entry))
         (months     (plist-get recs :months-tracked)))
     (concat
-     "<dl class=\"kv runway\">"
-     (when first-e    (fin-dashboard--kv "First entry"     (fin-dashboard--ym first-e)))
-     (when months     (fin-dashboard--kv "Months tracked"  (format "%d" months)))
-     (when best       (fin-dashboard--kv "Best month"
-                                         (format "%s — R$ %s" (nth 0 best)
-                                                 (fin-dashboard--k-signed (nth 1 best)))))
-     (when worst      (fin-dashboard--kv "Worst month"
-                                         (format "%s — R$ %s" (nth 0 worst)
-                                                 (fin-dashboard--k-signed (nth 1 worst)))))
-     (when biggest-in (fin-dashboard--kv "Biggest income"
-                                         (format "%s — R$ %s"
-                                                 (fin-dashboard--ym (nth 2 biggest-in))
-                                                 (fin-dashboard--k-signed (nth 1 biggest-in)))))
-     (when biggest    (fin-dashboard--kv "Biggest purchase"
-                                         (format "%s — R$ %s"
-                                                 (fin-dashboard--ym (nth 2 biggest))
-                                                 (fin-dashboard--k-signed (nth 1 biggest)))))
-     (when best-save  (fin-dashboard--kv "Best yearly save"
-                                         (format "%d — %s" (nth 0 best-save)
-                                                 (fin-dashboard--pct-signed (or (nth 1 best-save) 0)))))
-     (when avg-save   (fin-dashboard--kv "Avg yearly save" (fin-dashboard--pct-signed avg-save)))
-     (when rec-share  (fin-dashboard--kv "Recurring share" (format "%.1f%%" rec-share)))
-     (fin-dashboard--kv "Net worth" (format "R$ %s" (fin-dashboard--money-str (round nw))))
-     "</dl>")))
+     (fin-dashboard--tick "net worth" (format "R$ %s" (fin-dashboard--money-str (round nw))) nw)
+     (when best       (fin-dashboard--tick "best month"
+                                           (format "%s R$ %s" (nth 0 best) (fin-dashboard--k-signed (nth 1 best)))
+                                           (nth 1 best)))
+     (when worst      (fin-dashboard--tick "worst month"
+                                           (format "%s R$ %s" (nth 0 worst) (fin-dashboard--k-signed (nth 1 worst)))
+                                           (nth 1 worst)))
+     (when biggest-in (fin-dashboard--tick "biggest income"
+                                           (format "%s R$ %s" (fin-dashboard--ym (nth 2 biggest-in))
+                                                   (fin-dashboard--k-signed (nth 1 biggest-in)))))
+     (when biggest    (fin-dashboard--tick "biggest purchase"
+                                           (format "%s R$ %s" (fin-dashboard--ym (nth 2 biggest))
+                                                   (fin-dashboard--k (nth 1 biggest)))))
+     (when best-save  (fin-dashboard--tick "best yearly save"
+                                           (format "%d %s" (nth 0 best-save)
+                                                   (fin-dashboard--pct-signed (or (nth 1 best-save) 0)))
+                                           (nth 1 best-save)))
+     (when avg-save   (fin-dashboard--tick "avg yearly save" (fin-dashboard--pct-signed avg-save) avg-save))
+     (when rec-share  (fin-dashboard--tick "recurring share" (format "%.1f%%" rec-share)))
+     (when first-e    (fin-dashboard--tick "since" (fin-dashboard--ym first-e)))
+     (when months     (fin-dashboard--tick "months" (format "%d" months))))))
+
+(defun fin-dashboard--records-ticker ()
+  "LED ticker tape of the records: the items twice, so the loop is seamless."
+  (let ((items (fin-dashboard--records-items (fin-report--records) (fin-report--patrimony-total))))
+    (concat "<div class=\"ticker\" role=\"marquee\" aria-label=\"Records\" title=\"Records: headline numbers across all tracked time\">"
+            "<div class=\"window\"><div class=\"tape\"><span>" items "</span><span aria-hidden=\"true\">" items "</span></div></div></div>")))
 
 (defun fin-dashboard--panel-stats ()
   (let* ((cats    (fin-report--cat-shares))
@@ -78,9 +94,7 @@
                                                (fin-dashboard--k-cell (nth 3 r)))) rec))
          (rec-cnt-rows (mapcar (lambda (r) (list (nth 0 r) (nth 1 r)
                                                   (fin-dashboard--k-cell (nth 2 r))
-                                                  (fin-dashboard--k-cell (nth 3 r)))) rec-cnt))
-         (recs (fin-report--records))
-         (nw   (fin-report--patrimony-total)))
+                                                  (fin-dashboard--k-cell (nth 3 r)))) rec-cnt)))
     (fin-dashboard--panel
      "Stats" "stats" "Headline metrics across all tracked entries"
      (fin-dashboard--block "All time flow"
@@ -91,20 +105,20 @@
      "<div class=\"stats-col\">"
      (fin-dashboard--block "Net worth"
                            "Cumulative liquid (Σ in − Σ out) per month — cash-only net worth proxy."
-                           (fin-dashboard--svg-line netw (fin-dashboard--c 'green))
+                           (fin-dashboard--svg-line netw (fin-dashboard--c 'pos))
                            "networth")
      (fin-dashboard--block "Rolling save %"
                            "Trailing 12-month save rate per month — smooths year boundaries."
                            (fin-dashboard--svg-line
                             (mapcar (lambda (r) (list (nth 0 r) (or (nth 1 r) 0))) rsave)
-                            (fin-dashboard--c 'amber))
+                            (fin-dashboard--c 'line-2))
                            "rsave")
      (fin-dashboard--block "Income vs expense (12mo MA)"
                            "12-month moving average of in (green) and out (red) — reveals lifestyle creep."
                            (fin-dashboard--svg-multiline
-                            (list (list "in"  (fin-dashboard--c 'green)
+                            (list (list "in"  (fin-dashboard--c 'pos)
                                         (mapcar (lambda (r) (list (nth 0 r) (or (nth 1 r) 0))) rflow))
-                                  (list "out" (fin-dashboard--c 'red)
+                                  (list "out" (fin-dashboard--c 'neg)
                                         (mapcar (lambda (r) (list (nth 0 r) (or (nth 2 r) 0))) rflow))))
                            "rflow")
      (fin-dashboard--block "Pareto"
@@ -131,10 +145,6 @@
                            "inc")
      "</div>"
      "<div class=\"stats-col\">"
-     (fin-dashboard--block "Records"
-                           "Headline numbers across all tracked time"
-                           (fin-dashboard--records-dl recs nw)
-                           "records")
      (fin-dashboard--block "Recurring by months"
                            "Recurring items ranked by distinct months active (persistence)"
                            (fin-dashboard--table '("item" "months" "total" "avg") rec-rows)
@@ -146,57 +156,64 @@
      "</div>"
      "</div>")))
 
+;;; ── objectives: plan targets vs this month ─────────────────
+
+(defun fin-dashboard--goal-row (r)
+  (let* ((cat (plist-get r :category)) (target (plist-get r :target)) (mtd (plist-get r :mtd))
+         (title (format "%s · this month R$ %s of R$ %s target"
+                        cat (fin-dashboard--grouped mtd) (fin-dashboard--grouped target))))
+    (format "<tr class=\"goal%s\"><td class=\"cat\">%s</td><td class=\"viz\">%s</td><td class=\"num\">%s</td><td class=\"num dim\">%s</td></tr>"
+            (pcase (plist-get r :depth) (1 " child") (2 " child deep") (_ ""))
+            (fin-dashboard--esc cat)
+            (fin-dashboard--svg-bullet target mtd (eq (plist-get r :direction) 'save) title)
+            (fin-dashboard--grouped mtd)
+            (fin-dashboard--grouped target))))
+
+(defun fin-dashboard--goals-table (rows)
+  (concat "<table class=\"goals\"><thead><tr><th>category</th><th class=\"viz\">progress</th>"
+          "<th class=\"num\">month</th><th class=\"num\">target</th></tr></thead><tbody>"
+          (mapconcat #'fin-dashboard--goal-row rows "")
+          "</tbody></table>"))
+
+(defun fin-dashboard--kpi (label value note &optional cls)
+  (format "<div class=\"kpi%s\"><div class=\"kpi-label\">%s</div><div class=\"kpi-value\">%s</div><div class=\"kpi-note\">%s</div></div>"
+          (if cls (concat " " cls) "") label value note))
+
 (defun fin-dashboard--panel-objectives ()
-  (let* ((year    (fin-report--year-now))
-         (inc     (fin-report--monthly-income year))
-         (liquid  (nth 2 inc))
-         (budg    (fin-report--budget-share year))
-         (rw      (fin-report--runway))
-         (fix     (cl-remove-if-not (lambda (b) (equal (nth 1 b) "fix")) budg))
-         (var     (cl-remove-if-not (lambda (b) (equal (nth 1 b) "var")) budg))
-         (sumpct  (lambda (rows) (cl-reduce #'+ rows
-                                            :key (lambda (b) (or (nth 3 b) 0))
-                                            :initial-value 0)))
-         (fix-pct (funcall sumpct fix))
-         (var-pct (funcall sumpct var))
-         (fix-cls (if (<= fix-pct fin-budget-fix-target) "pos" "neg"))
-         (var-cls (if (<= var-pct fin-budget-var-target) "pos" "neg"))
-         (mkrow   (lambda (b)
-                    (let* ((cat  (nth 0 b))
-                           (kids (fin-report--budget-children cat year)))
-                      (list cat
-                            (list (fin-dashboard--money-cell (nth 2 b))
-                                  (nth 3 b))
-                            (when kids
-                              (fin-dashboard--table
-                               '("category" "target" "%")
-                               (mapcar (lambda (k) (list (nth 0 k)
-                                                         (fin-dashboard--money-cell (nth 1 k))
-                                                         (nth 2 k)))
-                                       kids)))))))
-         (unalloc  (- 100.0 fix-pct var-pct))
-         (slack    (if (< (abs unalloc) 0.05)
-                       ""
-                     (format (concat " \u00b7 unallocated <b>R$ %s</b>"
-                                     " <span class=\"dim\">(%.2f%%)</span>")
-                             (fin-dashboard--money (round (* liquid unalloc 0.01)))
-                             unalloc))))
+  (let* ((year   (fin-report--year-now))
+         (month  (fin-report--month-now))
+         (liquid (nth 2 (fin-report--monthly-income year)))
+         (budg   (fin-report--budget-share year))
+         (rw     (fin-report--runway))
+         (goals  (fin-goals year month))
+         (pct    (lambda (kind) (cl-reduce #'+ (mapcar (lambda (b) (if (equal (nth 1 b) kind) (or (nth 3 b) 0) 0)) budg))))
+         (fix-pct (funcall pct "fix"))
+         (var-pct (funcall pct "var"))
+         (unalloc (- 100.0 fix-pct var-pct))
+         (kind-rows (lambda (kind) (cl-remove-if-not (lambda (r) (equal (plist-get r :kind) kind)) goals)))
+         (over (cl-count 'over goals :key (lambda (r) (plist-get r :status)))))
     (fin-dashboard--panel
      "Objectives" "objectives"
-     "Budget plan as share of monthly liquid, fix pressure, and emergency runway"
-     (format "<p class=\"sub\">Plan · liquid <b>R$ %s</b> · runway <b>%.1f months</b>%s</p>"
-             (fin-dashboard--money-str liquid) (nth 2 rw) slack)
-     (fin-dashboard--pair
-      (fin-dashboard--block
-       (format "Fix · <span class=\"%s\">%.1f%%</span> <span class=\"dim\">/ %d%%</span>"
-               fix-cls fix-pct fin-budget-fix-target)
-       "Fixed monthly outflows (driven by amount)"
-       (fin-dashboard--alist '("category" "target" "%") (mapcar mkrow fix)))
-      (fin-dashboard--block
-       (format "Var · <span class=\"%s\">%.1f%%</span> <span class=\"dim\">/ %d%%</span>"
-               var-cls var-pct fin-budget-var-target)
-       "Variable allocations (driven by share of liquid); expand to see sub-allocations"
-       (fin-dashboard--alist '("category" "target" "%") (mapcar mkrow var)))))))
+     "Plan targets per month against the current month so far"
+     "<div class=\"kpis\">"
+     (fin-dashboard--kpi "Monthly liquid" (concat "R$ " (fin-dashboard--grouped liquid))
+                         (if (< (abs unalloc) 0.05) "fully allocated"
+                           (format "%.1f%% (R$ %s) unallocated" unalloc
+                                   (fin-dashboard--grouped (round (* liquid unalloc 0.01))))))
+     (fin-dashboard--kpi "Fixed share" (format "%.1f%%" fix-pct)
+                         (format "target ≤ %d%%" fin-budget-fix-target)
+                         (if (<= fix-pct fin-budget-fix-target) "good" "bad"))
+     (fin-dashboard--kpi "Runway" (format "%.1f mo" (nth 2 rw)) "emergency reserve / fixed costs")
+     (fin-dashboard--kpi "Over target" (format "%d of %d" over (length goals))
+                         (format "in %s" (fin-dashboard--month-name month))
+                         (if (zerop over) "good" "bad"))
+     "</div>"
+     (fin-dashboard--block (format "Fixed <span class=\"dim\">%.1f%% / %d%%</span>" fix-pct fin-budget-fix-target)
+                           "Fixed monthly outflows, driven by amount"
+                           (fin-dashboard--goals-table (funcall kind-rows "fix")))
+     (fin-dashboard--block (format "Variable <span class=\"dim\">%.1f%% / %d%%</span>" var-pct fin-budget-var-target)
+                           "Variable allocations, driven by share of liquid; investments funds the indented rows"
+                           (fin-dashboard--goals-table (funcall kind-rows "var"))))))
 
 (defun fin-dashboard--panel-accounts ()
   (let* ((accts (fin-report--accounts))
@@ -218,7 +235,11 @@
     (fin-dashboard--panel
      "Accounts" "accounts"
      "Account balances; expand a row to see sub-accounts"
-     (fin-dashboard--alist '("category" "balance" "%") rows))))
+     (fin-dashboard--alist '("category" "balance" "%") rows
+                           (list "total"
+                                 (fin-dashboard--money-cell
+                                  (apply #'+ (mapcar (lambda (r) (or (nth 1 r) 0)) accts)))
+                                 "")))))
 
 (defun fin-dashboard--panel-patrimony ()
   (let* ((summary       (fin-report--patrimony-summary))
@@ -254,9 +275,8 @@
     (fin-dashboard--panel
      "Patrimony" "patrimony"
      "Owned items: cost, lifespan, monthly amortization (cost / lifespan); % share of total monthly"
-     (format "<p class=\"sub\">Total monthly amortization: <b>R$ %s</b></p>"
-             (fin-dashboard--money-str (round total-monthly)))
-     (fin-dashboard--alist '("category" "items" "total" "%") rows))))
+     (fin-dashboard--alist '("category" "items" "amount" "%") rows
+                           (list "total" "" (fin-dashboard--money-cell (round total-monthly)) "")))))
 
 (defun fin-dashboard--month-body (items)
   "Category drilldown for a month's items."
@@ -345,7 +365,7 @@ Future months of the current year use the objectives forecast
                            (fin-dashboard--monthly-block y eff now-y now-m)
                            nil
                            cur)))
-                 (fin-report--annual-sums))))
+                 (reverse (fin-report--annual-sums)))))   ; newest year first
     (fin-dashboard--panel
      "Cashflow" "cashflow"
      "Year → month → category drilldown of in/out/liquid"

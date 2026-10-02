@@ -45,5 +45,12 @@
       ;; Synthetic `patrimony' leaf must appear inside Var investments drilldown.
       (should (string-match-p "patrimony" html)))))
 
+(ert-deftest dashboard/status-bar-links-every-panel ()
+  (fin-test-with-db
+    (let ((html (fin-test--render-html)))
+      (dolist (n (mapcar #'car fin-dashboard--tabs))
+        (should (string-search (format "<section id=\"%s\"" n) html))
+        (should (string-search (format "href=\"#%s\"" n) html))))))
+
 (provide 'test-dashboard)
 ;;; test-dashboard.el ends here

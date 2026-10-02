@@ -86,6 +86,7 @@ Schema is auto-created on first =M-x fin-db-rebuild= (or =finances fin-db-rebuil
 ├── domain/              ; pure aggregations (queries only)
 │   ├── cashflow.el
 │   ├── budget.el
+│   ├── goals.el         ; plan targets vs actual entries
 │   ├── patrimony.el
 │   ├── accounts.el
 │   ├── reconcile.el     ; bank ↔ ledger matching (pure)
@@ -105,7 +106,7 @@ Schema is auto-created on first =M-x fin-db-rebuild= (or =finances fin-db-rebuil
 │   ├── helpers.el       ; temp-db fixture + seed inserters
 │   ├── all-tests.el     ; entrypoint
 │   ├── adapters/{test-db,test-parser,test-bankdb,test-ofx,test-odswrite}.el
-│   ├── domain/{test-budget,test-stats,test-patrimony,test-accounts,test-cashflow,test-reconcile,test-conventions}.el
+│   ├── domain/{test-budget,test-stats,test-patrimony,test-accounts,test-cashflow,test-reconcile,test-conventions,test-goals}.el
 │   ├── tools/{test-sync,test-bank,test-bankfix}.el
 │   └── view/{test-fmt,test-charts,test-dashboard}.el
 └── infra/
@@ -208,13 +209,15 @@ Nubank card bills declare =CHARSET:1252= but are UTF-8.  The parser ignores the 
 
 * Dashboard
 
-=M-x fin-dashboard= writes =view/dashboard.html= and opens it.  Static, dark, no JS.
+=M-x fin-dashboard= writes =view/dashboard.html= and opens it.  Static, no JS.  Plain terminal look (monospace, lowercase labels, =$= prompt, aqua accent; no panel headings, the status bar names the current one).  One panel at a time, at most 640px wide and centered, picked from a tmux-like status bar at the bottom (=1:obj 2:cash 3:patr 4:acct 5:stat=, current marked =*=); each is a =#id= anchor shown with CSS =:target= (objectives when none), so the URL keeps the view and each number is also its =accesskey=; dark by default, light with =data-theme="light"= on =<html>=: every color is a theme role in =fin-dashboard--palette= (light and dark value), emitted as CSS custom properties and referenced as =var(--role)= in markup and SVG.  Values follow a validated data-viz palette with the financial convention: green for in / positive / on target, red for out / negative / off target (direction and position also encode it: above vs below the baseline, signed gaps), a neutral graphite accent, a fixed categorical order for shares without green or red (past six slices a neutral "other").  Hover text comes from SVG =<title>=.
 
 A two-stat *hero* tops the page: /Final balance (entries)/ (latest cumulative net worth, Σ in − out) and /Accounts balance (now)/ (patrimony total); each colored pos/neg.
 
+Under the header, on every panel, a full-width LED ticker of the records (net worth, best/worst month, biggest income/purchase, best/avg yearly save, recurring share, since, months); its tape keeps the content width.  CSS-only scrolling, dark in both themes, pauses on hover, static under reduced motion.
+
 Five panels:
-- *Stats*: all-time flow bar chart (full width header) + 3-col body — line trends col (net worth, rolling save %, income-vs-expense MA, Pareto, yearly save %, spend heatmap) · share donuts col (category, income) · scoreboard col (Records kv, Recurring by months, Recurring all time).
-- *Objectives*: budget plan with =fix= and =var= side-by-side; each subpanel title shows actual % / target %; sub line shows liquid + runway.  Var rows split into =target= / % (dimmed plan) and =amount= / % (actual): =investments= reports its latest monthly distribution (ODS extras + patrimony amortization, via =fin-report--last-distribution=); other var cats report the full target allocation.
+- *Stats*: the all-time flow bar chart and, stacked, the line trends (net worth, rolling save %, income-vs-expense MA, Pareto, yearly save %, spend heatmap), the share donuts (category, income) and the recurring tables (by months, all time).
+- *Objectives*: KPI tiles (monthly liquid and unallocated share, fixed share vs its 55% target, runway, rows over target this month), then one bullet row per plan row and per child of =investments= (=domain/goals.el=): the bar's full width is the monthly target and the current month so far fills it green; spending past the target grows red from the right end by the overrun's share of the target (saving rows, =investments=, =retirement=, =emergency=, never turn red).  Actuals: same-named entry category; =investments= = everything it funds (its contributions minus =reserve= withdrawals, plus =family=, =vacations=, =patrimony= and =car= spending); =emergency= = =investments/emergency= minus =reserve=; =patrimony= = =patrimony= + =car= spending against the amortization.  Under it, one row per register class against its own monthly amortization: =car= entries are class =car=; =patrimony= entries take the class =fin-goals-patrimony-classes= (in =infra/config.el=, item regexp → class) maps their item to, and an =unmapped= row (target 0, so red) reports items the map doesn't cover yet.
 - *Accounts*: balances + sub-accounts (expandable).
 - *Patrimony*: items + amortization (expandable).
 - *Cashflow* (right, tall): year → month → category → leaf (=item= · =date= · =amount=) drilldown.  Future months in the current year use plan-derived placeholders (dimmed).  The current-year header row reconciles with its months by summing actuals + forecast (in / out / liquid / save %).
