@@ -28,6 +28,8 @@
   (should (equal "academia tutubarao ltda"
                  (fin-conv-item "Transferência enviada pelo Pix - Academia Tutubarao Ltda - 04.871")))
   (should (equal "auvpescola" (fin-conv-item "Mp *Auvpescola - Parcela 3/12")))
+  (should (equal "flavia simioli gutierrez"
+                 (fin-conv-item "Transferência enviada - Flavia Simioli Gutierrez - •••.567.921-•• - BC")))
   (should (equal "linode . akamai" (fin-conv-item "Linode . Akamai")))
   (should (equal '(3 12) (fin-conv-installment "Mp *Auvpescola - Parcela 3/12")))
   (should (equal '(nil nil) (fin-conv-installment "Padaria"))))

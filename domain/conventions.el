@@ -70,7 +70,7 @@ e.g. (\"veronica\" . \"aluguel\").  Words are lowercase without accents."
 
 (defconst fin-conv--prefix-re
   (concat "\\`\\(Compra no débito via NuPay\\|Compra no débito"
-          "\\|Transferência enviada pelo Pix\\|Pix no Crédito"
+          "\\|Transferência enviada pelo Pix\\|Transferência enviada\\|Pix no Crédito"
           "\\|Pagamento de boleto efetuado\\|Débito em conta\\)\\s-*-?\\s-*")
   "Bank boilerplate in front of the payee name.")
 
