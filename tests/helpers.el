@@ -24,6 +24,10 @@
 (require 'panels)
 (require 'dashboard)
 (require 'sync)
+(require 'bankdb)
+(require 'ofx)
+(require 'reconcile)
+(require 'bank)
 
 ;;; ── DB fixture ──────────────────────────────────────────────
 

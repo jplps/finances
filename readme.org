@@ -50,14 +50,17 @@ Schema is auto-created on first =M-x fin-db-rebuild= (or =finances fin-db-rebuil
 
 * M-x commands
 
-| Command            | Action                                         |
-|--------------------+------------------------------------------------|
-| =fin=              | Reload sources, refresh DB, open dashboard.    |
-| =fin-reload=       | Reload every project source file (no restart). |
-| =fin-sync-refresh= | ODS → DB only.                                 |
-| =fin-dashboard=    | Regenerate HTML, open in browser.              |
-| =fin-open-ods=     | Open the source ODS in LibreOffice.            |
-| =fin-db-rebuild=   | Drop + recreate SQLite tables.                 |
+| Command                 | Action                                         |
+|-------------------------+------------------------------------------------|
+| =fin=                   | Reload sources, refresh DB, open dashboard.    |
+| =fin-reload=            | Reload every project source file (no restart). |
+| =fin-sync-refresh=      | ODS → DB only.                                 |
+| =fin-dashboard=         | Regenerate HTML, open in browser.              |
+| =fin-open-ods=          | Open the source ODS in LibreOffice.            |
+| =fin-db-rebuild=        | Drop + recreate SQLite tables.                 |
+| =fin-bank-import=       | Import new OFX statements from the inbox.      |
+| =fin-bank-reconcile=    | Bank vs ledger review buffer for a year.       |
+| =fin-bank-copy-missing= | Copy a year's bank-only rows as TSV.           |
 
 =fin= reloads sources before refreshing so edits land without an Emacs restart; a prefix arg (=C-u M-x fin=) skips the reload.
 
@@ -71,14 +74,18 @@ Schema is auto-created on first =M-x fin-db-rebuild= (or =finances fin-db-rebuil
 ├── core.el              ; entry point — (require 'core)
 ├── adapters/
 │   ├── parser.el        ; ODS XML reader (outbound port)
-│   └── db.el            ; SQLite schema + helpers
+│   ├── db.el            ; SQLite schema + helpers
+│   ├── bankdb.el        ; bank staging tables (survive rebuild)
+│   └── ofx.el           ; OFX statement parser
 ├── tools/
-│   └── sync.el          ; use case: ODS → DB
+│   ├── sync.el          ; use case: ODS → DB
+│   └── bank.el          ; use case: OFX → bank tables, reconcile review
 ├── domain/              ; pure aggregations (queries only)
 │   ├── cashflow.el
 │   ├── budget.el
 │   ├── patrimony.el
 │   ├── accounts.el
+│   ├── reconcile.el     ; bank ↔ ledger matching (pure)
 │   └── stats.el         ; cat/income shares, top-recurring, top-by-count,
 │                        ; yearly-saves, cumulative-networth, rolling-save-rate,
 │                        ; rolling-flow, pareto-spending, monthly-spend-grid, records, period
@@ -93,12 +100,13 @@ Schema is auto-created on first =M-x fin-db-rebuild= (or =finances fin-db-rebuil
 ├── tests/               ; ERT suite mirroring source layout
 │   ├── helpers.el       ; temp-db fixture + seed inserters
 │   ├── all-tests.el     ; entrypoint
-│   ├── adapters/{test-db,test-parser}.el
-│   ├── domain/{test-budget,test-stats,test-patrimony,test-accounts,test-cashflow}.el
-│   ├── tools/test-sync.el
+│   ├── adapters/{test-db,test-parser,test-bankdb,test-ofx}.el
+│   ├── domain/{test-budget,test-stats,test-patrimony,test-accounts,test-cashflow,test-reconcile}.el
+│   ├── tools/{test-sync,test-bank}.el
 │   └── view/{test-fmt,test-charts,test-dashboard}.el
 └── infra/
-    ├── finances.db      ; SQLite mirror (gitignored)
+    ├── finances.db      ; SQLite mirror + bank tables (gitignored)
+    ├── inbox/           ; bank OFX statements to import (gitignored)
     └── seeds.ods        ; source of truth
 #+end_example
 
@@ -138,6 +146,38 @@ Four sheets.  All category/name values *lowercase kebab-case*; item descriptions
 
 =monthly_liquid= = AVG over the current year's months of (Σ =type=in= − Σ =category=cnpj=).
 CNPJ tax (a =type=out= row under =category=cnpj=) is subtracted from gross income in this base rather than counted as expense.
+
+* Bank reconciliation
+
+Bank statements check the ODS; they never write to it.  Differences are shown for review and fixed by hand in the ODS.
+
+** Sources (Nubank, free)
+
+- *Account*: app → Extrato → Exportar extrato → OFX.  Any date range.
+- *Card*: app → Cartão de crédito → Resumo de faturas → closed bill → Enviar fatura por e-mail → OFX.  One bill per file, sent as an email attachment.
+- History older than the app allows: LGPD request to Nubank's DPO (=dponubank.zendesk.com=).
+
+** Flow
+
+1. Save statements to =infra/inbox/=.
+2. =M-x fin-bank-import= — parses every =.ofx= into =bank_txn=.  Re-importing is safe: rows dedup by =FITID=, files by content hash.
+3. =M-x fin-bank-reconcile= — review buffer for one year: month totals, near matches, bank-only, ledger-only.
+4. =M-x fin-bank-copy-missing= — bank-only rows as TSV in =entries= column order (=category= left empty); paste into the ODS.
+5. Fix the ODS, then =M-x fin=.
+
+** Matching
+
+- Ledger compared only within the bank's date span (± window).  Future-dated rows are skipped on both sides: ledger plan placeholders, and installments an open card bill lists before they are charged.
+- *Exact*: same =type= and =amount=, dates within =fin-reconcile-window= (3 days).  Closest date wins; each ledger row matches once.
+- *Near*: same =type=, within the window, amount gap ≤ =fin-reconcile-near-ratio= (5%), and either a word shared by bank description and ledger =item= (case and accents ignored) or a gap ≤ =fin-reconcile-near-close-ratio= (1%).  Review only, never auto-fixed.
+- *Net rules* (=fin-reconcile-net-rules=, default =bp= − =cnpj=): each month's gross income and its booked deduction fold into one net row, since the bank only receives the net.
+- *Ignored* (=fin-bank-ignore-regexps=): "Pagamento de fatura" / "Pagamento recebido" — the bill payment seen from both sides; card purchases are reconciled from the bill instead.  Rows stay stored.
+- Investment moves (=Aplicação RDB=, =Resgate RDB=, crypto) are reconciled, since the ledger books them as =investments= entries.
+- Pre-2022 ledger holds monthly lumps: rely on the month totals section there.
+
+** Encoding
+
+Nubank card bills declare =CHARSET:1252= but are UTF-8.  The parser ignores the header: valid UTF-8 decodes as UTF-8, anything else as windows-1252.
 
 * Dashboard
 
@@ -181,6 +221,7 @@ emacs -Q -batch \
 
 Coverage scope:
 - Pure formatters (=view/fmt.el=): every fn × edge (nil, 0, neg, k-suffix).
+- Bank: OFX parsing (closed and bare SGML, cents without floats, encoding detection), idempotent import, matching buckets (exact, near, net, ignored), review buffer and TSV export.
 - ODS parser: cell-value precedence (=date-value= > =value= > text), =number-columns-repeated= expansion + cap.
 - DB layer: schema rebuild idempotency, cents-as-integer storage, composite PK semantics.
 - Domain queries: each public fn against seeded fixtures, including =/0=, =NULL=, future-month, multi-year scenarios.
@@ -197,7 +238,8 @@ Fixtures live in =tests/helpers.el= (=fin-test-with-db= macro, seed inserters, =
 - *Zero external runtime deps*: Emacs 29 stdlib (=sqlite=, =libxml=, =dom=) + macOS =unzip=.
 - *Static HTML dashboard*: no server, no JS, no port.  =M-x fin= opens the latest.
 - *Currency reserved* (=entry.currency=) but BRL-only for now.
-- =infra/finances.db= gitignored; regeneratable from ODS at any time.
+- =infra/finances.db= gitignored; ODS tables regeneratable from the ODS, bank tables from =infra/inbox/= (=fin-db-rebuild= leaves them alone).
+- *Bank data fixes, never writes*: the ODS stays canonical; reconciliation only reports.
 - *Tests are stdlib*: ERT only, no =buttercup= / =undercover= / external runners.  Keeps the zero-deps invariant honest.
 
 * License
