@@ -18,6 +18,10 @@
                      (:edit ("2025-05-02" "out" "car" "seguro" 15353) 15357))
                    (sort (copy-sequence changes) (lambda (a b) (string< (symbol-name (car a)) (symbol-name (car b)))))))))
 
+(ert-deftest bankfix/changes-keep-identical-adds ()
+  (let ((add (list :add '("2023-05-19" "out" "free" "porks" 1800 nil nil) "Porks")))
+    (should (= 2 (length (fin-bank-fix--changes (list add add)))))))
+
 (ert-deftest bankfix/changes-refuse-synthetic-rows ()
   (should-error (fin-bank-fix--changes
                  (list (list :edit (list (list 'net "2026-07" "bp") "2026-07-03" "in" "bp" "net" 1 nil) 2 "x")))))
@@ -49,6 +53,28 @@
           (write-region "" nil (expand-file-name ".~lock.seeds.ods#" dir))
           (should-error (fin-bank-fix--check-closed ods) :type 'user-error))
       (delete-directory dir t))))
+
+(ert-deftest bankfix/months-count-card-bill-only-without-card-statement ()
+  (fin-test-with-db
+    (fin-test-insert-entry "2022-05-10" "out" "food" 30000 "x")
+    (fin-test-insert-entry "2022-05-11" "out" "investments" 99900 "house")
+    (fin-bankdb-insert '(("c" "t" "card" "2023-12-10" "out" 5000 "Padaria")))
+    (let ((raw '(("a" "2022-05-03" "out" 20000 "Pix")
+                 ("f" "2022-05-08" "out" 40000 "Pagamento de fatura")
+                 ("g" "2023-12-08" "out" 9000 "Pagamento de fatura")
+                 ("s" "2022-05-09" "out" 7000 "Aplicação RDB"))))
+      (should (equal '(("2022-05" 60000 30000) ("2023-12" 5000 0))
+                     (fin-bank-fix--months (list (nth 0 raw) (nth 3 raw) '("c" "2023-12-10" "out" 5000 "Padaria"))
+                                           raw "2022-01-01"))))))
+
+(ert-deftest bankfix/adds-before-itemized-ledger-become-reports ()
+  (let ((out (fin-bank-fix--lumped
+              (list (list :add '("2021-05-03" "in" "extras" "nkey" 712500 nil nil) "Transferência Recebida - 4 Nkey")
+                    (list :add '("2022-07-03" "out" "food" "hippo" 100 nil nil) "HIPPO")
+                    (list :edit '(1 "2021-05-01" "out" "food" nil 100 nil) 90 "bank"))
+              "2022-07-01")))
+    (should (equal '(:report :add :edit) (mapcar #'car out)))
+    (should (equal '(nil "2021-05-03" "in" 712500 "Transferência Recebida - 4 Nkey") (cadr (car out))))))
 
 (provide 'test-bankfix)
 ;;; test-bankfix.el ends here

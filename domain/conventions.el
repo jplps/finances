@@ -25,7 +25,8 @@
 (require 'cl-lib)
 (require 'reconcile)
 
-(defcustom fin-conv-refund-re "\\`\\(Estorno\\|Reembolso recebido\\|Devolução\\|Crédito de Confiança\\)"
+(defcustom fin-conv-refund-re
+  "\\`\\(Estorno\\|Reembolso recebido\\|Devolução\\|Crédito de Confiança\\|Transferência devolvida\\)"
   "Bank descriptions of money returned for a purchase."
   :type 'regexp :group 'fin)
 

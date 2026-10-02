@@ -97,6 +97,12 @@ any write.  Return the number of rows actually inserted."
      ORDER BY date, id"
    (list from)))
 
+(defun fin-bankdb-card-months ()
+  "YYYY-MM months that card statements cover."
+  (fin-bankdb-ensure)
+  (mapcar #'car (fin-db-query
+                 "SELECT DISTINCT strftime('%Y-%m', date) FROM bank_txn WHERE account = 'card'")))
+
 (defun fin-bankdb-year (year)
   "Bank rows of YEAR up to today as (id date type amount description), by date.
 Open card bills list future installments not charged yet; they are skipped."

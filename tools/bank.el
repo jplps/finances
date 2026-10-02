@@ -24,6 +24,7 @@
 
 (defcustom fin-bank-ignore-regexps
   '("\\`Pagamento de fatura\\'"
+    "\\`Pagamento da fatura"
     "\\`Pagamento recebido\\'"
     "\\`Valor adicionado na conta por cartão"
     "\\`Valor enviado como crédito na fatura"

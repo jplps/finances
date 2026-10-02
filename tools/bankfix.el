@@ -21,6 +21,11 @@
 it, and the ledger lists single purchases from there on."
   :type 'string :group 'fin)
 
+(defcustom fin-bank-fix-itemized-from "2022-07-01"
+  "First date the ledger books single purchases; before it, monthly lumps
+per category and income by payer, so bank rows are reported, not added."
+  :type 'string :group 'fin)
+
 (defcustom fin-bank-fix-unspent-categories '("investments" "retirement" "reserve" "cnpj")
   "Ledger categories that are not Nubank spending: savings goals, withheld
 tax.  Left out when comparing a month's ledger with the bank."
@@ -37,13 +42,20 @@ tax.  Left out when comparing a month's ledger with the bank."
                    (mapconcat (lambda (_) "?") fin-bank-fix-unspent-categories ","))
            (cons from fin-bank-fix-unspent-categories))))
 
-(defun fin-bank-fix--months (bank from)
-  "(YYYY-MM bank-out ledger-out) per month of BANK rows, savings excluded."
-  (let ((sums (make-hash-table :test #'equal)) (ledger (fin-bank-fix--ledger-out from)) out)
-    (dolist (b bank)
-      (when (and (equal (nth 2 b) "out") (not (fin-conv--savings-p b)))
-        (let ((ym (substring (nth 1 b) 0 7)))
-          (puthash ym (+ (gethash ym sums 0) (nth 3 b)) sums))))
+(defun fin-bank-fix--months (bank raw from)
+  "(YYYY-MM bank-out ledger-out) per month of BANK rows, savings excluded.
+In a month no card statement covers, the card bill paid from the account
+(in RAW, the rows before ignoring) stands for the card purchases."
+  (let ((sums (make-hash-table :test #'equal)) (ledger (fin-bank-fix--ledger-out from))
+        (card (fin-bankdb-card-months)) out)
+    (cl-flet ((add (b) (let ((ym (substring (nth 1 b) 0 7)))
+                         (puthash ym (+ (gethash ym sums 0) (nth 3 b)) sums))))
+      (dolist (b bank)
+        (when (and (equal (nth 2 b) "out") (not (fin-conv--savings-p b))) (add b)))
+      (dolist (b raw)
+        (when (and (equal (nth 2 b) "out") (string-match-p "\\`Pagamento d[ae] fatura" (nth 4 b))
+                   (not (member (substring (nth 1 b) 0 7) card)))
+          (add b))))
     (maphash (lambda (ym v) (push (list ym v (or (cdr (assoc ym ledger)) 0)) out)) sums)
     (sort out (lambda (a b) (string< (car a) (car b))))))
 
@@ -79,8 +91,18 @@ tax.  Left out when comparing a month's ledger with the bank."
           :shifted (plist-get sh :shifted)
           :bank-only (append (plist-get sh :bank-only) saving)
           :entry-only (plist-get sh :entry-only) :notes (plist-get norm :notes)
-          :months (fin-bank-fix--months bank from)
+          :months (fin-bank-fix--months bank (plist-get norm :rows) from)
           :history hist)))
+
+(defun fin-bank-fix--lumped (actions itemized-from)
+  "ACTIONS with adds dated before ITEMIZED-FROM turned into reports."
+  (mapcar (lambda (a)
+            (if (and (eq (car a) :add) (string< (car (cadr a)) itemized-from))
+                (pcase-let ((`(,date ,type ,_c ,_i ,amount . ,_) (cadr a)))
+                  (list :report (list nil date type amount (caddr a))
+                        (format "before %s the ledger books monthly lumps" itemized-from)))
+              a))
+          actions))
 
 (defun fin-bank-fix--key (l)
   "ODS row key of ledger row L."
@@ -104,7 +126,9 @@ tax.  Left out when comparing a month's ledger with the bank."
         (`(:delete ,l ,_) (push (list :delete (fin-bank-fix--key l)) out))
         (`(,(or :report :skip) . ,_) nil)
         (_ (error "fin-bank: bad action %S" a))))
-    (cl-delete-duplicates (nreverse out) :test #'equal :from-end t)))
+    ;; Two identical adds are two charges; only edits and deletes repeat.
+    (cl-delete-duplicates (nreverse out) :from-end t
+                          :test (lambda (a b) (and (not (eq (car a) :add)) (equal a b))))))
 
 (defun fin-bank-fix--insert-section (title items fmt)
   (insert (format "\n* %s (%d)\n\n" title (length items)))
@@ -162,6 +186,7 @@ With prefix arg DRY-RUN, only report.  Run `fin' afterwards."
                                  :entry-only (plist-get r :entry-only)
                                  :history (plist-get r :history)
                                  :months (plist-get r :months)))
+         (actions (fin-bank-fix--lumped actions fin-bank-fix-itemized-from))
          (changes (fin-bank-fix--changes actions))
          (backup (when (and changes (not dry-run))
                    (fin-odsw-save fin-ods-path (fin-odsw-apply (fin-odsw-read fin-ods-path) changes)))))
