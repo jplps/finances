@@ -94,6 +94,7 @@ p b     { font-weight: 600; }
 .kpi-note  { color: var(--muted); font-size: var(--font-xs); }
 .kpi.good .kpi-value { color: var(--good-text); }
 .kpi.bad  .kpi-value { color: var(--bad-text); }
+.kpis.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 @media (max-width: 700px) { .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 
 /* ── goals table ───────────────────────────────────── */
@@ -118,6 +119,13 @@ table.goals td.cat label::before {
 }
 table.goals td.cat label:has(input:checked)::before { transform: rotate(90deg); color: var(--accent-2); }
 svg.bullet { display: block; width: 100%; height: 16px; overflow: visible; }
+
+/* ── ledger health to-do ───────────────────────────── */
+.health .todo { padding: 4px 0; font-size: var(--font-sm); }
+.health .todo b { font-weight: 600; color: var(--accent); }
+.health table { margin: 2px 0 10px 22px; width: calc(100% - 22px); table-layout: fixed; }
+.health table td:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.health table th:not(:first-child) { width: 96px; }
 
 /* ── stats sub-layout ──────────────────────────────── */
 .stat-pair  { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }

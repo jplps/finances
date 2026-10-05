@@ -5,6 +5,7 @@
 ;; them.  They are re-derivable from the files in the inbox: imports are
 ;; idempotent by transaction id and by file hash.
 
+(require 'cl-lib)
 (require 'db)
 
 (defconst fin-bankdb--ddl
@@ -24,6 +25,18 @@
        date        TEXT NOT NULL,
        amount      INTEGER NOT NULL,
        PRIMARY KEY (account, date))"
+
+    "CREATE TABLE IF NOT EXISTS bank_fix_run (
+       run_at      TEXT PRIMARY KEY DEFAULT (strftime('%Y-%m-%dT%H:%M:%f','now')),
+       changes     INTEGER NOT NULL,
+       dry         INTEGER NOT NULL CHECK (dry IN (0,1)))"
+
+    "CREATE TABLE IF NOT EXISTS bank_fix_flag (
+       bank_id     TEXT PRIMARY KEY,
+       date        TEXT NOT NULL,
+       amount      INTEGER NOT NULL,
+       description TEXT NOT NULL,
+       reason      TEXT NOT NULL)"
 
     "CREATE TABLE IF NOT EXISTS bank_import (
        file_sha1   TEXT PRIMARY KEY,
@@ -129,6 +142,35 @@ any write.  Return the number of rows actually inserted."
   (let ((r (car (fin-db-query "SELECT date, amount FROM bank_balance WHERE account = ?
                                 ORDER BY date DESC LIMIT 1" (list account)))))
     (and r (cons (car r) (cadr r)))))
+
+(defun fin-bankdb-record-fix-run (changes dry flags)
+  "Record a `fin-bank-fix' run: CHANGES count, DRY (non-nil for a dry run),
+and FLAGS, the (id date amount description reason) bank rows it only
+reported, replacing the previous run's."
+  (cl-assert (natnump changes))
+  (let ((db (fin-bankdb-ensure)))
+    (with-sqlite-transaction db
+      (sqlite-execute db "INSERT INTO bank_fix_run (changes, dry) VALUES (?, ?)"
+                      (list changes (if dry 1 0)))
+      (sqlite-execute db "DELETE FROM bank_fix_flag")
+      (dolist (f flags)
+        (sqlite-execute db "INSERT OR REPLACE INTO bank_fix_flag (bank_id, date, amount, description, reason)
+                            VALUES (?,?,?,?,?)" f)))))
+
+(defun fin-bankdb-last-fix-run ()
+  "(RUN-AT CHANGES DRY) of the latest `fin-bank-fix' run, or nil."
+  (fin-bankdb-ensure)
+  (car (fin-db-query "SELECT run_at, changes, dry FROM bank_fix_run ORDER BY run_at DESC LIMIT 1")))
+
+(defun fin-bankdb-fix-flags ()
+  "(DATE AMOUNT DESCRIPTION REASON) the last run reported, newest first."
+  (fin-bankdb-ensure)
+  (fin-db-query "SELECT date, amount, description, reason FROM bank_fix_flag ORDER BY date DESC"))
+
+(defun fin-bankdb-imported-since (stamp)
+  "Bank rows imported after timestamp STAMP (UTC, as SQLite writes it)."
+  (fin-bankdb-ensure)
+  (caar (fin-db-query "SELECT COUNT(*) FROM bank_txn WHERE imported_at > ?" (list stamp))))
 
 (defun fin-bankdb-account-rows (account)
   "Ids and (FIRST . LAST) dates of ACCOUNT's rows: (IDS . SPAN), SPAN nil if none."

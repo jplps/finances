@@ -140,6 +140,31 @@ dropped (a partial month cannot be judged)."
               a))
           actions))
 
+(defcustom fin-bank-fix-flag-days 90
+  "Bank rows a run only reports are flagged in the cockpit for this many days."
+  :type 'integer :group 'fin)
+
+(defcustom fin-bank-fix-flag-min 30000
+  "Smallest reported bank row, in cents, the cockpit flags for classifying."
+  :type 'integer :group 'fin)
+
+(defcustom fin-bank-fix-flag-ignore-regexps nil
+  "Descriptions of reported bank rows the cockpit should not flag: rows the
+ledger books under another name or date, checked once."
+  :type '(repeat regexp) :group 'fin)
+
+(defun fin-bank-fix--flags (actions)
+  "(id date amount description reason) of recent, large bank rows ACTIONS
+only report: the ones a person must classify."
+  (let ((since (format-time-string "%Y-%m-%d" (time-subtract nil (days-to-time fin-bank-fix-flag-days)))))
+    (cl-loop for a in actions
+             for r = (cadr a)
+             when (and (eq (car a) :report) (= (length r) 5) (stringp (car r))
+                       (not (string< (nth 1 r) since)) (>= (nth 3 r) fin-bank-fix-flag-min)
+                       (not (cl-some (lambda (re) (string-match-p re (nth 4 r)))
+                                     fin-bank-fix-flag-ignore-regexps)))
+             collect (list (car r) (nth 1 r) (nth 3 r) (nth 4 r) (caddr a)))))
+
 (defun fin-bank-fix--lump-card-p (b itemized-from)
   "Non-nil if bank row B comes from a PDF card bill dated before ITEMIZED-FROM."
   (and (string-prefix-p "nu:pdf:" (car b)) (string< (nth 1 b) itemized-from)))
@@ -287,6 +312,7 @@ With prefix arg DRY-RUN, only report.  Run `fin' afterwards."
          (changes (fin-bank-fix--changes actions))
          (backup (when (and changes (not dry-run))
                    (fin-odsw-save fin-ods-path (fin-odsw-apply (fin-odsw-read fin-ods-path) changes)))))
+    (fin-bankdb-record-fix-run (length changes) dry-run (fin-bank-fix--flags actions))
     (fin-bank-fix--report actions (plist-get r :notes) backup)
     (message "fin-bank: %d changes%s" (length changes)
              (cond (dry-run " (dry run)") (changes ", run M-x fin") (t "")))

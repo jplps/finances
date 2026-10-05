@@ -216,41 +216,79 @@ fold them, and each row names its ancestors so folding one hides it."
   (format "<div class=\"kpi%s\"><div class=\"kpi-label\">%s</div><div class=\"kpi-value\">%s</div><div class=\"kpi-note\">%s</div></div>"
           (if cls (concat " " cls) "") label value note))
 
+(defun fin-dashboard--count (n word)
+  "N WORD, WORD pluralized with an s unless N is 1."
+  (format "%d %s%s" n word (if (= n 1) "" "s")))
+
+(defun fin-dashboard--health-mark (ok)
+  (if ok "<span class=\"pos\">✓</span>" "<span class=\"neg\">⚠</span>"))
+
+(defun fin-dashboard--health-line (ok text)
+  "One to-do line: a mark, then TEXT (HTML)."
+  (format "<div class=\"todo\">%s %s</div>" (fin-dashboard--health-mark ok) text))
+
+(defun fin-dashboard--health-inbox ()
+  (let* ((rows (fin-health-inbox))
+         (late (cl-remove-if #'caddr rows)))
+    (if (null late)
+        (list t (fin-dashboard--health-line t "statements reach last month's end"))
+      (list nil (mapconcat (lambda (r) (fin-dashboard--health-line
+                                        nil (format "export <b>%s</b> (have to %s)" (car r) (fin-dashboard--dm (cadr r)))))
+                           late "")))))
+
+(defun fin-dashboard--health-fix ()
+  (let ((f (fin-health-fix)))
+    (if (null f)
+        (list nil (fin-dashboard--health-line nil "run <b>fin-bank-fix</b>: no run recorded"))
+      (let ((at (format-time-string "%d/%m %H:%M" (date-to-time (concat (substring (plist-get f :run-at) 0 19) "Z")))))
+        (list (plist-get f :ok)
+              (fin-dashboard--health-line
+               (plist-get f :ok)
+               (cond ((> (plist-get f :since) 0)
+                      (format "run <b>fin-bank-fix</b>: %s imported since the last run (%s)"
+                              (fin-dashboard--count (plist-get f :since) "bank row") at))
+                     ((and (plist-get f :dry) (> (plist-get f :changes) 0))
+                      (format "run <b>fin-bank-fix</b>: the dry run of %s found %s" at
+                              (fin-dashboard--count (plist-get f :changes) "change")))
+                     (t (format "last fix %s · %s%s" at (fin-dashboard--count (plist-get f :changes) "change")
+                                (if (plist-get f :dry) " (dry run)" ""))))))))))
+
+(defun fin-dashboard--health-flags ()
+  (let ((flags (fin-bankdb-fix-flags)))
+    (if (null flags)
+        (list t (fin-dashboard--health-line t "no large bank row left to classify"))
+      (list nil
+            (concat (fin-dashboard--health-line nil (format "classify %s the fix could not book" (fin-dashboard--count (length flags) "bank row")))
+                    (fin-dashboard--table
+                     '("bank" "date" "amount")
+                     (mapcar (lambda (f) (list (truncate-string-to-width (nth 2 f) 48 nil nil "…")
+                                               (fin-dashboard--dm (nth 0 f)) (fin-dashboard--money-cell (nth 1 f))))
+                             flags)))))))
+
+(defun fin-dashboard--health-gaps ()
+  (let ((gaps (fin-health-gaps 6)))
+    (if (null gaps)
+        (list t (fin-dashboard--health-line t "last six months: ledger in line with the bank"))
+      (list nil
+            (concat (fin-dashboard--health-line nil (format "%s off the bank by more than %d%%"
+                                                            (fin-dashboard--count (length gaps) "month")
+                                                            (round (* 100 fin-health-gap-share))))
+                    (fin-dashboard--table
+                     '("month" "bank out" "ledger out")
+                     (mapcar (lambda (m) (list (car m) (fin-dashboard--money-cell (nth 1 m))
+                                               (fin-dashboard--money-cell (nth 2 m))))
+                             gaps)))))))
+
 (defun fin-dashboard--health-block ()
-  "Ledger health: statement freshness, bank vs ledger per month, open items."
-  (let* ((today (fin-reconcile--day (format-time-string "%Y-%m-%d")))
-         (stmts (fin-health-statements))
-         (rem (fin-health-remainders))
-         (stale (lambda (d) (or (null d) (> (- today (fin-reconcile--day d)) 35))))
-         ;; A card's latest balance is its open bill, dated at the next closing.
-         (age (lambda (d) (cond ((null d) "none")
-                                ((> (fin-reconcile--day d) today) "open")
-                                (t (format "%dd" (- today (fin-reconcile--day d))))))))
+  "Ledger health as a to-do list: ✓ when a line needs nothing."
+  (let* ((parts (list (fin-dashboard--health-inbox) (fin-dashboard--health-fix)
+                      (fin-dashboard--health-flags) (fin-dashboard--health-gaps)))
+         (todo (cl-count-if-not #'car parts)))
     (fin-dashboard--block
-     "Ledger health"
-     "Inbox freshness, the ODS against the bank per month (as fin-bank-fix counts it), open items"
-     (concat
-      (fin-dashboard--table
-       '("statement" "latest" "age")
-       (mapcar (lambda (s)
-                 (pcase-let ((`(,acct ,d) s))
-                   (list acct (if d (fin-dashboard--dm d) "—")
-                         (list :raw (format "<span class=\"%s\">%s</span>"
-                                            (if (funcall stale d) "neg" "pos")
-                                            (funcall age d))))))
-               stmts))
-      (fin-dashboard--table
-       '("month" "bank out" "ledger out" "gap")
-       (mapcar (lambda (m)
-                 (pcase-let* ((`(,ym ,bank ,led) m)
-                              (gap (- led bank))
-                              (off (and (> bank 0) (> (abs gap) (* 0.1 bank)))))
-                   (list ym (fin-dashboard--money-cell bank) (fin-dashboard--money-cell led)
-                         (list :raw (format "<span class=\"%s\">%s%s</span>" (if off "neg" "dim")
-                                            (if (> gap 0) "+" "") (fin-dashboard--grouped gap))))))
-               (fin-health-months 6)))
-      (format "<p class=\"sub\">open: %d <i>other</i> remainders (R$ %s) standing for unitemized spending</p>"
-              (car rem) (fin-dashboard--grouped (cdr rem)))))))
+     (format "Ledger health <span class=\"%s\">%s</span>" (if (zerop todo) "pos" "neg")
+             (if (zerop todo) "✓ in sync" (format "⚠ %d to do" todo)))
+     "What to do so the ODS matches the bank: statements to export, the fix to run, rows to classify, months off"
+     (concat "<div class=\"health\">" (mapconcat #'cadr parts "") "</div>"))))
 
 (defun fin-dashboard--panel-cockpit ()
   (let* ((year   (fin-report--year-now))
@@ -261,12 +299,20 @@ fold them, and each row names its ancestors so folding one hides it."
          (fix-pct (funcall pct "fix"))
          (var-pct (funcall pct "var"))
          (kind-rows (lambda (kind) (cl-remove-if-not (lambda (r) (equal (plist-get r :kind) kind)) goals)))
-         (over (cl-count 'over goals :key (lambda (r) (plist-get r :status)))))
+         (over (cl-count 'over goals :key (lambda (r) (plist-get r :status))))
+         (liquid (nth 2 (fin-report--monthly-income year)))
+         (unalloc (- 100.0 fix-pct var-pct))
+         (rw (fin-report--runway)))
     (fin-dashboard--panel
      "Cockpit" "cockpit"
      "This month, balance, savings, plan targets and ledger health"
-     "<div class=\"kpis\">"
+     "<div class=\"kpis three\">"
      (fin-dashboard--now-tiles year month)
+     (fin-dashboard--kpi "plan" (concat "R$ " (fin-dashboard--grouped liquid))
+                         (if (< (abs unalloc) 0.05) "monthly liquid, fully allocated"
+                           (format "monthly liquid · %.1f%% (R$ %s) unallocated" unalloc
+                                   (fin-dashboard--grouped (round (* liquid unalloc 0.01))))))
+     (fin-dashboard--kpi "runway" (format "%.1f mo" (nth 2 rw)) "emergency reserve / fixed costs")
      (fin-dashboard--kpi "Over target" (format "%d of %d" over (length goals))
                          (format "in %s" (fin-dashboard--month-name month))
                          (if (zerop over) "good" "bad"))
