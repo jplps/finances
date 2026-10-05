@@ -17,10 +17,11 @@
       (should (string-match-p "<!doctype html>" html))
       (should (string-match-p "</html>" html))
       (should (string-match-p "STATS\\|Stats\\|stats"      html))
-      (should (string-match-p "OBJECTIVES\\|Objectives"    html))
+      (should (string-match-p "Cockpit"                   html))
       (should (string-match-p "ACCOUNTS\\|Accounts"        html))
       (should (string-match-p "PATRIMONY\\|Patrimony"      html))
-      (should (string-match-p "CASHFLOW\\|Cashflow"        html)))))
+      (should (string-match-p "Wealth"                    html))
+      (should (string-match-p "Ledger health"             html)))))
 
 (ert-deftest dashboard/parses-as-html-via-libxml ()
   (fin-test-with-db

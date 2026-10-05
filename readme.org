@@ -58,7 +58,7 @@ Schema is auto-created on first =M-x fin-db-rebuild= (or =finances fin-db-rebuil
 | =fin-dashboard=         | Regenerate HTML, open in browser.              |
 | =fin-open-ods=          | Open the source ODS in LibreOffice.            |
 | =fin-db-rebuild=        | Drop + recreate SQLite tables.                 |
-| =fin-bank-import=       | Import new OFX statements from the inbox.      |
+| =fin-bank-import=       | Import new OFX and PDF bills from the inbox.   |
 | =fin-bank-reconcile=    | Bank vs ledger review buffer for a year.       |
 | =fin-bank-copy-missing= | Copy a year's bank-only rows as TSV.           |
 | =fin-bank-fix=          | Fix the ODS from bank rows (=C-u=: dry run).   |
@@ -78,7 +78,9 @@ Schema is auto-created on first =M-x fin-db-rebuild= (or =finances fin-db-rebuil
 │   ├── db.el            ; SQLite schema + helpers
 │   ├── bankdb.el        ; bank staging tables (survive rebuild)
 │   ├── odswrite.el      ; edit entries sheet in place, backup, re-zip
-│   └── ofx.el           ; OFX statement parser
+│   ├── ofx.el           ; OFX statement parser
+│   ├── cardpdf.el       ; PDF card bill parser (rows from pdfrows.js)
+│   └── pdfrows.js       ; PDF → visual rows via macOS PDFKit
 ├── tools/
 │   ├── sync.el          ; use case: ODS → DB
 │   ├── bank.el          ; use case: inbox → bank tables, reconcile review
@@ -105,13 +107,13 @@ Schema is auto-created on first =M-x fin-db-rebuild= (or =finances fin-db-rebuil
 ├── tests/               ; ERT suite mirroring source layout
 │   ├── helpers.el       ; temp-db fixture + seed inserters
 │   ├── all-tests.el     ; entrypoint
-│   ├── adapters/{test-db,test-parser,test-bankdb,test-ofx,test-odswrite}.el
+│   ├── adapters/{test-db,test-parser,test-bankdb,test-ofx,test-cardpdf,test-odswrite}.el
 │   ├── domain/{test-budget,test-stats,test-patrimony,test-accounts,test-cashflow,test-reconcile,test-conventions,test-goals}.el
 │   ├── tools/{test-sync,test-bank,test-bankfix}.el
 │   └── view/{test-fmt,test-charts,test-dashboard}.el
 └── infra/
     ├── finances.db      ; SQLite mirror + bank tables (gitignored)
-    ├── inbox/           ; bank OFX statements to import (gitignored)
+    ├── inbox/           ; bank OFX statements and PDF card bills to import (gitignored)
     ├── backup/          ; ODS copies taken before each fix (gitignored)
     ├── config.el        ; personal settings (gitignored, optional)
     └── seeds.ods        ; source of truth
@@ -163,13 +165,14 @@ The ODS stays canonical; bank statements fix it.  =M-x fin-bank-fix= compares ev
 
 - *Account*: app → Extrato → Exportar extrato → OFX.  Any date range.
 - *Card*: app → Cartão de crédito → Resumo de faturas → closed bill → Enviar fatura por e-mail → OFX.  One bill per file, sent as an email attachment.
+- *Card, before OFX (until 2023-12)*: the same bills as PDF.  =adapters/pdfrows.js= (macOS PDFKit through =osascript=, nothing to install) rebuilds the transaction table from text positions, since some bills store it column by column; =adapters/cardpdf.el= reads it.  Rows dated from the first OFX card row on are left to the OFX.  Company accounts (=fin-bank-pj-accounts=, by ACCTID) import as =pj= (checking) and =pj-card= (card), named =nubank-pj-…= and =nubank-pj-card-…=; =domain/pj.el= reconciles PJ client payments with item-less income rows and replaces =cnpj= estimates with the real tax payments.  Payments are skipped, =Estorno de= / =Crédito de= / =Desconto Antecipação= are credits, =- k/n= becomes =- Parcela k/n=, and bill financing (=Parcelamento de Fatura=, =Crédito de parcelamento=) is reported, not imported.  Each bill must balance against its /Total de compras/ (purchases, less credits, phone top-ups and IOF, which the bill totals apart), or the import stops.
 - History older than the app allows: LGPD request to Nubank's DPO (=dponubank.zendesk.com=).
 
 ** Monthly flow
 
 1. Export last month's account statement and the closed card bill; copy both into =infra/inbox/=.
 2. Close the ODS in LibreOffice: its next save would undo the fix (=fin-bank-fix= refuses while the lock file exists).
-3. =M-x fin-bank-import= — renames files to =nubank-<account|card>-<start>_<end>.ofx= from the statement period, removes a re-export of a statement already there, imports new rows into =bank_txn=.  Rows dedup by =FITID= plus date, amount and memo (Nubank reuses a =FITID= across installments and refunds).
+3. =M-x fin-bank-import= — renames files to =nubank-<account|card>-<start>_<end>.ofx= from the statement period (PDF bills to =nubank-card-bill-<due>.pdf=), removes a re-export of a statement already there, imports new rows into =bank_txn=.  Rows dedup by =FITID= plus date, amount and memo (Nubank reuses a =FITID= across installments and refunds).
 4. =M-x fin-bank-fix= — writes the fixes; backup in =infra/backup/=.  =C-u M-x fin-bank-fix= is a dry run.
 5. Read /Needs a look/ in the report (salary gaps, refunds with no purchase), fix those by hand if needed.
 6. =M-x fin=.
@@ -209,18 +212,18 @@ Nubank card bills declare =CHARSET:1252= but are UTF-8.  The parser ignores the 
 
 * Dashboard
 
-=M-x fin-dashboard= writes =view/dashboard.html= and opens it.  Static, no JS.  Plain terminal look (monospace, lowercase labels, =$= prompt, aqua accent; no panel headings, the status bar names the current one).  One panel at a time, at most 640px wide and centered, picked from a tmux-like status bar at the bottom (=1:obj 2:cash 3:patr 4:acct 5:stat=, current marked =*=); each is a =#id= anchor shown with CSS =:target= (objectives when none), so the URL keeps the view and each number is also its =accesskey=; dark by default, light with =data-theme="light"= on =<html>=: every color is a theme role in =fin-dashboard--palette= (light and dark value), emitted as CSS custom properties and referenced as =var(--role)= in markup and SVG.  Values follow a validated data-viz palette with the financial convention: green for in / positive / on target, red for out / negative / off target (direction and position also encode it: above vs below the baseline, signed gaps), a neutral graphite accent, a fixed categorical order for shares without green or red (past six slices a neutral "other").  Hover text comes from SVG =<title>=.
+=M-x fin-dashboard= writes =view/dashboard.html= and opens it.  Static, no JS.  Plain terminal look (monospace, lowercase labels, =$= prompt, aqua accent; no panel headings, the status bar names the current one).  One panel at a time, at most 640px wide and centered, picked from a tmux-like status bar at the bottom (=1:cockpit 2:wealth 3:stats=, current marked =*=); each is a =#id= anchor shown with CSS =:target= (objectives when none), so the URL keeps the view and each number is also its =accesskey=; dark by default, light with =data-theme="light"= on =<html>=: every color is a theme role in =fin-dashboard--palette= (light and dark value), emitted as CSS custom properties and referenced as =var(--role)= in markup and SVG.  Values follow a validated data-viz palette with the financial convention: green for in / positive / on target, red for out / negative / off target (direction and position also encode it: above vs below the baseline, signed gaps), a neutral graphite accent, a fixed categorical order for shares without green or red (past six slices a neutral "other").  Hover text comes from SVG =<title>=.
 
 A two-stat *hero* tops the page: /Final balance (entries)/ (latest cumulative net worth, Σ in − out) and /Accounts balance (now)/ (patrimony total); each colored pos/neg.
 
 Under the header, on every panel, a full-width LED ticker of the records (net worth, best/worst month, biggest income/purchase, best/avg yearly save, recurring share, since, months); its tape keeps the content width.  CSS-only scrolling, dark in both themes, pauses on hover, static under reduced motion.
 
-Five panels:
+Three panels:
+- *Cockpit*: tiles (this month's liquid with in/out; the bank balance, personal account + PJ, from the latest statements' =LEDGERBAL=, recorded at each import; savings, the accounts total; goals over target), the fixed and variable goal rows (=domain/goals.el=, below), and /ledger health/ (=tools/health.el=): each account's latest statement and its age (card bills read /open/), bank vs ledger spending for the last six complete months counted as =fin-bank-fix= counts room (red past 10%), and the =other= remainders still standing.
+- *Wealth*: accounts (savings, total), patrimony (register, total), then the yearly drilldown: year → month → category → leaf (=item= · =date= · =amount=), years folded.
 - *Stats*: the all-time flow bar chart and, stacked, the line trends (net worth, rolling save %, income-vs-expense MA, Pareto, yearly save %, spend heatmap), the share donuts (category, income) and the recurring tables (by months, all time).
-- *Objectives*: KPI tiles (monthly liquid and unallocated share, fixed share vs its 55% target, runway, rows over target this month), then one bullet row per plan row and per child of =investments= (=domain/goals.el=): the bar's full width is the monthly target and the current month so far fills it green; spending past the target grows red from the right end by the overrun's share of the target (saving rows, =investments=, =retirement=, =emergency=, never turn red).  Actuals: same-named entry category; =investments= = everything it funds (its contributions minus =reserve= withdrawals, plus =family=, =vacations=, =patrimony= and =car= spending); =emergency= = =investments/emergency= minus =reserve=; =patrimony= = =patrimony= + =car= spending against the amortization.  Under it, one row per register class against its own monthly amortization: =car= entries are class =car=; =patrimony= entries take the class =fin-goals-patrimony-classes= (in =infra/config.el=, item regexp → class) maps their item to, and an =unmapped= row (target 0, so red) reports items the map doesn't cover yet.
-- *Accounts*: balances + sub-accounts (expandable).
-- *Patrimony*: items + amortization (expandable).
-- *Cashflow* (right, tall): year → month → category → leaf (=item= · =date= · =amount=) drilldown.  Future months in the current year use plan-derived placeholders (dimmed).  The current-year header row reconciles with its months by summing actuals + forecast (in / out / liquid / save %).
+
+Goals (cockpit): One bullet row per plan row and per child of =investments= (=domain/goals.el=): the bar's full width is the monthly target and the current month so far fills it green; spending past the target grows red from the right end by the overrun's share of the target (saving rows, =investments=, =retirement=, =emergency=, never turn red).  Actuals: same-named entry category; =investments= = everything it funds (its contributions minus =reserve= withdrawals, plus =family=, =vacations=, =patrimony= and =car= spending); =emergency= = =investments/emergency= minus =reserve=; =patrimony= = =patrimony= + =car= spending against the amortization.  Under it, one row per register class against its own monthly amortization: =car= entries are class =car=; =patrimony= entries take the class =fin-goals-patrimony-classes= (in =infra/config.el=, item regexp → class) maps their item to, and an =unmapped= row (target 0, so red) reports items the map doesn't cover yet.  Rows other rows hang under (=investments=, =patrimony=) fold with a ▸ toggle, closed by default (a CSS-only checkbox).
 
 Stats charts:
 - /Net worth/ — cumulative Σ(in − out) per month.

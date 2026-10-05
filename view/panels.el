@@ -1,6 +1,7 @@
 ;;; panels.el --- Per-panel renderers + drilldown helpers  -*- lexical-binding: t; -*-
 
 (require 'cl-lib)
+(require 'subr-x)
 (require 'fmt)
 (require 'html)
 (require 'charts)
@@ -10,6 +11,8 @@
 (require 'goals)
 (require 'patrimony)
 (require 'accounts)
+(require 'bankdb)
+(require 'health)
 (require 'stats)
 
 (defun fin-dashboard--group-by (rows key-idx)
@@ -158,52 +161,112 @@ signed number (drawn in CSS so it centers on the text)."
 
 ;;; ── objectives: plan targets vs this month ─────────────────
 
-(defun fin-dashboard--goal-row (r)
+(defun fin-dashboard--goal-ancestors (r parents)
+  "Categories above goal row R, outermost first; PARENTS maps category to parent."
+  (let ((out nil) (p (plist-get r :parent)) (guard 0))
+    (while (and p (< guard 8))
+      (push p out)
+      (setq p (gethash p parents) guard (1+ guard)))
+    out))
+
+(defun fin-dashboard--goal-cat (cat toggle)
+  "Category cell content; a TOGGLE row gets the checkbox that folds its children."
+  (if toggle
+      (format "<label><input type=\"checkbox\" id=\"goal-%s\">%s</label>"
+              (fin-dashboard--esc cat) (fin-dashboard--esc cat))
+    (fin-dashboard--esc cat)))
+
+(defun fin-dashboard--goal-row (r parents)
+  "Goal row R.  PARENTS maps category to parent: rows other rows hang under
+fold them, and each row names its ancestors so folding one hides it."
   (let* ((cat (plist-get r :category)) (target (plist-get r :target)) (mtd (plist-get r :mtd))
+         (anc (fin-dashboard--goal-ancestors r parents))
+         (toggle (cl-some (lambda (p) (equal p cat)) (hash-table-values parents)))
          (title (format "%s · this month R$ %s of R$ %s target"
                         cat (fin-dashboard--grouped mtd) (fin-dashboard--grouped target))))
-    (format "<tr class=\"goal%s\"><td class=\"cat\">%s</td><td class=\"viz\">%s</td><td class=\"num\">%s</td><td class=\"num dim\">%s</td></tr>"
+    (format "<tr class=\"goal%s\"%s><td class=\"cat\">%s</td><td class=\"viz\">%s</td><td class=\"num\">%s</td><td class=\"num dim\">%s</td></tr>"
             (pcase (plist-get r :depth) (1 " child") (2 " child deep") (_ ""))
-            (fin-dashboard--esc cat)
+            (if anc (format " data-anc=\"%s\"" (fin-dashboard--esc (string-join anc " "))) "")
+            (fin-dashboard--goal-cat cat toggle)
             (fin-dashboard--svg-bullet target mtd (eq (plist-get r :direction) 'save) title)
             (fin-dashboard--grouped mtd)
             (fin-dashboard--grouped target))))
 
+(defun fin-dashboard--goals-fold-css (parents)
+  "Rules hiding the rows under each folded (unchecked) parent of PARENTS."
+  (let ((ps (delete-dups (hash-table-values parents))))
+    (when ps
+      (concat "<style>"
+              (mapconcat (lambda (p)
+                           (format "table.goals:has(#goal-%s:not(:checked)) tr[data-anc~=\"%s\"]{display:none;}" p p))
+                         ps "")
+              "</style>"))))
+
 (defun fin-dashboard--goals-table (rows)
-  (concat "<table class=\"goals\"><thead><tr><th>category</th><th class=\"viz\">progress</th>"
-          "<th class=\"num\">month</th><th class=\"num\">target</th></tr></thead><tbody>"
-          (mapconcat #'fin-dashboard--goal-row rows "")
-          "</tbody></table>"))
+  (let ((parents (make-hash-table :test #'equal)))
+    (dolist (r rows)
+      (when (plist-get r :parent) (puthash (plist-get r :category) (plist-get r :parent) parents)))
+    (concat (fin-dashboard--goals-fold-css parents)
+            "<table class=\"goals\"><thead><tr><th>category</th><th class=\"viz\">progress</th>"
+            "<th class=\"num\">month</th><th class=\"num\">target</th></tr></thead><tbody>"
+            (mapconcat (lambda (r) (fin-dashboard--goal-row r parents)) rows "")
+            "</tbody></table>")))
 
 (defun fin-dashboard--kpi (label value note &optional cls)
   (format "<div class=\"kpi%s\"><div class=\"kpi-label\">%s</div><div class=\"kpi-value\">%s</div><div class=\"kpi-note\">%s</div></div>"
           (if cls (concat " " cls) "") label value note))
 
-(defun fin-dashboard--panel-objectives ()
+(defun fin-dashboard--health-block ()
+  "Ledger health: statement freshness, bank vs ledger per month, open items."
+  (let* ((today (fin-reconcile--day (format-time-string "%Y-%m-%d")))
+         (stmts (fin-health-statements))
+         (rem (fin-health-remainders))
+         (stale (lambda (d) (or (null d) (> (- today (fin-reconcile--day d)) 35))))
+         ;; A card's latest balance is its open bill, dated at the next closing.
+         (age (lambda (d) (cond ((null d) "none")
+                                ((> (fin-reconcile--day d) today) "open")
+                                (t (format "%dd" (- today (fin-reconcile--day d))))))))
+    (fin-dashboard--block
+     "Ledger health"
+     "Inbox freshness, the ODS against the bank per month (as fin-bank-fix counts it), open items"
+     (concat
+      (fin-dashboard--table
+       '("statement" "latest" "age")
+       (mapcar (lambda (s)
+                 (pcase-let ((`(,acct ,d) s))
+                   (list acct (if d (fin-dashboard--dm d) "—")
+                         (list :raw (format "<span class=\"%s\">%s</span>"
+                                            (if (funcall stale d) "neg" "pos")
+                                            (funcall age d))))))
+               stmts))
+      (fin-dashboard--table
+       '("month" "bank out" "ledger out" "gap")
+       (mapcar (lambda (m)
+                 (pcase-let* ((`(,ym ,bank ,led) m)
+                              (gap (- led bank))
+                              (off (and (> bank 0) (> (abs gap) (* 0.1 bank)))))
+                   (list ym (fin-dashboard--money-cell bank) (fin-dashboard--money-cell led)
+                         (list :raw (format "<span class=\"%s\">%s%s</span>" (if off "neg" "dim")
+                                            (if (> gap 0) "+" "") (fin-dashboard--grouped gap))))))
+               (fin-health-months 6)))
+      (format "<p class=\"sub\">open: %d <i>other</i> remainders (R$ %s) standing for unitemized spending</p>"
+              (car rem) (fin-dashboard--grouped (cdr rem)))))))
+
+(defun fin-dashboard--panel-cockpit ()
   (let* ((year   (fin-report--year-now))
          (month  (fin-report--month-now))
-         (liquid (nth 2 (fin-report--monthly-income year)))
          (budg   (fin-report--budget-share year))
-         (rw     (fin-report--runway))
          (goals  (fin-goals year month))
          (pct    (lambda (kind) (cl-reduce #'+ (mapcar (lambda (b) (if (equal (nth 1 b) kind) (or (nth 3 b) 0) 0)) budg))))
          (fix-pct (funcall pct "fix"))
          (var-pct (funcall pct "var"))
-         (unalloc (- 100.0 fix-pct var-pct))
          (kind-rows (lambda (kind) (cl-remove-if-not (lambda (r) (equal (plist-get r :kind) kind)) goals)))
          (over (cl-count 'over goals :key (lambda (r) (plist-get r :status)))))
     (fin-dashboard--panel
-     "Objectives" "objectives"
-     "Plan targets per month against the current month so far"
+     "Cockpit" "cockpit"
+     "This month, balance, savings, plan targets and ledger health"
      "<div class=\"kpis\">"
-     (fin-dashboard--kpi "Monthly liquid" (concat "R$ " (fin-dashboard--grouped liquid))
-                         (if (< (abs unalloc) 0.05) "fully allocated"
-                           (format "%.1f%% (R$ %s) unallocated" unalloc
-                                   (fin-dashboard--grouped (round (* liquid unalloc 0.01))))))
-     (fin-dashboard--kpi "Fixed share" (format "%.1f%%" fix-pct)
-                         (format "target ≤ %d%%" fin-budget-fix-target)
-                         (if (<= fix-pct fin-budget-fix-target) "good" "bad"))
-     (fin-dashboard--kpi "Runway" (format "%.1f mo" (nth 2 rw)) "emergency reserve / fixed costs")
+     (fin-dashboard--now-tiles year month)
      (fin-dashboard--kpi "Over target" (format "%d of %d" over (length goals))
                          (format "in %s" (fin-dashboard--month-name month))
                          (if (zerop over) "good" "bad"))
@@ -213,9 +276,10 @@ signed number (drawn in CSS so it centers on the text)."
                            (fin-dashboard--goals-table (funcall kind-rows "fix")))
      (fin-dashboard--block (format "Variable <span class=\"dim\">%.1f%% / %d%%</span>" var-pct fin-budget-var-target)
                            "Variable allocations, driven by share of liquid; investments funds the indented rows"
-                           (fin-dashboard--goals-table (funcall kind-rows "var"))))))
+                           (fin-dashboard--goals-table (funcall kind-rows "var")))
+     (fin-dashboard--health-block))))
 
-(defun fin-dashboard--panel-accounts ()
+(defun fin-dashboard--block-accounts ()
   (let* ((accts (fin-report--accounts))
          (rows  (mapcar
                  (lambda (r)
@@ -232,16 +296,17 @@ signed number (drawn in CSS so it centers on the text)."
                                                         (nth 2 k)))
                                       kids))))))
                  accts)))
-    (fin-dashboard--panel
-     "Accounts" "accounts"
+    (fin-dashboard--block
+     "Accounts"
      "Account balances; expand a row to see sub-accounts"
      (fin-dashboard--alist '("category" "balance" "%") rows
                            (list "total"
                                  (fin-dashboard--money-cell
                                   (apply #'+ (mapcar (lambda (r) (or (nth 1 r) 0)) accts)))
-                                 "")))))
+                                 ""))
+     "register")))
 
-(defun fin-dashboard--panel-patrimony ()
+(defun fin-dashboard--block-patrimony ()
   (let* ((summary       (fin-report--patrimony-summary))
          (items         (fin-report--patrimony-items))
          (by-cat        (fin-dashboard--group-by items 0))
@@ -272,11 +337,12 @@ signed number (drawn in CSS so it centers on the text)."
                                                                   (* 100.0 (/ mo (float cat-mo))) 0)))))
                                      kids))))))
                 summary)))
-    (fin-dashboard--panel
-     "Patrimony" "patrimony"
+    (fin-dashboard--block
+     "Patrimony"
      "Owned items: cost, lifespan, monthly amortization (cost / lifespan); % share of total monthly"
      (fin-dashboard--alist '("category" "items" "amount" "%") rows
-                           (list "total" "" (fin-dashboard--money-cell (round total-monthly)) "")))))
+                           (list "total" "" (fin-dashboard--money-cell (round total-monthly)) ""))
+     "register")))
 
 (defun fin-dashboard--month-body (items)
   "Category drilldown for a month's items."
@@ -340,7 +406,29 @@ Future months of the current year use the objectives forecast
                eff)))
     (fin-dashboard--alist '("month" "in" "out" "liquid") rows)))
 
-(defun fin-dashboard--panel-cashflow ()
+(defun fin-dashboard--now-tiles (now-y now-m)
+  "KPI tiles: this month, the bank balance, the savings."
+  (let* ((m (mapcar (lambda (v) (or v 0))
+                   (seq-take (or (assoc now-m (fin-dashboard--year-effective-months now-y now-y now-m))
+                                 (list now-m 0 0 0)) 4)))
+         (pf (fin-bankdb-latest-balance "account"))
+         (pj (fin-bankdb-latest-balance "pj"))
+         (bal (+ (or (cdr pf) 0) (or (cdr pj) 0)))
+         (asof (car (sort (delq nil (list (car pf) (car pj))) #'string>)))
+         (saved (apply #'+ (mapcar (lambda (r) (or (nth 1 r) 0)) (fin-report--accounts))))
+         (money (lambda (c) (concat "R$ " (fin-dashboard--grouped c)))))
+    (concat
+     (fin-dashboard--kpi (fin-dashboard--month-name now-m) (funcall money (nth 3 m))
+                         (format "in %s · out %s" (fin-dashboard--grouped (nth 1 m)) (fin-dashboard--grouped (nth 2 m)))
+                         (if (< (nth 3 m) 0) "bad" "good"))
+     (fin-dashboard--kpi "balance" (if (or pf pj) (funcall money bal) "—")
+                         (if (or pf pj)
+                             (format "account %s · pj %s · %s" (fin-dashboard--grouped (or (cdr pf) 0))
+                                     (fin-dashboard--grouped (or (cdr pj) 0)) (fin-dashboard--dm asof))
+                           "no statement imported"))
+     (fin-dashboard--kpi "savings" (funcall money saved) "accounts"))))
+
+(defun fin-dashboard--panel-wealth ()
   (let* ((now-y (fin-report--year-now))
          (now-m (fin-report--month-now))
          (rows  (mapcar
@@ -364,12 +452,16 @@ Future months of the current year use the objectives forecast
                                  sav)
                            (fin-dashboard--monthly-block y eff now-y now-m)
                            nil
-                           cur)))
+                           nil)))   ; years start folded
                  (reverse (fin-report--annual-sums)))))   ; newest year first
     (fin-dashboard--panel
-     "Cashflow" "cashflow"
-     "Year → month → category drilldown of in/out/liquid"
-     (fin-dashboard--alist '("year" "in" "out" "liquid" "%") rows))))
+     "Wealth" "wealth"
+     "Savings (accounts), patrimony, and the yearly cashflow"
+     (fin-dashboard--block-accounts)
+     (fin-dashboard--block-patrimony)
+     (fin-dashboard--block "Yearly" "Year → month → category drilldown of in/out/liquid"
+                           (fin-dashboard--alist '("year" "in" "out" "liquid" "%") rows)
+                           "register"))))
 
 (provide 'panels)
 ;;; panels.el ends here

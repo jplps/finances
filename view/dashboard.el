@@ -67,10 +67,8 @@
      "</header>"
      (fin-dashboard--records-ticker)
      "<main>"
-     (fin-dashboard--panel-objectives)
-     (fin-dashboard--panel-patrimony)
-     (fin-dashboard--panel-accounts)
-     (fin-dashboard--panel-cashflow)
+     (fin-dashboard--panel-cockpit)
+     (fin-dashboard--panel-wealth)
      (fin-dashboard--panel-stats)
      "</main>"
      (fin-dashboard--status-bar)

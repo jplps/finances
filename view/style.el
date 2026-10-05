@@ -16,8 +16,7 @@
    ".ticker{color-scheme:dark;" (fin-dashboard--css-tokens #'caddr) "}"))
 
 (defconst fin-dashboard--tabs
-  '(("objectives" . "obj") ("cashflow" . "cash") ("patrimony" . "patr")
-    ("accounts" . "acct") ("stats" . "stat"))
+  '(("cockpit" . "cockpit") ("wealth" . "wealth") ("stats" . "stats"))
   "(SECTION-ID . BAR-LABEL) in status-bar order; the first is shown by default.")
 
 (defun fin-dashboard--tab-rules ()
@@ -98,6 +97,9 @@ p b     { font-weight: 600; }
 @media (max-width: 700px) { .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 
 /* ── goals table ───────────────────────────────────── */
+/* patrimony and accounts below the goals: a clear break after each total */
+.stat-block.register { margin-top: 36px; }
+section > .stat-block.register:first-child { margin-top: 0; }
 table.goals { table-layout: fixed; }
 table.goals td { padding-top: 6px; padding-bottom: 6px; vertical-align: middle; }
 table.goals th:nth-child(1) { width: 24%; }
@@ -108,6 +110,13 @@ table.goals td.cat { white-space: nowrap; overflow: hidden; text-overflow: ellip
 table.goals tr.child td.cat { padding-left: 22px; color: var(--text-2); }
 table.goals tr.child td.cat::before { content: '└ '; color: var(--muted); }
 table.goals tr.child.deep td.cat { padding-left: 40px; }
+table.goals td.cat label { cursor: pointer; display: inline-flex; align-items: center; }
+table.goals td.cat input { display: none; }
+table.goals td.cat label::before {
+  content: '▸'; display: inline-flex; justify-content: center; width: 12px; margin-right: 4px;
+  line-height: 1; color: var(--accent); transition: transform .15s;
+}
+table.goals td.cat label:has(input:checked)::before { transform: rotate(90deg); color: var(--accent-2); }
 svg.bullet { display: block; width: 100%; height: 16px; overflow: visible; }
 
 /* ── stats sub-layout ──────────────────────────────── */

@@ -26,6 +26,7 @@
 (require 'test-pj)
 (require 'test-bank)
 (require 'test-bankfix)
+(require 'test-health)
 (require 'test-fmt)
 (require 'test-charts)
 (require 'test-dashboard)
