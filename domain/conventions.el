@@ -204,6 +204,22 @@ be the only candidate that day."
                rows)))
     (if name (car hits) (and (= (length hits) 1) (car hits)))))
 
+(defun fin-conv--fitid (row)
+  "FITID inside bank ROW's id (`nu:FITID:hash'), or nil."
+  (let ((parts (split-string (car row) ":")))
+    (and (= (length parts) 3) (equal (car parts) "nu") (nth 1 parts))))
+
+(defun fin-conv--same-fitid-host (fee rows gone)
+  "The one other out row of ROWS sharing FEE's FITID: Nubank gives a
+purchase's IOF the purchase's FITID."
+  (let* ((id (fin-conv--fitid fee))
+         (hits (and id (cl-remove-if-not
+                        (lambda (r) (and (not (eq r fee)) (not (gethash (car r) gone))
+                                         (equal (nth 2 r) "out") (not (fin-conv--fee-p r))
+                                         (equal (fin-conv--fitid r) id)))
+                        rows))))
+    (and (= (length hits) 1) (car hits))))
+
 (defun fin-conv--fee-host (fee rows gone)
   "Purchase of ROWS that FEE folds into, or nil."
   (let ((desc (nth 4 fee)))
@@ -211,7 +227,8 @@ be the only candidate that day."
      ((string-match "\\`IOF de \"\\([^\"]+\\)\"" desc)
       (fin-conv--host fee rows gone nil (fin-conv--merchant-key (match-string 1 desc))))
      ((string-prefix-p "IOF de compra internacional" desc)
-      (fin-conv--host fee rows gone t nil))
+      (or (fin-conv--same-fitid-host fee rows gone)
+          (fin-conv--host fee rows gone t nil)))
      ((string-match "\\`Desconto Antecipação \\(.+\\)" desc)
       (fin-conv--host fee rows gone t (fin-conv--merchant-key (match-string 1 desc)))))))
 

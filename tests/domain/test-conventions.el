@@ -108,6 +108,14 @@
     (should (equal '(2802) (mapcar (lambda (r) (nth 3 r)) (plist-get one :rows))))
     (should (= 3 (length (plist-get two :rows))))))
 
+(ert-deftest conv/normalize-iof-follows-its-purchase-fitid ()
+  ;; Several purchases that day, but the IOF shares the Linode FITID.
+  (let ((res (fin-conv-normalize
+              (list (test-conv--b "nu:F1:aaa" "2026-10-02" "out" 2708 "Linode . Akamai")
+                    (test-conv--b "nu:F2:bbb" "2026-10-02" "out" 11089 "Ifood *Ifd")
+                    (test-conv--b "nu:F1:ccc" "2026-10-02" "out" 94 "IOF de compra internacional")))))
+    (should (equal '(2802 11089) (mapcar (lambda (r) (nth 3 r)) (plist-get res :rows))))))
+
 (ert-deftest conv/normalize-drops-pix-funded-by-card ()
   (let ((res (fin-conv-normalize
               (list (test-conv--b "f" "2026-09-30" "in" 1292 "Valor adicionado na conta por cartão de crédito")
