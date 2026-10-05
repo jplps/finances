@@ -53,6 +53,11 @@
 e.g. (\"veronica\" . \"aluguel\").  Words are lowercase without accents."
   :type '(alist :key-type string :value-type string) :group 'fin)
 
+(defcustom fin-conv-item-aliases '(("\\`Uber" . "uber"))
+  "Bank descriptions -> ledger item: list of (REGEXP . ITEM), first match
+wins.  For payees whose memos vary (`Uberbr Uber * Pending', `Uber *Trip')."
+  :type '(alist :key-type regexp :value-type string) :group 'fin)
+
 (defcustom fin-conv-default-category "free"
   "Category for purchases the history does not suggest."
   :type 'string :group 'fin)
@@ -71,7 +76,7 @@ e.g. (\"veronica\" . \"aluguel\").  Words are lowercase without accents."
 (defconst fin-conv--prefix-re
   (concat "\\`\\(Compra no débito via NuPay\\|Compra no débito"
           "\\|Transferência enviada pelo Pix\\|Transferência enviada\\|Pix no Crédito"
-          "\\|Pagamento de boleto efetuado\\|Débito em conta\\)\\s-*-?\\s-*")
+          "\\|Pagamento de boleto efetuado\\|Débito em conta\\|Antecipada\\)\\s-*-?\\s-*")
   "Bank boilerplate in front of the payee name.")
 
 ;;; ── Words and categories ───────────────────────────────────
@@ -130,13 +135,16 @@ Shared word, alias, or the category the history suggests for the payee."
           (equal (car (fin-conv-suggest (nth 4 b) history)) (nth 3 l))))))
 
 (defun fin-conv-item (desc)
-  "Ledger item for bank DESC: the payee name, lowercase."
-  (let* ((d (replace-regexp-in-string "\\s-*-\\s-*Parcela [0-9]+/[0-9]+" "" desc))
-         (d (replace-regexp-in-string fin-conv--prefix-re "" d))
-         (d (car (split-string d " - ")))
-         (d (replace-regexp-in-string "\\`[A-Za-z]\\{1,4\\}\\s-*\\*\\s-*" "" d))
-         (d (replace-regexp-in-string "\\*.*\\'" "" d)))
-    (downcase (string-trim d "[ \".]+" "[ \".]+"))))
+  "Ledger item for bank DESC: its `fin-conv-item-aliases' item, else the
+payee name, lowercase."
+  (or (cdr (cl-find-if (lambda (a) (let ((case-fold-search nil)) (string-match-p (car a) desc)))
+                       fin-conv-item-aliases))
+      (let* ((d (replace-regexp-in-string "\\s-*-\\s-*Parcela [0-9]+/[0-9]+" "" desc))
+             (d (replace-regexp-in-string fin-conv--prefix-re "" d))
+             (d (car (split-string d " - ")))
+             (d (replace-regexp-in-string "\\`[A-Za-z]\\{1,4\\}\\s-*\\*\\s-*" "" d))
+             (d (replace-regexp-in-string "\\*.*\\'" "" d)))
+        (downcase (string-trim d "[ \".]+" "[ \".]+")))))
 
 (defun fin-conv--payer (desc)
   "First name of the person in a received-transfer DESC."
@@ -336,13 +344,28 @@ names the payee; salary gaps are reported."
 
 ;;; ── Plan: adds within the month's room ─────────────────────
 
+(defun fin-conv--same-payee-p (desc item)
+  "Non-nil if every word of ledger ITEM names the payee of bank DESC: equal
+to a bank word, or the bank word, truncated, prefixes it (5+ chars).
+A single shared word (`uber' in `uber sk8') only suggests a category."
+  (let ((bw (fin-conv--bank-words desc))
+        (iw (cl-set-difference (fin-reconcile--words item) fin-conv--stopwords :test #'string=)))
+    (and iw (cl-every (lambda (w)
+                        (cl-some (lambda (b) (or (string= b w)
+                                                 (and (>= (length b) 5) (string-prefix-p b w))))
+                                 bw))
+                      iw))))
+
 (defun fin-conv--add-action (b history)
-  "Add out row B under its suggested category, else the default."
-  (let ((s (fin-conv-suggest (nth 4 b) history)))
+  "Add out row B under its suggested category, else the default.  The item
+is the suggested one when it names the same payee, else the bank payee."
+  (let* ((desc (nth 4 b))
+         (s (fin-conv-suggest desc history)))
     (list :add (append (list (nth 1 b) "out" (or (car s) fin-conv-default-category)
-                             (or (cdr s) (fin-conv-item (nth 4 b))) (nth 3 b))
-                       (fin-conv-installment (nth 4 b)))
-          (nth 4 b))))
+                             (if (and s (fin-conv--same-payee-p desc (cdr s))) (cdr s) (fin-conv-item desc))
+                             (nth 3 b))
+                       (fin-conv-installment desc))
+          desc)))
 
 (defun fin-conv--inflow-action (b)
   "Add money received B as income from its payer."

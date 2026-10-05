@@ -119,12 +119,13 @@ INSTALLMENT of INSTALLMENTS both nil or 1 <= INSTALLMENT <= INSTALLMENTS."
 
 ;;; ── Apply ──────────────────────────────────────────────────
 
-(defun fin-odsw--find (keys key)
-  "Index of the one row of KEYS equal to KEY (header is index 0)."
+(defun fin-odsw--find-all (keys key n)
+  "Indexes of the N rows of KEYS equal to KEY: N deletes of identical rows
+(installments differ only outside the key) are unambiguous only together."
   (let ((hits (cl-loop for k in (cdr keys) for i from 1 when (equal k key) collect i)))
-    (unless (= (length hits) 1)
-      (error "fin-odsw: %d rows match %S" (length hits) key))
-    (car hits)))
+    (unless (= (length hits) n)
+      (error "fin-odsw: %d rows match %S, %d deletes" (length hits) key n))
+    hits))
 
 (defun fin-odsw--set-amount (row old new)
   (let ((pat (format "office:value=\"%d\" calcext:value-type=\"float\"><text:p>%d</text:p>" old old)))
@@ -151,21 +152,33 @@ Within one date, existing rows come first."
   (:edit (date type category item amount) NEW-AMOUNT)
   (:delete (date type category item amount))
   (:add (date type category item amount installment installments))
-Item is \"\" when empty.  Signals unless every edit and delete hits one row."
+Item is \"\" when empty.  Signals unless every edit finds a row (identical
+rows are interchangeable) and the deletes of a key hit exactly as many rows."
   (pcase-let* ((`(,start . ,end) (fin-odsw--sheet-bounds content))
                (`(,first ,last ,rows) (fin-odsw--rows content start end))
                (rowv (vconcat rows))
                (keys (mapcar (lambda (r) (fin-odsw--key (fin-odsw--row-values r))) rows))
-               (gone (make-hash-table)) (adds nil))
+               (gone (make-hash-table)) (edited (make-hash-table)) (adds nil))
     (cl-assert (equal (seq-take (car keys) 3) '("date" "type" "category")) nil
                "fin-odsw: unexpected header %S" (car keys))
+    (let ((deletes (make-hash-table :test #'equal)))
+      (dolist (c changes)
+        (when (eq (car c) :delete) (puthash (cadr c) (1+ (gethash (cadr c) deletes 0)) deletes)))
+      (maphash (lambda (key n) (dolist (i (fin-odsw--find-all keys key n)) (puthash i t gone)))
+               deletes))
     (dolist (c changes)
       (pcase c
         (`(:edit ,key ,new)
-         (let ((i (fin-odsw--find keys key)))
+         ;; Identical rows (installments aside) are interchangeable for an
+         ;; amount edit: take the first one not yet edited.
+         (let ((i (or (cl-loop for k in (cdr keys) for i from 1
+                               when (and (equal k key) (not (gethash i gone)) (not (gethash i edited)))
+                               return i)
+                      (error "fin-odsw: no row left matching %S" key))))
+           (puthash i t edited)
            (aset rowv i (fin-odsw--set-amount (aref rowv i) (nth 4 key) new))
            (setf (nth 4 (nth i keys)) new)))
-        (`(:delete ,key) (puthash (fin-odsw--find keys key) t gone))
+        (`(:delete ,_) nil)
         (`(:add ,fields)
          (push (cons (car fields) (apply #'fin-odsw-row-xml fields)) adds))
         (_ (error "fin-odsw: bad change %S" c))))

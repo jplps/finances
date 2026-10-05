@@ -61,5 +61,16 @@
     (should (fin-bankdb-file-imported-p "abc"))
     (should-error (fin-bankdb-record-import "abc" "/tmp/x.ofx" 3))))
 
+(ert-deftest bankdb/latest-balance-per-account ()
+  (fin-test-with-db
+    (should-not (fin-bankdb-latest-balance "account"))
+    (fin-bankdb-record-balance "account" "2026-09-01" 1000)
+    (fin-bankdb-record-balance "account" "2026-10-01" 145366)
+    (fin-bankdb-record-balance "account" "2026-10-01" 145366)   ; re-import: same row
+    (fin-bankdb-record-balance "pj" "2026-10-05" 0)
+    (should (equal '("2026-10-01" . 145366) (fin-bankdb-latest-balance "account")))
+    (should (equal '("2026-10-05" . 0) (fin-bankdb-latest-balance "pj")))
+    (should-error (fin-bankdb-record-balance "account" "1/10/2026" 1))))
+
 (provide 'test-bankdb)
 ;;; test-bankdb.el ends here

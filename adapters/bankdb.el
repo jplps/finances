@@ -19,6 +19,12 @@
        imported_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S','now')))"
     "CREATE INDEX IF NOT EXISTS bank_txn_date ON bank_txn(date)"
 
+    "CREATE TABLE IF NOT EXISTS bank_balance (
+       account     TEXT NOT NULL,
+       date        TEXT NOT NULL,
+       amount      INTEGER NOT NULL,
+       PRIMARY KEY (account, date))"
+
     "CREATE TABLE IF NOT EXISTS bank_import (
        file_sha1   TEXT PRIMARY KEY,
        path        TEXT NOT NULL,
@@ -102,6 +108,35 @@ any write.  Return the number of rows actually inserted."
   (fin-bankdb-ensure)
   (mapcar #'car (fin-db-query
                  "SELECT DISTINCT strftime('%Y-%m', date) FROM bank_txn WHERE account = 'card'")))
+
+(defun fin-bankdb-ofx-card-start ()
+  "Earliest date of card rows imported from OFX, or nil."
+  (fin-bankdb-ensure)
+  (caar (fin-db-query
+         "SELECT MIN(date) FROM bank_txn WHERE account = 'card' AND source = 'nubank-ofx'")))
+
+(defun fin-bankdb-record-balance (account date cents)
+  "Store ACCOUNT's balance CENTS on ISO DATE; a later import of the same day wins."
+  (unless (and (stringp account) (stringp date) (string-match-p fin-bankdb--date-re date) (integerp cents))
+    (error "fin-bankdb: bad balance %S %S %S" account date cents))
+  (fin-bankdb-ensure)
+  (fin-db-exec "INSERT OR REPLACE INTO bank_balance (account, date, amount) VALUES (?,?,?)"
+               (list account date cents)))
+
+(defun fin-bankdb-latest-balance (account)
+  "(DATE . CENTS) of ACCOUNT's latest recorded balance, or nil."
+  (fin-bankdb-ensure)
+  (let ((r (car (fin-db-query "SELECT date, amount FROM bank_balance WHERE account = ?
+                                ORDER BY date DESC LIMIT 1" (list account)))))
+    (and r (cons (car r) (cadr r)))))
+
+(defun fin-bankdb-account-rows (account)
+  "Ids and (FIRST . LAST) dates of ACCOUNT's rows: (IDS . SPAN), SPAN nil if none."
+  (fin-bankdb-ensure)
+  (let ((ids (mapcar #'car (fin-db-query "SELECT id FROM bank_txn WHERE account = ?" (list account))))
+        (span (car (fin-db-query "SELECT MIN(date), MAX(date) FROM bank_txn WHERE account = ?"
+                                 (list account)))))
+    (cons ids (and (car span) (cons (car span) (cadr span))))))
 
 (defun fin-bankdb-year (year)
   "Bank rows of YEAR up to today as (id date type amount description), by date.

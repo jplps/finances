@@ -26,6 +26,7 @@
 (require 'sync)
 (require 'bankdb)
 (require 'ofx)
+(require 'cardpdf)
 (require 'odswrite)
 (require 'reconcile)
 (require 'conventions)

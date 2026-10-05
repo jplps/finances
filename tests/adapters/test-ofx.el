@@ -109,5 +109,12 @@ ENCODING:UTF-8
       (delete-file liar)
       (delete-file latin))))
 
+(ert-deftest ofx/balance-reads-ledgerbal ()
+  (should (equal '("2026-10-01" . 145366)
+                 (fin-ofx-balance "<LEDGERBAL>\n<BALAMT>1453.66\n<DTASOF>20261001000000[-3:BRT]\n</LEDGERBAL>")))
+  (should (equal '("2026-10-06" . -26341)
+                 (fin-ofx-balance "<LEDGERBAL><BALAMT>-263.41</BALAMT><DTASOF>20261006</DTASOF></LEDGERBAL>")))
+  (should-not (fin-ofx-balance "<BANKTRANLIST></BANKTRANLIST>")))
+
 (provide 'test-ofx)
 ;;; test-ofx.el ends here

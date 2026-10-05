@@ -24,6 +24,29 @@
     (should (equal '("house" . "aluguel")
                    (fin-conv-suggest "Transferência enviada pelo Pix - Veronica" test-conv--history)))))
 
+(ert-deftest conv/add-reuses-an-item-only-for-the-same-payee ()
+  (let ((hist '(("free" "uber sk8" 30) ("food" "imperatriz" 114))))
+    ;; One shared word picks the category, not the item.
+    (should (equal '("2023-05-03" "out" "free" "uber" 2492 nil nil)
+                   (cadr (fin-conv--add-action '("b" "2023-05-03" "out" 2492 "Uber *Uber *Trip") hist))))
+    ;; Every item word names the payee, a truncated bank word included: reused.
+    (should (equal "imperatriz"
+                   (nth 3 (cadr (fin-conv--add-action '("b" "2023-05-03" "out" 990 "Super Imperatriz Lj") hist)))))
+    (should (equal "imperatriz"
+                   (nth 3 (cadr (fin-conv--add-action '("b" "2023-05-03" "out" 990 "Supermercados Imperatr") hist)))))
+    ;; An item word that only prefixes the bank's names another place.
+    (should (equal "pizzaria don dani"
+                   (nth 3 (cadr (fin-conv--add-action '("b" "2021-01-07" "out" 6490 "Pizzaria Don Dani")
+                                                      '(("free" "go pizza" 9)))))))))
+
+(ert-deftest conv/item-aliases-name-varying-memos ()
+  (dolist (d '("Uberbr Uber * Pending" "Uber *Trip Help.Uber.C" "Uber * Pending" "Uber *Uber *Trip"))
+    (should (equal "uber" (fin-conv-item d))))
+  (should (equal "mercado sol" (fin-conv-item "Mercado Sol")))
+  ;; An installment paid early names its merchant, not the anticipation.
+  (should (equal (fin-conv-item "Mercpago*Mercadol - Parcela 1/12")
+                 (fin-conv-item "Antecipada - Mercpago*Mercadol - Parcela 3/12"))))
+
 (ert-deftest conv/item-strips-bank-boilerplate ()
   (should (equal "academia tutubarao ltda"
                  (fin-conv-item "Transferência enviada pelo Pix - Academia Tutubarao Ltda - 04.871")))

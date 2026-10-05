@@ -117,6 +117,20 @@
                       "SELECT account, date, type, amount, description
                          FROM bank_txn ORDER BY amount"))))))
 
+(ert-deftest bank/pdf-rows-stop-where-ofx-card-rows-start ()
+  (let* ((text (concat "VENCIMENTO 13 DEZ 2023\n"
+                       "Total de compras, 06 NOV a 06 DEZ\t30,00\n"
+                       "TRANSAÇÕES\tDE 06 NOV A 06 DEZ\tVALORES EM R$\n"
+                       "07 NOV\tPadaria\t10,00\n"
+                       "08 NOV\tEstorno de \"Loja\"\t5,00\n"
+                       "06 DEZ\tMercado\t20,00\n"))
+         (res (fin-bank--pdf-rows text "2023-12-06")))
+    (should (equal '(("nubank-pdf" "card" "2023-11-07" "out" 1000 "Padaria")
+                     ("nubank-pdf" "card" "2023-11-08" "in" 500 "Estorno de \"Loja\""))
+                   (mapcar #'cdr (car res))))
+    (should (= 1 (cdr res)))                       ; 06 DEZ left to the OFX
+    (should (string-prefix-p "nu:pdf:" (caar (car res))))))
+
 (defconst test-bank--shared-fitid
   "<CCACCTFROM><BANKTRANLIST>
 <STMTTRN><DTPOSTED>20260506</DTPOSTED><TRNAMT>-152.46</TRNAMT><FITID>L</FITID><MEMO>Latam - Parcela 5/6</MEMO></STMTTRN>
@@ -184,6 +198,13 @@ the last two rows are a genuine double charge.")
             (should-error (fin-bank-import) :type 'user-error)
             (should (file-exists-p (expand-file-name "c.ofx" fin-bank-inbox))))
         (delete-directory fin-bank-inbox t)))))
+
+(ert-deftest bank/kind-tells-company-accounts-apart ()
+  (let ((fin-bank-pj-accounts '("PJ1" "PJC")))
+    (should (equal "account" (fin-bank--kind "<BANKACCTFROM><ACCTID>PF1</ACCTID>")))
+    (should (equal "card" (fin-bank--kind "<CCACCTFROM><ACCTID>PFC</ACCTID>")))
+    (should (equal "pj" (fin-bank--kind "<BANKACCTFROM><ACCTID>PJ1</ACCTID>")))
+    (should (equal "pj-card" (fin-bank--kind "<CCACCTFROM><ACCTID>PJC</ACCTID>")))))
 
 (ert-deftest bank/own-transfers-ignored-except-salary ()
   (let ((fin-bank-own-regexps '("JOAO P"))

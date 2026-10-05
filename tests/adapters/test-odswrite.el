@@ -68,6 +68,21 @@
     (should-error (fin-odsw-apply dup '((:delete ("2026-01-01" "out" "food" "x" 100))))))
   (should-error (fin-odsw-apply test-odsw--base '((:add ("2026-01-01" "out" "food" "x" -5 nil nil))))))
 
+(ert-deftest odsw/apply-deletes-every-identical-row-together ()
+  (let* ((dup (test-odsw--content '("2026-01-01" "out" "food" "x" 100 2 4)
+                                  '("2026-01-01" "out" "food" "x" 100 3 4)))
+         (out (fin-odsw-apply dup '((:delete ("2026-01-01" "out" "food" "x" 100))
+                                    (:delete ("2026-01-01" "out" "food" "x" 100))))))
+    (should-not (string-search "<text:p>x</text:p>" out))
+    ;; An amount edit takes one of them; a second edit, the other.
+    (let ((one (fin-odsw-apply dup '((:edit ("2026-01-01" "out" "food" "x" 100) 90)))))
+      (should (equal '(90 100) (sort (mapcar (lambda (k) (nth 4 k)) (test-odsw--keys one)) #'<))))
+    (should (fin-odsw-apply dup '((:edit ("2026-01-01" "out" "food" "x" 100) 90)
+                                  (:edit ("2026-01-01" "out" "food" "x" 100) 80))))
+    (should-error (fin-odsw-apply dup '((:edit ("2026-01-01" "out" "food" "x" 100) 90)
+                                        (:edit ("2026-01-01" "out" "food" "x" 100) 80)
+                                        (:edit ("2026-01-01" "out" "food" "x" 100) 70))))))
+
 (ert-deftest odsw/save-rezips-reads-back-and-backs-up ()
   (let* ((dir (make-temp-file "fin-odsw-" t))
          (ods (expand-file-name "seeds.ods" dir))

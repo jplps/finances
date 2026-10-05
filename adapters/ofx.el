@@ -52,6 +52,17 @@ UTF-8.  Invalid UTF-8 decodes to eight-bit raw bytes, which flags it."
         ((string-match-p "<BANKACCTFROM>" text) "account")
         (t (error "fin-ofx: no BANKACCTFROM/CCACCTFROM block"))))
 
+(defun fin-ofx-balance (text)
+  "(DATE . CENTS) of the statement's closing balance (LEDGERBAL), or nil."
+  (when (string-match "<LEDGERBAL>\\(\\(?:.\\|\n\\)*?\\)</LEDGERBAL>" text)
+    (let ((block (match-string 1 text)))
+      (let ((amt (fin-ofx--field block "BALAMT")) (as-of (fin-ofx--field block "DTASOF")))
+        (and amt as-of (cons (fin-ofx--date as-of) (fin-ofx--cents amt)))))))
+
+(defun fin-ofx-account-id (text)
+  "ACCTID of the statement in TEXT, or nil."
+  (fin-ofx--field text "ACCTID"))
+
 (defun fin-ofx-period (text)
   "(KIND START END) of OFX TEXT: statement kind and ISO period dates."
   (list (fin-ofx--kind text)

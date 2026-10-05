@@ -76,5 +76,31 @@
     (should (equal '(:report :add :edit) (mapcar #'car out)))
     (should (equal '(nil "2021-05-03" "in" 712500 "Transferência Recebida - 4 Nkey") (cadr (car out))))))
 
+(ert-deftest bankfix/carve-takes-from-remainders-and-never-grows ()
+  (fin-test-with-db
+    (fin-test-insert-entry "2021-01-31" "out" "food" 5000 "other")
+    (fin-test-insert-entry "2021-02-28" "out" "food" 9000 "other")
+    (let* ((card (list (list "nu:pdf:a" "2021-01-10" "out" 1200 "Padaria Sol")
+                       (list "nu:pdf:b" "2021-01-12" "out" 4000 "Loja Mar - Parcela 1/2")
+                       (list "nu:pdf:c" "2021-02-03" "out" 1000 "Padaria Sol")
+                       (list "nu:pdf:d" "2021-02-04" "in" 300 "Estorno de \"Loja Mar\"")
+                       (list "nu:pdf:e" "2021-02-20" "out" 9000 "Hotel")))
+           (acts (fin-bank-fix--carve card nil "2022-07-01"))
+           (of (lambda (k) (cl-remove-if-not (lambda (a) (eq (car a) k)) acts))))
+      ;; a and c fit their month; b spills 200 into February; e finds 7800 left.
+      (should (equal '(("2021-01-10" "out" "free" "padaria sol" 1200)
+                       ("2021-01-12" "out" "free" "loja mar" 4000 1 2)
+                       ("2021-02-03" "out" "free" "padaria sol" 1000))
+                     (mapcar (lambda (a) (seq-take (cadr a) (if (nth 5 (cadr a)) 7 5))) (funcall of :add))))
+      (should (equal '("2021-01-31") (mapcar (lambda (a) (nth 1 (cadr a))) (funcall of :delete))))
+      (should (equal '(("2021-02-28" 7800)) (mapcar (lambda (a) (list (nth 1 (cadr a)) (caddr a)))
+                                                   (funcall of :edit))))
+      (should (equal '("nu:pdf:d" "nu:pdf:e") (mapcar (lambda (a) (car (cadr a))) (funcall of :report)))))))
+
+(ert-deftest bankfix/lump-card-rows-are-pdf-rows-before-cutoff ()
+  (should (fin-bank-fix--lump-card-p '("nu:pdf:a" "2021-01-10") "2022-07-01"))
+  (should-not (fin-bank-fix--lump-card-p '("nu:pdf:a" "2022-07-10") "2022-07-01"))
+  (should-not (fin-bank-fix--lump-card-p '("nu:x:a" "2021-01-10") "2022-07-01")))
+
 (provide 'test-bankfix)
 ;;; test-bankfix.el ends here
