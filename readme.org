@@ -113,7 +113,7 @@ Schema is auto-created on first =M-x fin-db-rebuild= (or =finances fin-db-rebuil
 │   └── view/{test-fmt,test-charts,test-dashboard}.el
 └── infra/
     ├── finances.db      ; SQLite mirror + bank tables (gitignored)
-    ├── inbox/           ; bank OFX statements and PDF card bills to import (gitignored)
+    ├── inbox/           ; files to import (gitignored): nubank/ bank OFX statements and PDF card bills, ir/ Receita Federal documents
     ├── backup/          ; ODS copies taken before each fix (gitignored)
     ├── config.el        ; personal settings (gitignored, optional)
     └── seeds.ods        ; source of truth
@@ -170,7 +170,7 @@ The ODS stays canonical; bank statements fix it.  =M-x fin-bank-fix= compares ev
 
 ** Monthly flow
 
-1. Export last month's account statement and the closed card bill; copy both into =infra/inbox/=.
+1. Export last month's account statement and the closed card bill; copy both into =infra/inbox/nubank/=.
 2. Close the ODS in LibreOffice: its next save would undo the fix (=fin-bank-fix= refuses while the lock file exists).
 3. =M-x fin-bank-import= — renames files to =nubank-<account|card>-<start>_<end>.ofx= from the statement period (PDF bills to =nubank-card-bill-<due>.pdf=), removes a re-export of a statement already there, imports new rows into =bank_txn=.  Rows dedup by =FITID= plus date, amount and memo (Nubank reuses a =FITID= across installments and refunds).
 4. =M-x fin-bank-fix= — writes the fixes; backup in =infra/backup/=.  =C-u M-x fin-bank-fix= is a dry run.
@@ -272,7 +272,7 @@ Fixtures live in =tests/helpers.el= (=fin-test-with-db= macro, seed inserters, =
 - *Zero external runtime deps*: Emacs 29 stdlib (=sqlite=, =libxml=, =dom=) + macOS =unzip= / =zip=.
 - *Static HTML dashboard*: no server, no JS, no port.  =M-x fin= opens the latest.
 - *BRL only*: no currency column; every amount is BRL cents.
-- =infra/finances.db= gitignored; ODS tables regeneratable from the ODS, bank tables from =infra/inbox/= (=fin-db-rebuild= leaves them alone).
+- =infra/finances.db= gitignored; ODS tables regeneratable from the ODS, bank tables from =infra/inbox/nubank/= (=fin-db-rebuild= leaves them alone).
 - *Bank fixes the ODS, the ODS stays canonical*: =fin-bank-fix= edits =content.xml= as text so untouched rows stay byte-identical, keeps a backup, never touches the DB; =fin= then mirrors the fixed ODS.  It re-zips with =zip(1)=, the counterpart of the =unzip(1)= the reader uses.
 - *Tests are stdlib*: ERT only, no =buttercup= / =undercover= / external runners.  Keeps the zero-deps invariant honest.
 

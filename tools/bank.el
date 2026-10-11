@@ -20,7 +20,7 @@
 (require 'cardpdf)
 
 (defcustom fin-bank-inbox
-  (expand-file-name "../infra/inbox/"
+  (expand-file-name "../infra/inbox/nubank/"
                     (file-name-directory
                      (or load-file-name buffer-file-name default-directory)))
   "Directory holding bank statement files to import."
