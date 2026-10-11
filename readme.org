@@ -84,7 +84,8 @@ Schema is auto-created on first =M-x fin-db-rebuild= (or =finances fin-db-rebuil
 ├── tools/
 │   ├── sync.el          ; use case: ODS → DB
 │   ├── bank.el          ; use case: inbox → bank tables, reconcile review
-│   └── bankfix.el       ; use case: bank rows → ODS fixes
+│   ├── bankfix.el       ; use case: bank rows → ODS fixes
+│   └── health.el        ; ledger health to-do (inbox, fix, flags, gaps)
 ├── domain/              ; pure aggregations (queries only)
 │   ├── cashflow.el
 │   ├── budget.el
@@ -93,6 +94,8 @@ Schema is auto-created on first =M-x fin-db-rebuild= (or =finances fin-db-rebuil
 │   ├── accounts.el
 │   ├── reconcile.el     ; bank ↔ ledger matching (pure)
 │   ├── conventions.el   ; how bank rows become ledger fixes (pure)
+│   ├── pj.el            ; company account: client payments, tax items (pure)
+│   ├── ir.el            ; imposto de renda: rules per year, position, filing duty
 │   └── stats.el         ; cat/income shares, top-recurring, top-by-count,
 │                        ; yearly-saves, cumulative-networth, rolling-save-rate,
 │                        ; rolling-flow, pareto-spending, monthly-spend-grid, records, period
@@ -101,23 +104,48 @@ Schema is auto-created on first =M-x fin-db-rebuild= (or =finances fin-db-rebuil
 │   ├── style.el         ; CSS (grouped selectors, grid-area map)
 │   ├── charts.el        ; SVG donut/bars/flow/line/multiline/pareto/heatmap
 │   ├── html.el          ; panel/block/pair/table/alist/kv builders
-│   ├── panels.el        ; 5 panel renderers + drilldowns
+│   ├── panels.el        ; cockpit, wealth, stats panels + drilldowns
+│   ├── irpf.el          ; ir panel: risks, returns, watch, year switch
 │   ├── dashboard.el     ; render + M-x fin-dashboard
 │   └── dashboard.html   ; generated (gitignored)
 ├── tests/               ; ERT suite mirroring source layout
 │   ├── helpers.el       ; temp-db fixture + seed inserters
 │   ├── all-tests.el     ; entrypoint
 │   ├── adapters/{test-db,test-parser,test-bankdb,test-ofx,test-cardpdf,test-odswrite}.el
-│   ├── domain/{test-budget,test-stats,test-patrimony,test-accounts,test-cashflow,test-reconcile,test-conventions,test-goals}.el
-│   ├── tools/{test-sync,test-bank,test-bankfix}.el
+│   ├── domain/{test-budget,test-stats,test-patrimony,test-accounts,test-cashflow,test-reconcile,test-conventions,test-goals,test-pj,test-ir}.el
+│   ├── tools/{test-sync,test-bank,test-bankfix,test-health}.el
 │   └── view/{test-fmt,test-charts,test-dashboard}.el
 └── infra/
     ├── finances.db      ; SQLite mirror + bank tables (gitignored)
-    ├── inbox/           ; files to import (gitignored): nubank/ bank OFX statements and PDF card bills, ir/ Receita Federal documents
+    ├── inbox/           ; source documents (gitignored), see * Inbox
+    │   ├── nubank/      ; OFX statements and PDF card bills, imported by fin-bank-import
+    │   ├── ir/          ; Receita Federal: dirpf/ defis/ pgdasd/ caixa-postal/ teves/, payments
+    │   ├── nfse/        ; company invoices (NFS-e) + index csv
+    │   ├── inss/        ; CNIS contribution statement
+    │   └── docs/        ; company registration papers
     ├── backup/          ; ODS copies taken before each fix (gitignored)
     ├── config.el        ; personal settings (gitignored, optional)
     └── seeds.ods        ; source of truth
 #+end_example
+
+* Inbox
+
+=infra/inbox/= keeps every source document, gitignored, for backup.  Names: =<source>-<cpf|cnpj>-<period>[-<kind>][-<id>].<ext>=, lowercase ASCII, ISO periods (=2025=, =2025-01=, =2026-10-11=), ranges as =start_end=; yearly documents carry the ano-calendário (=defis-cnpj-2025.pdf= is the DEFIS about 2025, filed in 2026).  =nubank/= keeps the names =fin-bank-import= gives.
+
+| Folder | What | Where from | When |
+|--------+------+------------+------|
+| =nubank/= | account, card, PJ OFX; PDF card bills | Nubank app | monthly |
+| =ir/pgdasd/= | PGDAS-D declaration, receipt, DAS statement per month | e-CAC → PGDAS-D → Consultar Declarações | monthly |
+| =ir/= | payments (=pagamentos-<cpf/cnpj>-*=), DCTFWeb list, guides | Meu Pagamentos, DCTFWeb | monthly |
+| =ir/defis/= | DEFIS | e-CAC → DEFIS → Imprimir | yearly (March) |
+| =ir/dirpf/= | return, receipt, original file | Meu Imposto de Renda | yearly (May) |
+| =ir/caixa-postal/= | e-CAC messages, Painel de Conformidade notices and debt statements | Caixa Postal, Painel de Conformidade | when notified |
+| =ir/teves/= | accountant's invoices and accounting reports | accountant e-mail | monthly |
+| =nfse/= | invoices issued, =nfse-cnpj-<competência>-<municipal/nacional>-<n>[-cancelada].pdf= | Florianópolis NFPS-e until 11/2025, Emissor Nacional since 12/2025 (CNPJ login or certificate; gov.br login is MEI-only) | monthly |
+| =inss/= | CNIS | Meu INSS → Extrato de Contribuições | yearly |
+| =docs/= | registration papers (MEI, JUCESC, city permit, RAIS) | — | on change |
+
+Keep digital certificates (=.pfx=) out of the inbox: they carry a private key.
 
 * ODS layout
 
@@ -204,7 +232,21 @@ Future-dated rows are skipped on both sides: ledger plan placeholders, and insta
 
 ** Personal settings
 
-=infra/config.el= (gitignored, loaded by =core.el= when present) holds what identifies you: =fin-bank-own-regexps= (own name, own company), =fin-conv-salary-regexps=, and =fin-conv-aliases= — payee words mapped to ledger item words (=("veronica" . "aluguel")=).
+=infra/config.el= (gitignored, loaded by =core.el= when present) holds what identifies you: =fin-bank-own-regexps= (own name, own company), =fin-conv-salary-regexps= (the company's deposits into the personal account; match every description variant the bank used), and =fin-conv-aliases= — payee words mapped to ledger item words (=("veronica" . "aluguel")=).  Company account: =fin-bank-pj-accounts=, =fin-pj-income-payers= (client → income category), =fin-pj-tax-items= (payee → =cnpj= item).  Goals: =fin-goals-patrimony-classes= (item regexp → register class).
+
+Imposto de renda inputs, each read from a document in =infra/inbox/=:
+| Variable                     | Value                                   | Source                             |
+|------------------------------+-----------------------------------------+------------------------------------|
+| =fin-ir-pro-labore=          | year total, or =(:monthly CENTS)=       | CNIS, DEFIS                        |
+| =fin-ir-other-taxable=       | taxable income outside the bank         | the filed DIRPF                    |
+| =fin-ir-filed=               | year → date the return was delivered    | Meu Imposto de Renda               |
+| =fin-ir-simples-declared=    | year, PGDAS-D revenue, DAS              | =ir/pgdasd-cnpj-*-resumo.csv=      |
+| =fin-ir-invoiced=            | year → NFS-e revenue (not cancelled)    | =nfse/nfse-cnpj-*-index.csv=       |
+| =fin-ir-defis-exempt=        | year → exempt profit the DEFIS reports  | =ir/defis/=                        |
+| =fin-ir-open-debts=          | due, code, cents, text; delete when paid | Painel de Conformidade, caixa postal |
+| =fin-ir-full-books=          | =yes= / =no= / nil                      | the accountant                     |
+| =fin-ir-retirement-plan=     | =pgbl= / =vgbl= / =none= / nil          | the plan's statement               |
+| =fin-ir-individual-income=   | =taxable= / =exempt= / nil              | what =extras= income is            |
 
 ** Encoding
 
@@ -261,6 +303,8 @@ Coverage scope:
 - Domain queries: each public fn against seeded fixtures, including =/0=, =NULL=, future-month, multi-year scenarios.
 - SVG charts: every renderer is empty-safe and emits expected structural tags.
 - Dashboard integration: full render parses as HTML via =libxml-parse-html-region= on empty + seeded DBs.
+- PJ and health: client payments and tax items against the ledger, covered months; inbox staleness, fix due, flags, gaps.
+- IR: annual tables per year, the Lei 15.270 reduction (zero and phase-out), simplified cap, position (pró-labore annual or monthly, INSS, profit net of it, presumed profit from declared revenue, health exclusions, PGBL cap), filing duty statuses (on time, late, missing, not required, unknown), bank coverage, fail-loud on unknown years and malformed pró-labore.
 
 Fixtures live in =tests/helpers.el= (=fin-test-with-db= macro, seed inserters, =fin-test-seed-minimal/multi-year/budget-tree= presets).  No external files needed; sync test stubs =fin-ods-parse= with an in-memory DOM.
 
