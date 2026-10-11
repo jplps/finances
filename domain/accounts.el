@@ -90,19 +90,23 @@ statements, so a rebuilt balance trails the real one by them."
                                     (fin-report--first-flow (plist-get spec :into) since))
                                since)))))))
 
-(defun fin-report--month-bank-saved (year month)
+(defun fin-report--bank-saved (period)
   "Cents the personal account moved into the accounts of `fin-accounts-derived'
-in YEAR-MONTH, net of what it took out of them."
+in PERIOD (\"YYYY\" or \"YYYY-MM\"), net of what it took out of them; flows on
+or before an account's :since are not its own."
+  (cl-assert (string-match-p "\\`[0-9]\\{4\\}\\(-[0-9]\\{2\\}\\)?\\'" period) nil
+             "fin-accounts: bad period %S" period)
   (fin-bankdb-ensure)
   (let ((total 0))
-    (dolist (r (fin-db-query "SELECT type, amount, description FROM bank_txn
-                               WHERE account = 'account'
-                                 AND strftime('%Y-%m', date) = printf('%04d-%02d', ?, ?)"
-                             (list year month))
+    (dolist (r (fin-db-query "SELECT date, type, amount, description FROM bank_txn
+                               WHERE account = 'account' AND substr(date, 1, length(?1)) = ?1"
+                             (list period))
                total)
-      (pcase-let* ((`(,type ,amount ,desc) r)
+      (pcase-let* ((`(,date ,type ,amount ,desc) r)
                    (key (if (equal type "out") :into :out-of)))
-        (when (cl-some (lambda (spec) (cl-some (lambda (re) (string-match-p re desc)) (plist-get spec key)))
+        (when (cl-some (lambda (spec)
+                         (and (string> date (or (plist-get spec :since) ""))
+                              (cl-some (lambda (re) (string-match-p re desc)) (plist-get spec key))))
                        fin-accounts-derived)
           (cl-incf total (if (equal type "out") amount (- amount))))))))
 

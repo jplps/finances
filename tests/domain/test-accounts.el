@@ -94,7 +94,7 @@
     (let ((fin-accounts-derived '((:name "x" :sheet ("y")))))
       (should-error (fin-report--accounts-derived)))))
 
-(ert-deftest accounts/month-bank-saved-nets-withdrawals ()
+(ert-deftest accounts/bank-saved-nets-withdrawals ()
   (fin-test-with-db
     (fin-bankdb-ensure)
     (fin-db-exec "INSERT INTO bank_txn (id, source, account, date, type, amount, description)
@@ -104,14 +104,20 @@
                          ('d','t','account','2026-10-05','in',1000,'Compra de ETF'),
                          ('e','t','account','2026-10-06','out',5000,'Compra no débito - Loja'),
                          ('f','t','pj','2026-10-07','out',7000,'Aplicação RDB'),
-                         ('g','t','account','2026-09-30','out',9000,'Aplicação RDB')")
+                         ('g','t','account','2026-09-30','out',9000,'Aplicação RDB'),
+                         ('h','t','account','2023-05-01','in',4000,'Pix - Conta: 51-6'),
+                         ('i','t','account','2024-01-05','out',6000,'Pix - Conta: 51-6')")
     (let ((fin-accounts-derived
            '((:name "nu" :since "2020-01-01" :opening 0 :into ("\\`Aplicação RDB") :out-of ("\\`Resgate RDB"))
              (:name "etf" :since "2020-01-01" :opening 0 :into ("\\`Compra de ETF") :out-of ("\\`Compra de ETF"))
+             (:name "bb" :since "2023-12-31" :opening 0 :into ("Conta: 51-6\\'") :out-of ("Conta: 51-6\\'"))
              (:name "checking" :balance "account"))))
-      (should (= 89000 (fin-report--month-bank-saved 2026 10)))
-      (should (= 9000 (fin-report--month-bank-saved 2026 9)))
-      (should (= 0 (fin-report--month-bank-saved 2026 8))))))
+      (should (= 89000 (fin-report--bank-saved "2026-10")))
+      (should (= 9000 (fin-report--bank-saved "2026-09")))
+      (should (= 98000 (fin-report--bank-saved "2026")))
+      (should (= 0 (fin-report--bank-saved "2023")))            ; before bb's :since
+      (should (= 6000 (fin-report--bank-saved "2024")))
+      (should-error (fin-report--bank-saved "2026-1")))))
 
 (provide 'test-accounts)
 ;;; test-accounts.el ends here

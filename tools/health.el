@@ -146,7 +146,7 @@ left out: they only move money between the account and the card."
 moved into savings, and the cash the bank accounts gained.  They match when
 the ledger holds the month's flows."
   (pcase-let ((`(,_ ,in ,out ,_) (nth (1- month) (fin-report--year-months year))))
-    (list (- (or in 0) (or out 0) (fin-report--month-bank-saved year month))
+    (list (- (or in 0) (or out 0) (fin-report--bank-saved (format "%04d-%02d" year month)))
           (fin-health--bank-cash year month))))
 
 (defun fin-health-cash-gaps ()
