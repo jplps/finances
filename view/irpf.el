@@ -322,13 +322,13 @@ year expands into its detail.  The current year starts open."
                           (and ctx (fin-dashboard--ir-wrong-account-line ctx))))))
 
 (defun fin-dashboard--ir-todo ()
-  "The open IR risks as cockpit lines, (nil HTML) each, linked to the IR panel."
+  "The open IR risks as cockpit lines, (nil HTML) each."
   (let ((years (fin-dashboard--ir-years)))
     (when years
       (let* ((ctx (fin-ir-context))
              (positions (mapcar (lambda (y) (fin-ir-position y ctx)) years)))
         (mapcar (lambda (l) (list nil (fin-dashboard--health-line
-                                       nil (format "<a href=\"#ir\">ir</a> · %s" (cadr l)))))
+                                       nil (format "ir · %s" (cadr l)))))
                 (cl-remove-if #'car (fin-dashboard--ir-risk-lines
                                      positions (fin-dashboard--ir-closed positions) ctx)))))))
 
