@@ -149,7 +149,7 @@ Keep digital certificates (=.pfx=) out of the inbox: they carry a private key.
 
 * ODS layout
 
-Four sheets.  All category/name values *lowercase kebab-case*; item descriptions keep case + accents.  All monetary values are *integer cents*.
+Four synced sheets (a fifth, =debt=, is free-form notes in reais and is not synced).  All category/name values *lowercase kebab-case*; item descriptions keep case + accents.  All monetary values are *integer cents*.
 
 ** =entries=
 =date | type | category | item | amount | installment | installments=
@@ -157,6 +157,7 @@ Four sheets.  All category/name values *lowercase kebab-case*; item descriptions
 - =type= ∈ {=in=, =out=}
 - CNPJ tax is a normal =type=out= row under =category=cnpj= (positive cents).  It is netted out of gross income in the liquid base (see /Liquid/), not treated as ordinary spend there.
 - Every entry is a leaf; aggregations sum all rows of the relevant =type=.  An un-itemized lump just leaves =item= NULL and surfaces under its category in the cashflow drilldown.
+- Savings moves (=fin-report-transfer-categories=: out =investments= / =retirement= / =reserve=, in the same plus =vacations= withdrawals) are neither income nor spending in flow and save metrics: they are what was saved.
 - =amount= = cents (integer).
 - =installment= / =installments=: whole numbers /k/ of /n/ for a purchase paid in installments, one row per installment; both empty otherwise.  Sync rejects anything but 1 ≤ k ≤ n.
 
@@ -179,10 +180,11 @@ Four sheets.  All category/name values *lowercase kebab-case*; item descriptions
 
 - Children of a bucket (e.g., =nu=, =bb=, =wanu= under =emergency=) sum into the parent.
 - Reserve target = 12 × fix-monthly; runway derived from =SUM(balance WHERE parent='emergency') / fix=.
+- /Accounts from data/ (Wealth) rebuilds balances from the bank to compare with this sheet: =fin-accounts-derived= gives each account an opening balance on a date (e.g. bens e direitos of the last DIRPF) plus the personal-account rows moving money into and out of it, or a statement balance (=:balance "account"=).  Yields never reach the statements, so the gap to the sheet is yield or a missing move.
 
 * Liquid
 
-=monthly_liquid= = AVG over the current year's months of (Σ =type=in= − Σ =category=cnpj=).
+=monthly_liquid= = AVG over the current year's complete months of (Σ =type=in=, withdrawals excluded, − Σ =category=cnpj=).  Future months forecast in = plan brute, out = fix + spending var + cnpj; saving rows stay in liquid.
 CNPJ tax (a =type=out= row under =category=cnpj=) is subtracted from gross income in this base rather than counted as expense.
 
 * Bank reconciliation
@@ -193,14 +195,14 @@ The ODS stays canonical; bank statements fix it.  =M-x fin-bank-fix= compares ev
 
 - *Account*: app → Extrato → Exportar extrato → OFX.  Any date range.
 - *Card*: app → Cartão de crédito → Resumo de faturas → closed bill → Enviar fatura por e-mail → OFX.  One bill per file, sent as an email attachment.
-- *Card, before OFX (until 2023-12)*: the same bills as PDF.  =adapters/pdfrows.js= (macOS PDFKit through =osascript=, nothing to install) rebuilds the transaction table from text positions, since some bills store it column by column; =adapters/cardpdf.el= reads it.  Rows dated from the first OFX card row on are left to the OFX.  Company accounts (=fin-bank-pj-accounts=, by ACCTID) import as =pj= (checking) and =pj-card= (card), named =nubank-pj-…= and =nubank-pj-card-…=; =domain/pj.el= reconciles PJ client payments with item-less income rows and replaces =cnpj= estimates with the real tax payments.  Payments are skipped, =Estorno de= / =Crédito de= / =Desconto Antecipação= are credits, =- k/n= becomes =- Parcela k/n=, and bill financing (=Parcelamento de Fatura=, =Crédito de parcelamento=) is reported, not imported.  Each bill must balance against its /Total de compras/ (purchases, less credits, phone top-ups and IOF, which the bill totals apart), or the import stops.
+- *Card, before OFX (until 2023-12)*: the same bills as PDF.  =adapters/pdfrows.js= (macOS PDFKit through =osascript=, nothing to install) rebuilds the transaction table from text positions, since some bills store it column by column; =adapters/cardpdf.el= reads it.  Rows dated from the first OFX card row on are left to the OFX.  Company accounts (=fin-bank-pj-accounts=, by ACCTID) import as =pj= (checking) and =pj-card= (card), named =nubank-pj-…= and =nubank-pj-card-…=; =domain/pj.el= reconciles PJ client payments with item-less income rows (from the first full month on or after =fin-bank-fix-from=, a payment pairing first with a row of its own month) and replaces =cnpj= estimates with the real tax payments (=fin-pj-tax-items= match case-sensitively: "das" is also a Portuguese word).  Payments are skipped, =Estorno de= / =Crédito de= / =Desconto Antecipação= are credits, =- k/n= becomes =- Parcela k/n=, and bill financing (=Parcelamento de Fatura=, =Crédito de parcelamento=) is reported, not imported.  Each bill must balance against its /Total de compras/ (purchases, less credits, phone top-ups and IOF, which the bill totals apart), or the import stops.
 - History older than the app allows: LGPD request to Nubank's DPO (=dponubank.zendesk.com=).
 
 ** Monthly flow
 
 1. Export last month's account statement and the closed card bill; copy both into =infra/inbox/nubank/=.
 2. Close the ODS in LibreOffice: its next save would undo the fix (=fin-bank-fix= refuses while the lock file exists).
-3. =M-x fin-bank-import= — renames files to =nubank-<account|card>-<start>_<end>.ofx= from the statement period (PDF bills to =nubank-card-bill-<due>.pdf=), removes a re-export of a statement already there, imports new rows into =bank_txn=.  Rows dedup by =FITID= plus date, amount and memo (Nubank reuses a =FITID= across installments and refunds).
+3. =M-x fin-bank-import= — renames files to =nubank-<account|card>-<start>_<end>.ofx= from the statement period (PDF bills to =nubank-card-bill-<due>.pdf=), removes a re-export of a statement already there (a later export replaces it and drops rows it no longer lists; card bills span [start, end), account statements [start, end]), imports new rows into =bank_txn=.  Rows dedup by =FITID= plus date, amount and memo (Nubank reuses a =FITID= across installments and refunds).
 4. =M-x fin-bank-fix= — writes the fixes; backup in =infra/backup/=.  =C-u M-x fin-bank-fix= is a dry run.
 5. Read /Needs a look/ in the report (salary gaps, refunds with no purchase), fix those by hand if needed.
 6. =M-x fin=.
@@ -210,7 +212,7 @@ The ODS stays canonical; bank statements fix it.  =M-x fin-bank-fix= compares ev
 ** What a fix does
 
 Before matching, bank rows the ledger never books on their own are folded or dropped:
-- a refund cancels its purchase; a partial refund reduces it; a refunded purchase already in the ledger is deleted from it;
+- a refund cancels its purchase, or a whole installment series when it equals the series; a partial refund reduces it; a refunded purchase already in the ledger is deleted from it; a dispute credit (=Crédito de Confiança=) and its =Reversão= cancel out;
 - IOF adds to, an installment discount (/Desconto Antecipação/) subtracts from, its purchase;
 - a Pix paid with /Pix no Crédito/ counts once, on the card;
 - card bill payments, card credit moved to the account and back, cent-level debt adjustments, and transfers between own accounts (=fin-bank-own-regexps=) are ignored;
@@ -240,11 +242,15 @@ Imposto de renda inputs, each read from a document in =infra/inbox/=:
 | =fin-ir-pro-labore=          | year total, or =(:monthly CENTS)=       | CNIS, DEFIS                        |
 | =fin-ir-other-taxable=       | taxable income outside the bank         | the filed DIRPF                    |
 | =fin-ir-filed=               | year → date the return was delivered    | Meu Imposto de Renda               |
-| =fin-ir-simples-declared=    | year, PGDAS-D revenue, DAS              | =ir/pgdasd-cnpj-*-resumo.csv=      |
-| =fin-ir-invoiced=            | year → NFS-e revenue (not cancelled)    | =nfse/nfse-cnpj-*-index.csv=       |
+| =fin-ir-payments-dir=        | Receita payments and PGDAS-D summary CSVs | =ir/pagamentos-*.csv=, =ir/pgdasd-cnpj-*-resumo.csv= |
+| =fin-ir-nfse-dir=            | NFS-e index CSV                         | =nfse/nfse-cnpj-*-index.csv=       |
+| =fin-ir-declared-exempt=     | year → exempt profit the DIRPF declares | the filed DIRPF                    |
+| =fin-ir-exclusive=           | year → exclusive-taxation income        | the filed DIRPF                    |
+| =fin-ir-assets-declared=     | year → bens e direitos on 31/12         | the filed DIRPF                    |
+| =fin-ir-health-deductible=   | regexps of deductible health items      | Lei 9.250 art. 8 II a              |
 | =fin-ir-defis-exempt=        | year → exempt profit the DEFIS reports  | =ir/defis/=                        |
 | =fin-ir-open-debts=          | due, code, cents, text; delete when paid | Painel de Conformidade, caixa postal |
-| =fin-ir-full-books=          | =yes= / =no= / nil                      | the accountant                     |
+| =fin-ir-full-books=          | =verified= / =yes= (claimed) / =no= / nil | the balance sheet                |
 | =fin-ir-retirement-plan=     | =pgbl= / =vgbl= / =none= / nil          | the plan's statement               |
 | =fin-ir-individual-income=   | =taxable= / =exempt= / nil              | what =extras= income is            |
 
@@ -256,23 +262,21 @@ Nubank card bills declare =CHARSET:1252= but are UTF-8.  The parser ignores the 
 
 =M-x fin-dashboard= writes =view/dashboard.html= and opens it.  Static, no JS.  Plain terminal look (monospace, lowercase labels, =$= prompt, aqua accent; no panel headings, the status bar names the current one).  One panel at a time, at most 640px wide and centered, picked from a tmux-like status bar at the bottom (=1:cockpit 2:wealth 3:stats 4:ir=, current marked =*=); each is a =#id= anchor shown with CSS =:target= (objectives when none), so the URL keeps the view and each number is also its =accesskey=; dark by default, light with =data-theme="light"= on =<html>=: every color is a theme role in =fin-dashboard--palette= (light and dark value), emitted as CSS custom properties and referenced as =var(--role)= in markup and SVG.  Values follow a validated data-viz palette with the financial convention: green for in / positive / on target, red for out / negative / off target (direction and position also encode it: above vs below the baseline, signed gaps), a neutral graphite accent, a fixed categorical order for shares without green or red (past six slices a neutral "other").  Hover text comes from SVG =<title>=.
 
-A two-stat *hero* tops the page: /Final balance (entries)/ (latest cumulative net worth, Σ in − out) and /Accounts balance (now)/ (patrimony total); each colored pos/neg.
-
-Under the header, on every panel, a full-width LED ticker of the records (net worth, best/worst month, biggest income/purchase, best/avg yearly save, recurring share, since, months); its tape keeps the content width.  CSS-only scrolling, dark in both themes, pauses on hover, static under reduced motion.
+Under the header, on every panel, a full-width LED ticker of the records (net worth, best/worst month (the current month excluded), biggest income/purchase, best/avg yearly save (income-weighted), recurring share, since, months); its tape keeps the content width.  CSS-only scrolling, dark in both themes, pauses on hover, static under reduced motion.
 
 Four panels:
-- *Cockpit*: tiles (this month's liquid with in/out; the bank balance, personal account + PJ, from the latest statements' =LEDGERBAL=, recorded at each import; savings, the accounts total; goals over target), the fixed and variable goal rows (=domain/goals.el=, below), and /ledger health/ (=tools/health.el=), a to-do list that reads ✓ in sync or ⚠ N to do: statements to export (an account whose latest statement ends before last month's end; open card bills count as current), =fin-bank-fix= to run (bank rows imported after its last run, or a dry run with changes pending; every run records itself in =bank_fix_run=), large recent bank rows it could only report (≥ =fin-bank-fix-flag-min= in the last =fin-bank-fix-flag-days=, stored in =bank_fix_flag=; mute rows the ledger books elsewhere with =fin-bank-fix-flag-ignore-regexps=), and complete months whose ledger spending is off the bank's by more than =fin-health-gap-share= (10%).
-- *Wealth*: accounts (savings, total), patrimony (register, total), then the yearly drilldown: year → month → category → leaf (=item= · =date= · =amount=), years folded.
+- *Cockpit*: tiles (this month's liquid with in/out; the bank balance, personal account + PJ, from the latest statements' =LEDGERBAL=, recorded at each import; savings, the accounts total; spending goals over target), the fixed and variable goal rows (=domain/goals.el=, below), and /ledger health/ (=tools/health.el=), a to-do list that reads ✓ in sync or ⚠ N to do: statements to export (an account whose latest statement ends before last month's end; open card bills count as current), =fin-bank-fix= to run (bank rows imported after its last run, or a dry run with changes pending; every run records itself in =bank_fix_run=), large recent bank rows it could only report (≥ =fin-bank-fix-flag-min= in the last =fin-bank-fix-flag-days=, stored in =bank_fix_flag=; mute rows the ledger books elsewhere with =fin-bank-fix-flag-ignore-regexps=), and complete months whose ledger spending is off the bank's by more than =fin-health-gap-share= (10%), counted as =fin-bank-fix= counts (normalized).
+- *Wealth*: accounts (savings, total), accounts from data (see =accounts=), patrimony (register, total), then the yearly drilldown: year → month → category → leaf (=item= · =date= · =amount=), years folded.
 - *Stats*: the all-time flow bar chart and, stacked, the line trends (net worth, rolling save %, income-vs-expense MA, Pareto, yearly save %, spend heatmap), the share donuts (category, income) and the recurring tables (by months, all time).
-- *IR* (=domain/ir.el=, =view/irpf.el=): imposto de renda for every year from =fin-ir-pro-labore= that has rules in =fin-ir-rules= (2020 on, each value with its IN RFB or table source).  /risks/: debts Receita notified (=fin-ir-open-debts=), returns due but missing or late (=fin-ir-filed=, fine at least R$ 165,74), DEFIS exempt profit (=fin-ir-defis-exempt=) below the profit that reached the CPF, profit over the presumed one (=fin-ir-presumption= × PGDAS-D revenue − DAS, =fin-ir-simples-declared=; more is exempt only with =fin-ir-full-books=), PGDAS-D revenue off the client payments by more than 5% in years the PJ statements cover; /returns/: each closed year's duty (taxable or exempt income over the exercício's limits) and the return delivered; /watch/: this year's Lei 15.270/2025 limits and income from individuals (=fin-ir-individual-categories=, carnê-leão when =fin-ir-individual-income= is =taxable=); /year/: a CSS-only switch over each year's revenue, company taxes, deposits to the CPF (=fin-conv-salary-regexps=), pró-labore (annual cents or =(:monthly CENTS)=, 11% INSS), profit (deposits beyond the net pró-labore), deductions against the simplified discount and the lower tax, before IRRF withheld.  Source documents (DIRPF, DEFIS, PGDAS-D, payments, caixa postal) are kept in =infra/inbox/ir/=.
+- *IR* (=domain/ir.el=, =view/irpf.el=): imposto de renda for every year from =fin-ir-pro-labore= that has rules in =fin-ir-rules= (2020 on, each value with its IN RFB or table source).  /risks/: debts Receita notified (=fin-ir-open-debts=), returns due but missing or late (=fin-ir-filed=, fine at least R$ 165,74), exempt profit per DEFIS (=fin-ir-defis-exempt=), DIRPF (=fin-ir-declared-exempt=) and bank side by side, profit over the presumed one (=fin-ir-presumption= × PGDAS-D revenue − DAS; the excess is taxable unless =fin-ir-full-books= is =verified=, with the extra tax shown), PGDAS-D months off the NFS-e and months whose DAS rate strays from the year's median, Receita payments matching no record, taxes paid from the wrong account (bank tax rows are named by the Receita payment they match: 3333/0055 das, 1410/4444 inss, 0211/5320 the partner's IRPF); /returns/: each closed year's duty (taxable or exempt income over the exercício's limits) and the return delivered; /watch/: this year's Lei 15.270/2025 limits and income from individuals (=fin-ir-individual-categories=, carnê-leão when =fin-ir-individual-income= is =taxable=); /year/: a CSS-only switch over each year's revenue, company taxes, deposits to the CPF (=fin-conv-salary-regexps=), pró-labore (annual cents or =(:monthly CENTS)= over the completed months, 11% INSS), profit (deposits beyond the net pró-labore, less transfers back, plus the partner's taxes the company paid), deductions against the simplified discount and the lower tax, before IRRF withheld.  Source documents (DIRPF, DEFIS, PGDAS-D, payments, caixa postal) are kept in =infra/inbox/ir/=.
 
 Goals (cockpit): One bullet row per plan row and per child of =investments= (=domain/goals.el=): the bar's full width is the monthly target and the current month so far fills it green; spending past the target grows red from the right end by the overrun's share of the target (saving rows, =investments=, =retirement=, =emergency=, never turn red).  Variable goals are caixinhas, measured only by what goes into them: =out investments / GOAL= is money saved for GOAL, =in investments / GOAL= money taken back; spending (a car battery, a family trip) is an expense, never a saving.  =family=, =vacations=, =patrimony= and its register classes (=car=, =accessory=, =wear=, =house=, each against its monthly amortization) are savings goals, never red.  Actuals: spending rows, the same-named entry category; =investments= = every caixinha (contributions minus =reserve= withdrawals); =emergency= = =investments/emergency= minus =reserve=.  Rows other rows hang under (=investments=, =patrimony=) fold with a ▸ toggle, closed by default (a CSS-only checkbox).
 
 Stats charts:
-- /Net worth/ — cumulative Σ(in − out) per month.
-- /Rolling save %/ — trailing 12-month save rate.
+- /Net worth/ — cumulative Σ(in − out) per month, savings moves excluded.
+- /Rolling save %/ — trailing 12-calendar-month save rate, up to the current month.
 - /Income vs expense (12mo MA)/ — smoothed in / out lines, reveals lifestyle creep.
-- /Pareto/ — top items by spend with cumulative %.
+- /Pareto/ — top items by spend with cumulative % of total spending.
 - /Spend heatmap/ — year × month intensity (log-scaled).
 - /Yearly save %/ — discrete bars per year.
 - /Category share/, /Income share/ — donuts.
@@ -298,13 +302,13 @@ emacs -Q -batch \
 Coverage scope:
 - Pure formatters (=view/fmt.el=): every fn × edge (nil, 0, neg, k-suffix).
 - Bank: OFX parsing (closed and bare SGML, cents without floats, encoding detection, statement period), inbox naming and re-export removal, idempotent import, matching buckets (exact, near, shifted, net, ignored), conventions (refunds, IOF, discounts, Pix via card, combined rows, savings nets, salary reports), ODS writer (row identity, date order, fail-loud on ambiguity, re-zip round trip, backup), review buffer and TSV export.
-- ODS parser: cell-value precedence (=date-value= > =value= > text), =number-columns-repeated= expansion + cap.
+- ODS parser: cell-value precedence (=date-value= > =value= > text), =number-columns-repeated= / =number-rows-repeated= expansion + caps.
 - DB layer: schema rebuild idempotency, cents-as-integer storage, composite PK semantics.
 - Domain queries: each public fn against seeded fixtures, including =/0=, =NULL=, future-month, multi-year scenarios.
 - SVG charts: every renderer is empty-safe and emits expected structural tags.
 - Dashboard integration: full render parses as HTML via =libxml-parse-html-region= on empty + seeded DBs.
 - PJ and health: client payments and tax items against the ledger, covered months; inbox staleness, fix due, flags, gaps.
-- IR: annual tables per year, the Lei 15.270 reduction (zero and phase-out), simplified cap, position (pró-labore annual or monthly, INSS, profit net of it, presumed profit from declared revenue, health exclusions, PGBL cap), filing duty statuses (on time, late, missing, not required, unknown), bank coverage, fail-loud on unknown years and malformed pró-labore.
+- IR: annual tables per year, the Lei 15.270 reduction (zero and phase-out), simplified cap, position (pró-labore annual or monthly, INSS, profit net of it, presumed profit from declared revenue, full books and the taxable excess, health allow-list, PGBL cap), filing duty statuses with exclusive income and assets (on time, late, missing, not required, unknown), payment matching across accounts and years, monthly revenue and DAS-rate checks, fail-loud on unknown years and malformed pró-labore.
 
 Fixtures live in =tests/helpers.el= (=fin-test-with-db= macro, seed inserters, =fin-test-seed-minimal/multi-year/budget-tree= presets).  No external files needed; sync test stubs =fin-ods-parse= with an in-memory DOM.
 
