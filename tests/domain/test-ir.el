@@ -149,6 +149,8 @@
       (should (= 132000 (plist-get p :inss)))
       (should (= 3932000 (plist-get p :profit)))            ; 50.000 − (12.000 − 1.320)
       (should (= 10000000 (plist-get p :declared-revenue)))
+      (should (equal "2022-02" (plist-get p :declared-through)))
+      (should (= 0 (plist-get p :invoiced-through)))         ; the March invoice comes after
       (should (= 2600000 (plist-get p :presumed))))))       ; 32% × 100.000 − 6.000
 
 (ert-deftest ir/duty-statuses ()

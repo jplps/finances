@@ -449,6 +449,18 @@ from the personal account count too."
         (setq taxes (fin-ir--bump taxes (car (fin-ir-code (cdr m))) (nth 3 (car m))))))
     (list :revenue revenue :taxes taxes :partner-taxes partner)))
 
+(defun fin-ir--revenue-through (year through)
+  "Bank revenue cents of YEAR in the months up to THROUGH (YYYY-MM)."
+  (cl-assert (string-match-p fin-ir--month-re through))
+  (let ((sum 0))
+    (dolist (b (fin-ir--pj-rows year) sum)
+      (when (and (fin-pj-income-category b) (not (string> (substring (nth 1 b) 0 7) through)))
+        (cl-incf sum (nth 3 b))))))
+
+(defun fin-ir--through (rows through)
+  "ROWS, (MONTH ...) each, of the months up to THROUGH (YYYY-MM)."
+  (cl-remove-if (lambda (r) (string> (car r) through)) rows))
+
 (defun fin-ir-returned (year)
   "Cents the partner sent back to the company account in YEAR: its
 in-rows from own accounts (`fin-bank-own-regexps') that are not revenue."
@@ -639,11 +651,20 @@ what went back) beyond the pró-labore net of its INSS."
          (books (fin-ir--books-exempt-p))
          (taxable (and pl (if books base (+ base excess))))
          (health (fin-ir-health year))
-         (retirement (fin-ir-retirement year)))
+         (retirement (fin-ir-retirement year))
+         (through (car (car (last (fin-ir--through
+                                    (cl-remove-if-not (lambda (r) (string-prefix-p (format "%04d-" year) (car r)))
+                                                      (plist-get ctx :simples))
+                                    (format "%04d-12" year)))))))
     (append
      (list :year year :revenue (plist-get company :revenue)
            :declared-revenue (fin-ir--year-total (plist-get ctx :simples) year #'cadr)
            :invoiced (fin-ir--year-total (plist-get ctx :invoices) year #'cdr)
+           :declared-through through
+           :revenue-through (and through (fin-ir--revenue-through year through))
+           :invoiced-through (and through (or (fin-ir--year-total (fin-ir--through (plist-get ctx :invoices) through)
+                                                                  year #'cdr)
+                                              0))
            :taxes (plist-get company :taxes) :partner-taxes (plist-get company :partner-taxes)
            :returned returned
            :drawn drawn :months (length wd) :peak-month (if wd (apply #'max (mapcar #'cdr wd)) 0)
