@@ -68,6 +68,15 @@
                        ("checking" 12345 nil "2026-02-28"))
                      (fin-report--accounts-derived))))))
 
+(ert-deftest accounts/derived-from-zero-notes-first-flow ()
+  (fin-test-with-db
+    (fin-bankdb-ensure)
+    (fin-db-exec "INSERT INTO bank_txn (id, source, account, date, type, amount, description)
+                  VALUES ('a','t','account','2023-04-13','out',5000,'Aplicação RDB')")
+    (let ((fin-accounts-derived '((:name "nu" :sheet () :since "2020-01-01" :opening 0
+                                   :into ("\\`Aplicação RDB") :out-of ()))))
+      (should (equal '(("nu" 5000 nil "since 2023-04-13")) (fin-report--accounts-derived))))))
+
 (ert-deftest accounts/derived-spec-fails-loud ()
   (fin-test-with-db
     (let ((fin-accounts-derived '((:name "x" :sheet ("y")))))

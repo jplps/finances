@@ -258,5 +258,10 @@
       (should-not (plist-get p :exempt))
       (should-not (plist-get p :tax)))))
 
+(ert-deftest ir/labelled-payment-counts-as-matched ()
+  (let ((fin-ir-payment-labels '(("2026-06-08" 17831 "5320"))))
+    (should (equal "5320" (fin-ir--labelled-code '("x" "2026-06-08" "pj" 17831 "Pix - RECEITA FEDERAL"))))
+    (should-not (fin-ir--labelled-code '("x" "2026-06-08" "pj" 17830 "Pix - RECEITA FEDERAL")))))
+
 (provide 'test-ir)
 ;;; test-ir.el ends here

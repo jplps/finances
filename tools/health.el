@@ -14,8 +14,6 @@
 ;;   bank rows normalized (refunds, fees, Pix no Crédito), ignored rows,
 ;;   savings moves and the PJ account's tax payments left out; ledger
 ;;   savings, tax and company rows left out.
-;; - Plan: declared plan income off the realized average by more than
-;;   `fin-health-plan-drift'.
 ;; - Accounts: an account rebuilt from the bank (`fin-accounts-derived') off
 ;;   the sheet by more than the yield it could have earned since its anchor.
 ;; - Documents: each `fin-health-expected-docs' entry no inbox file matches;
@@ -28,7 +26,6 @@
 (require 'bank)
 (require 'bankfix)
 (require 'pj)
-(require 'budget)
 (require 'accounts)
 
 (defconst fin-health-accounts '("account" "card" "pj" "pj-card")
@@ -36,10 +33,6 @@
 
 (defcustom fin-health-gap-share 0.10
   "Share of a month's bank spending past which the ledger gap is flagged."
-  :type 'number :group 'fin)
-
-(defcustom fin-health-plan-drift 0.10
-  "Share by which plan income may differ from the realized average."
   :type 'number :group 'fin)
 
 (defcustom fin-health-yield-rate 0.15
@@ -124,15 +117,6 @@ ids of the company account's rows, whose tax payments are not spending."
   (cl-remove-if-not (lambda (m) (pcase-let ((`(,_ ,bank ,led) m))
                                   (and (> bank 0) (> (abs (- led bank)) (* fin-health-gap-share bank)))))
                     (fin-health-months n)))
-
-(defun fin-health-plan-income (year)
-  "(PLANNED REALIZED) monthly gross income for YEAR when the plan declares
-one and they differ by more than `fin-health-plan-drift', else nil."
-  (pcase-let ((`(,planned ,_ ,_ ,source) (fin-report--monthly-income year))
-              (`(,realized ,_) (fin-report--realized-income year)))
-    (when (and (eq source 'plan) (> realized 0)
-               (> (abs (- planned realized)) (* fin-health-plan-drift realized)))
-      (list planned realized))))
 
 (defun fin-health--years-since (iso today)
   "Years from ISO date to TODAY (ISO), as a float."

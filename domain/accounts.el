@@ -55,6 +55,13 @@ statements, so a rebuilt balance trails the real one by them."
         (cl-incf total (car r))))
     total))
 
+(defun fin-report--first-flow (regexps since)
+  "Date of the first personal-account row after SINCE matching REGEXPS, or nil."
+  (caar (cl-remove-if-not (lambda (r) (cl-some (lambda (re) (string-match-p re (cadr r))) regexps))
+                          (fin-db-query "SELECT date, description FROM bank_txn
+                                          WHERE account = 'account' AND date > ? ORDER BY date"
+                                        (list since)))))
+
 (defun fin-report--derived-balance (spec)
   "(CENTS . AS-OF) of derived account SPEC."
   (let ((kind (plist-get spec :balance))
@@ -66,7 +73,10 @@ statements, so a rebuilt balance trails the real one by them."
              (cons (+ (plist-get spec :opening)
                       (fin-report--bank-sum "out" (plist-get spec :into) since)
                       (- (fin-report--bank-sum "in" (plist-get spec :out-of) since)))
-                   (format "since %s" since))))))
+                   (format "since %s"
+                           (or (and (zerop (plist-get spec :opening))
+                                    (fin-report--first-flow (plist-get spec :into) since))
+                               since)))))))
 
 (defun fin-report--accounts-derived ()
   "(NAME DERIVED SHEET NOTE) per `fin-accounts-derived'; SHEET nil when the

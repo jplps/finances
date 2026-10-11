@@ -60,6 +60,12 @@ absent: none."
 and the personal account."
   :type '(repeat regexp) :group 'fin)
 
+(defcustom fin-ir-payment-labels nil
+  "Receita payments the Receita lists do not show, labelled by hand: list of
+(ISO-DATE CENTS CODE).  A bank row of that date and amount counts as paying
+CODE (see `fin-ir-receita-codes')."
+  :type '(repeat (list string integer string)) :group 'fin)
+
 (defcustom fin-ir-payment-window 5
   "Days a bank payment may sit from the Receita payment it matches."
   :type 'integer :group 'fin)
@@ -385,8 +391,14 @@ the personal account, oldest first: (id date account amount description)."
 or nil: list of (ROW . CODE).  Rows claim payments oldest first, each
 payment once across all years."
   (let ((used (make-hash-table :test #'eq)))
-    (mapcar (lambda (r) (cons r (fin-ir--payment-code r payments used)))
+    (mapcar (lambda (r) (cons r (or (fin-ir--payment-code r payments used)
+                                    (fin-ir--labelled-code r))))
             (fin-ir--receita-rows))))
+
+(defun fin-ir--labelled-code (r)
+  "CODE `fin-ir-payment-labels' gives bank row R, (id date account amount desc)."
+  (nth 2 (cl-find-if (lambda (l) (and (equal (car l) (nth 1 r)) (eql (nth 1 l) (nth 3 r))))
+                     fin-ir-payment-labels)))
 
 (defun fin-ir-code (code)
   "(ITEM PAYER) of Receita CODE (`fin-ir-receita-codes')."

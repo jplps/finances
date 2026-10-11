@@ -75,15 +75,6 @@
             (should (equal '("docs/.cert.pfx") (fin-health-key-files)))))
       (delete-directory root t))))
 
-(ert-deftest health/plan-income-drift ()
-  (fin-test-with-db
-    (fin-test-insert-budget "brute" nil "income" 1300000 nil)
-    (fin-test-insert-entry "2025-01-31" "in" "bp" 1000000)
-    (fin-test-insert-entry "2025-02-28" "in" "bp" 1000000)
-    (should (equal '(1300000 1000000) (fin-health-plan-income 2025)))
-    (let ((fin-health-plan-drift 0.5))
-      (should-not (fin-health-plan-income 2025)))))
-
 (ert-deftest health/account-gaps-allow-yield ()
   (cl-letf (((symbol-function 'fin-report--accounts-derived)
              (lambda () '(("savings" 4700000 5300000 "since 2025-12-31")

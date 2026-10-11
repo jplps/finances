@@ -289,14 +289,6 @@ fold them, and each row names its ancestors so folding one hides it."
 
 (declare-function fin-dashboard--ir-summary "irpf" ())
 
-(defun fin-dashboard--health-plan ()
-  (let ((d (fin-health-plan-income (fin-report--year-now))))
-    (if (null d)
-        (list t (fin-dashboard--health-line t "plan income in line with the income received"))
-      (list nil (fin-dashboard--health-line
-                 nil (format "revise the plan: income %s a month, received %s on average"
-                             (fin-dashboard--grouped (car d)) (fin-dashboard--grouped (cadr d))))))))
-
 (defun fin-dashboard--health-accounts ()
   (let ((gaps (fin-health-account-gaps (format-time-string "%Y-%m-%d"))))
     (if (null gaps)
@@ -329,10 +321,10 @@ fold them, and each row names its ancestors so folding one hides it."
 
 (defun fin-dashboard--health-block ()
   "Everything that needs doing, ✓ when a line needs nothing: the ledger
-against the bank, taxes, the plan, the accounts sheet, the inbox, open items."
+against the bank, taxes, the accounts sheet, the inbox, open items."
   (let* ((parts (delq nil (append (list (fin-dashboard--health-inbox) (fin-dashboard--health-fix)
                                         (fin-dashboard--health-flags) (fin-dashboard--health-gaps)
-                                        (fin-dashboard--ir-summary) (fin-dashboard--health-plan)
+                                        (fin-dashboard--ir-summary)
                                         (fin-dashboard--health-accounts))
                                   (fin-dashboard--health-docs)
                                   (fin-dashboard--health-todo))))
@@ -340,7 +332,7 @@ against the bank, taxes, the plan, the accounts sheet, the inbox, open items."
     (fin-dashboard--block
      (format "To do <span class=\"%s\">%s</span>" (if (zerop todo) "pos" "neg")
              (if (zerop todo) "✓ all clear" (format "⚠ %d" todo)))
-     "Ledger against the bank, taxes, plan, accounts sheet, inbox documents, open items"
+     "Ledger against the bank, taxes, accounts sheet, inbox documents, open items"
      (concat "<div class=\"health\">" (mapconcat #'cadr parts "") "</div>"))))
 
 (defun fin-dashboard--panel-cockpit ()
