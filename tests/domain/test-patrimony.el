@@ -42,12 +42,5 @@
     (let ((row (car (fin-report--patrimony-items))))
       (should (null (nth 4 row))))))
 
-(ert-deftest patrimony/total-sums-top-level-accounts-only ()
-  (fin-test-with-db
-    (fin-test-insert-account "main"     nil          1000000 nil)
-    (fin-test-insert-account "emergency" nil         500000  nil)
-    (fin-test-insert-account "sub"      "main"       999999  nil) ; child, excluded
-    (should (= 1500000 (fin-report--patrimony-total)))))
-
 (provide 'test-patrimony)
 ;;; test-patrimony.el ends here

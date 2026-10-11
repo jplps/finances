@@ -92,18 +92,19 @@
 
 (ert-deftest budget/runway-zero-when-no-fix-budget ()
   (fin-test-with-db
-    (fin-test-insert-account "emergency-savings" "emergency" 500000 nil)
-    (should (= 0 (nth 2 (fin-report--runway))))))
+    (cl-letf (((symbol-function 'fin-report--accounts-total) (lambda (&optional _) 500000)))
+      (should (= 0 (nth 2 (fin-report--runway)))))))
 
-(ert-deftest budget/runway-divides-emergency-reserve-by-fix-monthly ()
+(ert-deftest budget/runway-divides-reserve-by-fix-monthly ()
   (fin-test-with-db
-    (fin-test-insert-account "emergency-savings" "emergency" 1200000 nil)
     (fin-test-insert-budget "house" nil "fix" 200000 nil)
     (fin-test-insert-budget "food"  nil "fix" 100000 nil)
-    (let ((rw (fin-report--runway)))
-      (should (= 1200000 (nth 0 rw)))
-      (should (= 300000  (nth 1 rw)))
-      (should (= 4.0     (nth 2 rw))))))
+    (cl-letf (((symbol-function 'fin-report--accounts-total)
+               (lambda (&optional key) (if (eq key :reserve) 1200000 9999999))))
+      (let ((rw (fin-report--runway)))
+        (should (= 1200000 (nth 0 rw)))
+        (should (= 300000  (nth 1 rw)))
+        (should (= 4.0     (nth 2 rw)))))))
 
 ;;; ── --budget-children (investments parent unions patrimony) ─
 

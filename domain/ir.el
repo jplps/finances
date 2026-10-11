@@ -515,10 +515,6 @@ item matches `fin-ir-health-deductible', and the rest."
         (if cell (cl-incf (cdr cell) (nth 1 e)) (push (cons m (nth 1 e)) out))))
     (sort out (lambda (a b) (string< (car a) (car b))))))
 
-(defun fin-ir-assets ()
-  "Cents in the savings accounts now (the `accounts' sheet snapshot)."
-  (or (caar (fin-db-query "SELECT SUM(balance) FROM account WHERE parent IS NULL")) 0))
-
 ;;; Revenue declared against invoiced
 
 (defun fin-ir-context ()

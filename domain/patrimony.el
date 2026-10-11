@@ -1,6 +1,7 @@
 ;;; patrimony.el --- Patrimony catalog + amortization  -*- lexical-binding: t; -*-
 
 (require 'db)
+(require 'accounts)
 
 (defun fin-report--patrimony-summary ()
   "Per-category (count, total amount, total monthly amortization).
@@ -23,10 +24,8 @@ Monthly derived: amount / lifespan_months."
      ORDER BY category, amount * 1.0 / NULLIF(lifespan_months,0) DESC"))
 
 (defun fin-report--patrimony-total ()
-  "Net worth: sum of top-level account balances."
-  (or (caar (fin-db-query
-             "SELECT SUM(balance) FROM account WHERE parent IS NULL"))
-      0))
+  "Net worth: every account rebuilt from the bank."
+  (fin-report--accounts-total))
 
 (provide 'patrimony)
 ;;; patrimony.el ends here

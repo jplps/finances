@@ -1,53 +1,21 @@
-;;; accounts.el --- Account balances + share derivation  -*- lexical-binding: t; -*-
+;;; accounts.el --- Account balances rebuilt from the bank  -*- lexical-binding: t; -*-
 
 (require 'cl-lib)
 (require 'db)
 (require 'bankdb)
 
-(defun fin-report--accounts ()
-  "Top-level accounts.  Share % derived from total top-level balance."
-  (fin-db-query
-   "SELECT category, balance,
-           ROUND(100.0 * balance /
-                 NULLIF((SELECT SUM(balance) FROM account WHERE parent IS NULL),0), 1)
-      FROM account
-     WHERE parent IS NULL
-     ORDER BY balance DESC"))
-
-(defun fin-report--account-children (parent)
-  "Sub-rows for PARENT.  Share derived from parent's balance."
-  (fin-db-query
-   "SELECT category, balance,
-           ROUND(100.0 * balance /
-                 NULLIF((SELECT balance FROM account
-                          WHERE category = ?1 AND parent IS NULL),0), 1)
-      FROM account
-     WHERE parent = ?1
-     ORDER BY balance DESC"
-   (list parent)))
-
 (defcustom fin-accounts-derived nil
-  "Savings accounts rebuilt from the bank, to compare with the sheet.  Each
-is a plist: :name, :sheet (sheet accounts it stands for, \"parent/child\" or
-a top-level name), and either :balance (a bank account kind whose latest
-LEDGERBAL is the balance) or :since (ISO date of a known balance), :opening
-(cents on that date), :into and :out-of (regexps of personal-account
-descriptions moving money into and out of it).  :closed t marks an account
-emptied for good: its balance is 0 and the note gives the result (money
-taken out less money put in, a gain or a loss).  :yield (cents) adds the
-earnings the statements never show, as the bank app or the yearly informe
-gives them.  Yields never reach the
-statements, so a rebuilt balance trails the real one by them."
+  "Accounts rebuilt from the bank statements, the source of truth for
+balances.  Each is a plist: :name, :reserve t when it counts toward the
+emergency reserve (runway), and either :balance (a bank account kind whose
+latest LEDGERBAL is the balance) or :since (ISO date of a known balance),
+:opening (cents on that date), :into and :out-of (regexps of
+personal-account descriptions moving money into and out of it).  :closed t
+marks an account emptied for good: its balance is 0 and the note gives the
+result (money taken out less money put in, a gain or a loss).  :yield
+\(cents) adds the earnings the statements never show, as the bank app or
+the yearly informe gives them."
   :type '(repeat plist) :group 'fin)
-
-(defun fin-report--sheet-balance (ref)
-  "Sheet balance of REF, \"parent/child\" or a top-level name; nil if absent."
-  (pcase-let ((`(,parent ,child) (split-string ref "/")))
-    (caar (if child
-              (fin-db-query "SELECT balance FROM account WHERE parent = ? AND category = ?"
-                            (list parent child))
-            (fin-db-query "SELECT balance FROM account WHERE parent IS NULL AND category = ?"
-                          (list parent))))))
 
 (defun fin-report--bank-sum (type regexps since)
   "Cents of personal-account bank rows of TYPE after SINCE matching REGEXPS."
@@ -111,16 +79,21 @@ or before an account's :since are not its own."
           (cl-incf total (if (equal type "out") amount (- amount))))))))
 
 (defun fin-report--accounts-derived ()
-  "(NAME DERIVED SHEET NOTE YIELD-KNOWN REFS) per `fin-accounts-derived'; SHEET
-nil when the sheet has none of its accounts; REFS its :sheet references."
+  "Plist per `fin-accounts-derived': :name, :cents, :note (the basis),
+:cash (a bank account kind's balance), :reserve and :closed."
   (fin-bankdb-ensure)
   (mapcar (lambda (spec)
             (cl-assert (stringp (plist-get spec :name)) nil "fin-accounts: bad spec %S" spec)
-            (let* ((d (fin-report--derived-balance spec))
-                   (sheet (delq nil (mapcar #'fin-report--sheet-balance (plist-get spec :sheet)))))
-              (list (plist-get spec :name) (car d) (and sheet (apply #'+ sheet)) (cdr d)
-                    (and (plist-get spec :yield) t) (plist-get spec :sheet))))
+            (let ((d (fin-report--derived-balance spec)))
+              (list :name (plist-get spec :name) :cents (or (car d) 0) :note (or (cdr d) "no statement")
+                    :cash (and (plist-get spec :balance) t) :reserve (plist-get spec :reserve)
+                    :closed (plist-get spec :closed))))
           fin-accounts-derived))
+
+(defun fin-report--accounts-total (&optional key)
+  "Cents across `fin-report--accounts-derived', only rows with KEY when given."
+  (apply #'+ (mapcar (lambda (a) (if (or (null key) (plist-get a key)) (plist-get a :cents) 0))
+                     (fin-report--accounts-derived))))
 
 (provide 'accounts)
 ;;; accounts.el ends here

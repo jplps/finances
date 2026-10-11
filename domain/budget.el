@@ -2,6 +2,7 @@
 
 (require 'db)
 (require 'cashflow)
+(require 'accounts)
 
 (defconst fin-budget-fix-target 55
   "Target share (%) of monthly liquid earmarked for fix outflows.
@@ -149,11 +150,7 @@ liquid, as transfers are in `fin-report--year-months'."
 
 (defun fin-report--runway ()
   "Return (RESERVE FIX-MONTHLY MONTHS)."
-  (let* ((reserve (or (caar (fin-db-query
-                             "SELECT SUM(balance)
-                                FROM account
-                               WHERE parent = 'emergency'"))
-                      0))
+  (let* ((reserve (fin-report--accounts-total :reserve))
          (fix     (or (caar (fin-db-query
                              "SELECT SUM(amount)
                                 FROM budget

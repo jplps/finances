@@ -284,17 +284,6 @@ fold them, and each row names its ancestors so folding one hides it."
 
 (declare-function fin-dashboard--ir-todo "irpf" ())
 
-(defun fin-dashboard--health-accounts ()
-  (let ((gaps (fin-health-account-gaps (format-time-string "%Y-%m-%d"))))
-    (if (null gaps)
-        (list t (fin-dashboard--health-line t "accounts in line with the bank"))
-      (list nil (fin-dashboard--health-line
-                 nil (format "check the accounts sheet: %s"
-                             (mapconcat (lambda (g) (format "%s sheet %s, bank %s" (nth 0 g)
-                                                            (fin-dashboard--grouped (nth 2 g))
-                                                            (fin-dashboard--grouped (nth 1 g))))
-                                        gaps " · ")))))))
-
 (defun fin-dashboard--health-docs ()
   "The missing-documents line, and one for key files when any."
   (let ((missing (fin-health-missing-docs)) (keys (fin-health-key-files)))
@@ -319,7 +308,7 @@ fold them, and each row names its ancestors so folding one hides it."
 against the bank, taxes, the accounts sheet, the inbox, open items."
   (let* ((parts (delq nil (append (list (fin-dashboard--health-inbox) (fin-dashboard--health-fix)
                                         (fin-dashboard--health-flags) (fin-dashboard--health-gaps)
-                                        (fin-dashboard--health-cash) (fin-dashboard--health-accounts))
+                                        (fin-dashboard--health-cash))
                                   (fin-dashboard--ir-todo)
                                   (fin-dashboard--health-docs)
                                   (fin-dashboard--health-todo))))
@@ -345,7 +334,7 @@ against the bank, taxes, the accounts sheet, the inbox, open items."
      "This month, balance, savings, runway, plan targets and the to do list"
      "<div class=\"kpis\">"
      (fin-dashboard--now-tiles year month)
-     (fin-dashboard--kpi "runway" (format "%.1f mo" (nth 2 rw)) "emergency reserve / fixed costs")
+     (fin-dashboard--kpi "runway" (format "%.1f mo" (nth 2 rw)) "reserve / fixed costs")
      "</div>"
      (fin-dashboard--block (format "Fixed <span class=\"dim\">%.1f%% / %d%%</span>" fix-pct fin-budget-fix-target)
                            "Fixed monthly outflows, driven by amount"
@@ -355,61 +344,23 @@ against the bank, taxes, the accounts sheet, the inbox, open items."
                            (fin-dashboard--goals-table (funcall kind-rows "var")))
      (fin-dashboard--health-block))))
 
-(defun fin-dashboard--account-bank (d)
-  "Bank cell of rebuilt account D, (NAME DATA SHEET NOTE KNOWN REFS): red when
-off the sheet by more than 1%, the note in its hover title."
-  (pcase-let ((`(,_ ,data ,sheet ,note ,_ ,_) d))
-    (let ((off (and data sheet (> (abs (- sheet data)) (max 10000 (* 0.01 (abs sheet)))))))
-      (list :raw (format "<span title=\"%s\"%s>%s</span>"
-                         (fin-dashboard--esc note) (if off " class=\"neg\"" "")
-                         (cond ((string-prefix-p "closed" note) "sold")
-                               (data (fin-dashboard--money-str data))
-                               (t "?")))))))
-
-(defun fin-dashboard--account-bank-for (ref derived)
-  "Bank cell of the account in DERIVED rebuilding sheet REF alone, else \"\"."
-  (let ((d (cl-find-if (lambda (d) (equal (nth 5 d) (list ref))) derived)))
-    (if d (fin-dashboard--account-bank d) "")))
-
-(defun fin-dashboard--account-extras (derived)
-  "Rows for rebuilt accounts no single sheet row holds: (LABEL CELLS)."
-  (mapcar (lambda (d)
-            (list (nth 0 d)
-                  (list (if (nth 2 d) (fin-dashboard--money-cell (nth 2 d)) "–")
-                        (fin-dashboard--account-bank d) "")))
-          (cl-remove-if (lambda (d) (= (length (nth 5 d)) 1)) derived)))
-
 (defun fin-dashboard--block-accounts ()
-  "Sheet balances with the bank-rebuilt balance beside each account it covers."
-  (let* ((accts (fin-report--accounts))
-         (derived (fin-report--accounts-derived))
-         (rows  (mapcar
-                 (lambda (r)
-                   (let* ((cat  (nth 0 r))
-                          (kids (fin-report--account-children cat)))
-                     (list cat
-                           (list (fin-dashboard--money-cell (nth 1 r))
-                                 (fin-dashboard--account-bank-for cat derived)
-                                 (nth 2 r))
-                           (when kids
-                             (fin-dashboard--table
-                              '("category" "balance" "bank" "%")
-                              (mapcar (lambda (k) (list (nth 0 k)
-                                                        (fin-dashboard--money-cell (nth 1 k))
-                                                        (fin-dashboard--account-bank-for
-                                                         (format "%s/%s" cat (nth 0 k)) derived)
-                                                        (nth 2 k)))
-                                      kids))))))
-                 accts)))
+  "Accounts rebuilt from the bank statements, the basis in each hover."
+  (let* ((accts (cl-remove-if (lambda (a) (plist-get a :closed)) (fin-report--accounts-derived)))
+         (total (apply #'+ (mapcar (lambda (a) (plist-get a :cents)) accts))))
     (fin-dashboard--block
      "Accounts"
-     "Sheet balances; bank = rebuilt from the statements plus known yields (hover for its basis), red when off the sheet by more than 1%; expand a row to see sub-accounts"
-     (fin-dashboard--alist '("category" "balance" "bank" "%")
-                           (append rows (fin-dashboard--account-extras derived))
-                           (list "total"
-                                 (fin-dashboard--money-cell
-                                  (apply #'+ (mapcar (lambda (r) (or (nth 1 r) 0)) accts)))
-                                 "" ""))
+     "Balances rebuilt from the bank statements plus known yields; hover for the basis"
+     (fin-dashboard--alist '("account" "balance" "%")
+                           (mapcar (lambda (a)
+                                     (list (plist-get a :name)
+                                           (list (list :raw (format "<span title=\"%s\">%s</span>"
+                                                                    (fin-dashboard--esc (plist-get a :note))
+                                                                    (fin-dashboard--money-str (plist-get a :cents))))
+                                                 (if (> total 0) (/ (fround (/ (* 1000.0 (plist-get a :cents)) total)) 10.0) ""))
+                                           nil))
+                                   accts)
+                           (list "total" (fin-dashboard--money-cell total) ""))
      "register")))
 
 (defun fin-dashboard--block-patrimony ()
@@ -521,7 +472,7 @@ Future months of the current year use the objectives forecast
          (pf (fin-bankdb-latest-balance "account"))
          (pj (fin-bankdb-latest-balance "pj"))
          (bal (+ (or (cdr pf) 0) (or (cdr pj) 0)))
-         (saved (apply #'+ (mapcar (lambda (r) (or (nth 1 r) 0)) (fin-report--accounts))))
+         (saved (- (fin-report--accounts-total) (fin-report--accounts-total :cash)))
          (left (car (fin-health-cash now-y now-m)))
          (money (lambda (c) (concat "R$ " (fin-dashboard--grouped c)))))
     (concat

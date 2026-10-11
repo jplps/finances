@@ -17,8 +17,6 @@
 ;; - Cash: this month and the last, ledger income less spending less what
 ;;   the bank moved into savings against the cash all bank accounts gained,
 ;;   card bill payments left out; flagged past `fin-health-cash-slack'.
-;; - Accounts: an account rebuilt from the bank (`fin-accounts-derived') off
-;;   the sheet by more than the yield it could have earned since its anchor.
 ;; - Documents: each `fin-health-expected-docs' entry no inbox file matches;
 ;;   key files (certificates) that do not belong in the inbox.
 ;; - Open items: `fin-health-todo', kept by hand.
@@ -37,10 +35,6 @@
 
 (defcustom fin-health-gap-share 0.10
   "Share of a month's bank spending past which the ledger gap is flagged."
-  :type 'number :group 'fin)
-
-(defcustom fin-health-yield-rate 0.15
-  "Yearly yield a rebuilt account may trail the sheet by before it is flagged."
   :type 'number :group 'fin)
 
 (defcustom fin-health-cash-slack 10000
@@ -159,28 +153,6 @@ than `fin-health-cash-slack'."
                         (when (> (abs (- (car c) (cadr c))) fin-health-cash-slack)
                           (cons ym c))))
                     '(0 1))))
-
-(defun fin-health--years-since (iso today)
-  "Years from ISO date to TODAY (ISO), as a float."
-  (/ (- (time-to-days (date-to-time (concat today "T00:00:00")))
-        (time-to-days (date-to-time (concat iso "T00:00:00"))))
-     365.25))
-
-(defun fin-health-account-gaps (today)
-  "(NAME DATA SHEET) of rebuilt accounts off the sheet: by more than 1% when
-their yield is known, else below the data or above it by more than the
-yield `fin-health-yield-rate' allows since the anchor."
-  (cl-remove-if-not
-   (lambda (r)
-     (pcase-let ((`(,_ ,data ,sheet ,note ,known ,_) r))
-       (when (and data sheet)
-         (let ((gap (- sheet data)) (slack (max 10000 (* 0.01 sheet))))
-           (cond (known (> (abs gap) slack))
-                 ((string-match "\\`since \\([0-9-]+\\)" note)
-                  (or (< gap (- slack))
-                      (> gap (+ slack (* sheet fin-health-yield-rate
-                                         (fin-health--years-since (match-string 1 note) today)))))))))))
-   (fin-report--accounts-derived)))
 
 (defun fin-health--inbox-root ()
   (file-name-directory (directory-file-name fin-bank-inbox)))
