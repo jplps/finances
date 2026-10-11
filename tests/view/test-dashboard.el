@@ -63,7 +63,7 @@
 (ert-deftest dashboard/cockpit-tiles-month-balance-savings-runway ()
   (fin-test-with-db
     (let ((html (fin-dashboard--panel-cockpit)))
-      (should (string-search "to savings" html))
+      (should (string-search "saved" html))
       (should (string-search "runway" html))
       (should-not (string-search ">plan<" html))
       (should-not (string-search "Over target" html)))))
