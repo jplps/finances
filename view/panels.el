@@ -514,31 +514,22 @@ Future months of the current year use the objectives forecast
     (fin-dashboard--alist '("month" "in" "out" "liquid" "saved") rows)))
 
 (defun fin-dashboard--now-tiles (now-y now-m)
-  "KPI tiles: this month, the bank balance, the savings."
+  "KPI tiles: this month with the bank balance, the savings."
   (let* ((m (mapcar (lambda (v) (or v 0))
                    (seq-take (or (assoc now-m (fin-dashboard--year-effective-months now-y now-y now-m))
                                  (list now-m 0 0 0)) 4)))
          (pf (fin-bankdb-latest-balance "account"))
          (pj (fin-bankdb-latest-balance "pj"))
          (bal (+ (or (cdr pf) 0) (or (cdr pj) 0)))
-         (asof (car (sort (delq nil (list (car pf) (car pj))) #'string>)))
          (saved (apply #'+ (mapcar (lambda (r) (or (nth 1 r) 0)) (fin-report--accounts))))
-         (cash (fin-health-cash now-y now-m))
-         (left (car cash))
+         (left (car (fin-health-cash now-y now-m)))
          (money (lambda (c) (concat "R$ " (fin-dashboard--grouped c)))))
     (concat
-     (fin-dashboard--kpi (fin-dashboard--month-name now-m) (funcall money left)
-                         (format "in %s · out %s · saved %s · <span title=\"bank cash change %s\">%s</span>"
+     (fin-dashboard--kpi (fin-dashboard--month-name now-m) (if (or pf pj) (funcall money bal) "—")
+                         (format "in %s · out %s · saved %s"
                                  (fin-dashboard--grouped (nth 1 m)) (fin-dashboard--grouped (nth 2 m))
-                                 (fin-dashboard--grouped (fin-report--bank-saved (format "%04d-%02d" now-y now-m)))
-                                 (fin-dashboard--grouped (cadr cash))
-                                 (fin-dashboard--health-mark (<= (abs (- left (cadr cash))) fin-health-cash-slack)))
+                                 (fin-dashboard--grouped (fin-report--bank-saved (format "%04d-%02d" now-y now-m))))
                          (if (< left 0) "bad" "good"))
-     (fin-dashboard--kpi "balance" (if (or pf pj) (funcall money bal) "—")
-                         (if (or pf pj)
-                             (format "account %s · pj %s · %s" (fin-dashboard--grouped (or (cdr pf) 0))
-                                     (fin-dashboard--grouped (or (cdr pj) 0)) (fin-dashboard--dm asof))
-                           "no statement imported"))
      (fin-dashboard--kpi "savings" (funcall money saved) "accounts"))))
 
 (defun fin-dashboard--liquid-cell (liq ahead)

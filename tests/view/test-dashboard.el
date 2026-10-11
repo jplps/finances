@@ -60,7 +60,7 @@
   (should (equal '("139" "200") (fin-dashboard--goal-amounts 13900 20000)))
   (should (equal '("139" "139") (fin-dashboard--goal-amounts 13900 13900))))
 
-(ert-deftest dashboard/cockpit-tiles-month-balance-savings-runway ()
+(ert-deftest dashboard/cockpit-tiles-month-savings-runway ()
   (fin-test-with-db
     (let ((html (fin-dashboard--panel-cockpit)))
       (should (string-search "saved" html))
