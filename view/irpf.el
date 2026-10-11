@@ -312,6 +312,43 @@ tax the excess adds over the closed years when full books are not verified."
                                     (plist-get p :year) (fin-dashboard--ir-detail p)))
                 positions ""))))
 
+(defun fin-dashboard--ir-risk-lines (positions closed ctx)
+  "Risk lines, (OK HTML) each."
+  (delq nil (append (list (fin-dashboard--ir-debts-line))
+                    (fin-dashboard--ir-return-risks closed)
+                    (list (fin-dashboard--ir-exempt-line positions)
+                          (fin-dashboard--ir-profit-line positions)
+                          (and ctx (fin-dashboard--ir-revenue-line ctx))
+                          (and ctx (fin-dashboard--ir-rate-line ctx))
+                          (and ctx (fin-dashboard--ir-unmatched-line ctx))
+                          (and ctx (fin-dashboard--ir-wrong-account-line ctx))))))
+
+(defun fin-dashboard--ir-next-due (today)
+  "Next 20th on or after TODAY (ISO): when DAS and INSS fall due."
+  (pcase-let ((`(,y ,m ,d) (mapcar #'string-to-number (split-string today "-"))))
+    (cond ((<= d 20) (format "20/%02d" m))
+          ((= m 12) (format "20/01/%d" (1+ y)))
+          (t (format "20/%02d" (1+ m))))))
+
+(defun fin-dashboard--ir-summary ()
+  "Cockpit line for taxes: (OK HTML), nil without IR inputs."
+  (let ((years (fin-dashboard--ir-years)))
+    (when years
+      (let* ((ctx (fin-ir-context))
+             (positions (mapcar (lambda (y) (fin-ir-position y ctx)) years))
+             (risks (cl-count-if-not #'car (fin-dashboard--ir-risk-lines
+                                            positions (fin-dashboard--ir-closed positions) ctx)))
+             (overdue (apply #'+ (mapcar #'caddr fin-ir-open-debts)))
+             (due (format "DAS and INSS due %s" (fin-dashboard--ir-next-due (format-time-string "%Y-%m-%d")))))
+        (list (zerop risks)
+              (fin-dashboard--health-line
+               (zerop risks)
+               (if (zerop risks) (format "taxes in order · %s" due)
+                 (format "<a href=\"#ir\">%s</a>%s · %s"
+                         (fin-dashboard--count risks "tax risk")
+                         (if (> overdue 0) (format " · %s overdue" (fin-dashboard--ir-money overdue)) "")
+                         due))))))))
+
 (defun fin-dashboard--panel-ir ()
   (let* ((years (fin-dashboard--ir-years))
          (ctx (and years (fin-ir-context)))
@@ -324,14 +361,7 @@ tax the excess adds over the closed years when full books are not verified."
      (when current (fin-dashboard--ir-tiles current))
      (fin-dashboard--ir-lines
       "Risks" "What Receita can charge or question: open debts, returns due, DEFIS, DIRPF and PGDAS-D against the bank and the NFS-e"
-      (delq nil (append (list (fin-dashboard--ir-debts-line))
-                        (fin-dashboard--ir-return-risks closed)
-                        (list (fin-dashboard--ir-exempt-line positions)
-                              (fin-dashboard--ir-profit-line positions)
-                              (and ctx (fin-dashboard--ir-revenue-line ctx))
-                              (and ctx (fin-dashboard--ir-rate-line ctx))
-                              (and ctx (fin-dashboard--ir-unmatched-line ctx))
-                              (and ctx (fin-dashboard--ir-wrong-account-line ctx))))))
+      (fin-dashboard--ir-risk-lines positions closed ctx))
      (when closed
        (fin-dashboard--block "Returns" "Filing duty per year (each exercício's IN RFB) and the return delivered"
                              (fin-dashboard--ir-returns closed)))

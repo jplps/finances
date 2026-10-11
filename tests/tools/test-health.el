@@ -60,5 +60,38 @@
          (acts (mapcar (lambda (r) (list :report r "why")) (list big small old muted))))
     (should (equal (list (list "a" today 100000 "Pix - Luiz" "why")) (fin-bank-fix--flags acts)))))
 
+(ert-deftest health/inbox-documents-and-key-files ()
+  (let* ((root (make-temp-file "fin-inbox-" t))
+         (fin-bank-inbox (file-name-as-directory (expand-file-name "nubank" root))))
+    (unwind-protect
+        (progn
+          (make-directory (expand-file-name "ir/defis" root) t)
+          (make-directory (expand-file-name "docs" root) t)
+          (write-region "" nil (expand-file-name "ir/defis/defis-cnpj-2025.pdf" root))
+          (write-region "" nil (expand-file-name "docs/.cert.pfx" root))
+          (let ((fin-health-expected-docs '(("defis 2025" . "\\`ir/defis/defis-cnpj-2025\\.pdf\\'")
+                                            ("balance sheet" . "balanco"))))
+            (should (equal '("balance sheet") (fin-health-missing-docs)))
+            (should (equal '("docs/.cert.pfx") (fin-health-key-files)))))
+      (delete-directory root t))))
+
+(ert-deftest health/plan-income-drift ()
+  (fin-test-with-db
+    (fin-test-insert-budget "brute" nil "income" 1300000 nil)
+    (fin-test-insert-entry "2025-01-31" "in" "bp" 1000000)
+    (fin-test-insert-entry "2025-02-28" "in" "bp" 1000000)
+    (should (equal '(1300000 1000000) (fin-health-plan-income 2025)))
+    (let ((fin-health-plan-drift 0.5))
+      (should-not (fin-health-plan-income 2025)))))
+
+(ert-deftest health/account-gaps-allow-yield ()
+  (cl-letf (((symbol-function 'fin-report--accounts-derived)
+             (lambda () '(("savings" 4700000 5300000 "since 2025-12-31")
+                          ("invest" 650000 800000 "since 2025-12-31")
+                          ("crypto" 45000 0 "since 2025-12-31")
+                          ("checking" 150000 nil "2026-10-06")))))
+    (should (equal '("invest" "crypto")
+                   (mapcar #'car (fin-health-account-gaps "2026-10-11"))))))
+
 (provide 'test-health)
 ;;; test-health.el ends here

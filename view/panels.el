@@ -287,15 +287,60 @@ fold them, and each row names its ancestors so folding one hides it."
                                                (fin-dashboard--money-cell (nth 2 m))))
                              gaps)))))))
 
+(declare-function fin-dashboard--ir-summary "irpf" ())
+
+(defun fin-dashboard--health-plan ()
+  (let ((d (fin-health-plan-income (fin-report--year-now))))
+    (if (null d)
+        (list t (fin-dashboard--health-line t "plan income in line with the income received"))
+      (list nil (fin-dashboard--health-line
+                 nil (format "revise the plan: income %s a month, received %s on average"
+                             (fin-dashboard--grouped (car d)) (fin-dashboard--grouped (cadr d))))))))
+
+(defun fin-dashboard--health-accounts ()
+  (let ((gaps (fin-health-account-gaps (format-time-string "%Y-%m-%d"))))
+    (if (null gaps)
+        (list t (fin-dashboard--health-line t "accounts in line with the bank"))
+      (list nil (fin-dashboard--health-line
+                 nil (format "check the accounts sheet: %s"
+                             (mapconcat (lambda (g) (format "%s sheet %s, bank %s" (nth 0 g)
+                                                            (fin-dashboard--grouped (nth 2 g))
+                                                            (fin-dashboard--grouped (nth 1 g))))
+                                        gaps " · ")))))))
+
+(defun fin-dashboard--health-docs ()
+  "The missing-documents line, and one for key files when any."
+  (let ((missing (fin-health-missing-docs)) (keys (fin-health-key-files)))
+    (delq nil
+          (list (if missing
+                    (list nil (fin-dashboard--health-line
+                               nil (format "add to the inbox: %s"
+                                           (fin-dashboard--esc (string-join missing " · ")))))
+                  (list t (fin-dashboard--health-line t "inbox holds every expected document")))
+                (when keys
+                  (list nil (fin-dashboard--health-line
+                             nil (format "move key files out of the inbox: %s"
+                                         (fin-dashboard--esc (string-join keys " · "))))))))))
+
+(defun fin-dashboard--health-todo ()
+  "One line per open item kept by hand."
+  (mapcar (lambda (s) (list nil (fin-dashboard--health-line nil (fin-dashboard--esc s))))
+          fin-health-todo))
+
 (defun fin-dashboard--health-block ()
-  "Ledger health as a to-do list: ✓ when a line needs nothing."
-  (let* ((parts (list (fin-dashboard--health-inbox) (fin-dashboard--health-fix)
-                      (fin-dashboard--health-flags) (fin-dashboard--health-gaps)))
+  "Everything that needs doing, ✓ when a line needs nothing: the ledger
+against the bank, taxes, the plan, the accounts sheet, the inbox, open items."
+  (let* ((parts (delq nil (append (list (fin-dashboard--health-inbox) (fin-dashboard--health-fix)
+                                        (fin-dashboard--health-flags) (fin-dashboard--health-gaps)
+                                        (fin-dashboard--ir-summary) (fin-dashboard--health-plan)
+                                        (fin-dashboard--health-accounts))
+                                  (fin-dashboard--health-docs)
+                                  (fin-dashboard--health-todo))))
          (todo (cl-count-if-not #'car parts)))
     (fin-dashboard--block
-     (format "Ledger health <span class=\"%s\">%s</span>" (if (zerop todo) "pos" "neg")
-             (if (zerop todo) "✓ in sync" (format "⚠ %d to do" todo)))
-     "What to do so the ODS matches the bank: statements to export, the fix to run, rows to classify, months off"
+     (format "To do <span class=\"%s\">%s</span>" (if (zerop todo) "pos" "neg")
+             (if (zerop todo) "✓ all clear" (format "⚠ %d" todo)))
+     "Ledger against the bank, taxes, plan, accounts sheet, inbox documents, open items"
      (concat "<div class=\"health\">" (mapconcat #'cadr parts "") "</div>"))))
 
 (defun fin-dashboard--panel-cockpit ()

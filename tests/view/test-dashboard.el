@@ -21,7 +21,7 @@
       (should (string-match-p "ACCOUNTS\\|Accounts"        html))
       (should (string-match-p "PATRIMONY\\|Patrimony"      html))
       (should (string-match-p "Wealth"                    html))
-      (should (string-match-p "Ledger health"             html)))))
+      (should (string-match-p "To do"                     html)))))
 
 (ert-deftest dashboard/parses-as-html-via-libxml ()
   (fin-test-with-db

@@ -14,6 +14,13 @@
 ;;   bank rows normalized (refunds, fees, Pix no Crédito), ignored rows,
 ;;   savings moves and the PJ account's tax payments left out; ledger
 ;;   savings, tax and company rows left out.
+;; - Plan: declared plan income off the realized average by more than
+;;   `fin-health-plan-drift'.
+;; - Accounts: an account rebuilt from the bank (`fin-accounts-derived') off
+;;   the sheet by more than the yield it could have earned since its anchor.
+;; - Documents: each `fin-health-expected-docs' entry no inbox file matches;
+;;   key files (certificates) that do not belong in the inbox.
+;; - Open items: `fin-health-todo', kept by hand.
 
 (require 'cl-lib)
 (require 'db)
@@ -21,6 +28,8 @@
 (require 'bank)
 (require 'bankfix)
 (require 'pj)
+(require 'budget)
+(require 'accounts)
 
 (defconst fin-health-accounts '("account" "card" "pj" "pj-card")
   "Account kinds whose statements the inbox check follows.")
@@ -28,6 +37,27 @@
 (defcustom fin-health-gap-share 0.10
   "Share of a month's bank spending past which the ledger gap is flagged."
   :type 'number :group 'fin)
+
+(defcustom fin-health-plan-drift 0.10
+  "Share by which plan income may differ from the realized average."
+  :type 'number :group 'fin)
+
+(defcustom fin-health-yield-rate 0.15
+  "Yearly yield a rebuilt account may trail the sheet by before it is flagged."
+  :type 'number :group 'fin)
+
+(defcustom fin-health-expected-docs nil
+  "Documents the inbox should hold: list of (LABEL . REGEXP), REGEXP matched
+against paths relative to the inbox root."
+  :type '(alist :key-type string :value-type regexp) :group 'fin)
+
+(defcustom fin-health-key-file-regexp "\\.\\(pfx\\|p12\\|pem\\|key\\)\\'"
+  "Files that carry private keys and must not sit in the inbox."
+  :type 'regexp :group 'fin)
+
+(defcustom fin-health-todo nil
+  "Open items to do, kept by hand: list of strings."
+  :type '(repeat string) :group 'fin)
 
 (defun fin-health--month-start (months-back)
   "ISO first day of the month MONTHS-BACK before the current one."
@@ -94,6 +124,59 @@ ids of the company account's rows, whose tax payments are not spending."
   (cl-remove-if-not (lambda (m) (pcase-let ((`(,_ ,bank ,led) m))
                                   (and (> bank 0) (> (abs (- led bank)) (* fin-health-gap-share bank)))))
                     (fin-health-months n)))
+
+(defun fin-health-plan-income (year)
+  "(PLANNED REALIZED) monthly gross income for YEAR when the plan declares
+one and they differ by more than `fin-health-plan-drift', else nil."
+  (pcase-let ((`(,planned ,_ ,_ ,source) (fin-report--monthly-income year))
+              (`(,realized ,_) (fin-report--realized-income year)))
+    (when (and (eq source 'plan) (> realized 0)
+               (> (abs (- planned realized)) (* fin-health-plan-drift realized)))
+      (list planned realized))))
+
+(defun fin-health--years-since (iso today)
+  "Years from ISO date to TODAY (ISO), as a float."
+  (/ (- (time-to-days (date-to-time (concat today "T00:00:00")))
+        (time-to-days (date-to-time (concat iso "T00:00:00"))))
+     365.25))
+
+(defun fin-health-account-gaps (today)
+  "(NAME DATA SHEET) of rebuilt accounts whose sheet balance is below the
+data, or above it by more than the yield allowed since the anchor."
+  (cl-remove-if-not
+   (lambda (r)
+     (pcase-let ((`(,_ ,data ,sheet ,note) r))
+       (when (and data sheet (string-match "\\`since \\(.+\\)\\'" note))
+         (let ((allowed (* sheet fin-health-yield-rate
+                           (fin-health--years-since (match-string 1 note) today)))
+               (gap (- sheet data)))
+           (or (< gap (- (max 10000 (* 0.01 sheet)))) (> gap (+ allowed 10000)))))))
+   (fin-report--accounts-derived)))
+
+(defun fin-health--inbox-root ()
+  (file-name-directory (directory-file-name fin-bank-inbox)))
+
+(defun fin-health--inbox-files ()
+  "Paths of every file under the inbox root, relative to it."
+  (let ((root (fin-health--inbox-root)))
+    (and (file-directory-p root)
+         (mapcar (lambda (f) (file-relative-name f root))
+                 (directory-files-recursively root "")))))
+
+(defun fin-health-missing-docs ()
+  "Labels of `fin-health-expected-docs' no inbox file matches."
+  (let ((files (fin-health--inbox-files)))
+    (delq nil (mapcar (lambda (d)
+                        (cl-assert (and (stringp (car d)) (stringp (cdr d))) nil
+                                   "fin-health: bad expected doc %S" d)
+                        (unless (cl-some (lambda (f) (string-match-p (cdr d) f)) files)
+                          (car d)))
+                      fin-health-expected-docs))))
+
+(defun fin-health-key-files ()
+  "Inbox files that carry private keys."
+  (cl-remove-if-not (lambda (f) (string-match-p fin-health-key-file-regexp f))
+                    (fin-health--inbox-files)))
 
 (provide 'health)
 ;;; health.el ends here
