@@ -135,9 +135,9 @@ MONTHS = (ym in out).  Months past current month rendered dimmed."
                (op    (if (string> ym now-ym) 0.25 1.0)))
           (concat
            (format "<rect x=\"%.2f\" y=\"%.2f\" width=\"%.2f\" height=\"%.2f\" fill=\"%s\" opacity=\"%.2f\"><title>%s · in %.2f</title></rect>"
-                   x0 (- mid h-in) bar-w h-in green op ym in)
+                   x0 (- mid h-in) bar-w h-in green op ym (/ in 100.0))
            (format "<rect x=\"%.2f\" y=\"%.2f\" width=\"%.2f\" height=\"%.2f\" fill=\"%s\" opacity=\"%.2f\"><title>%s · out %.2f</title></rect>"
-                   x0 mid bar-w h-out red op ym out))))
+                   x0 mid bar-w h-out red op ym (/ out 100.0)))))
       months "")
      "</svg>")))
 

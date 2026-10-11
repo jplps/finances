@@ -202,16 +202,35 @@ all per-row amortizations (amount / lifespan_months)."
 
 ;;; ── --planned-month ─────────────────────────────────────────
 
-(ert-deftest budget/planned-month-derives-from-plan ()
+(ert-deftest budget/planned-month-books-like-actuals ()
+  "In is gross; out is fix, spending var and the company tax; saving rows
+stay in liquid."
   (fin-test-with-db
-    (fin-test-insert-entry "2025-01-31" "in" "salary" 1000000 nil)
+    (fin-test-insert-entry "2025-01-31" "in"  "salary" 1000000 nil)
+    (fin-test-insert-entry "2025-01-31" "out" "cnpj"    100000 nil)
     (fin-test-insert-budget "house" nil "fix" 200000 nil)
     (fin-test-insert-budget "investments" nil "var" nil 0.2)
     (fin-test-insert-budget "retirement" "investments" "var" 100000 nil)
+    (fin-test-insert-budget "free" nil "var" nil 0.1)            ; 10% of 900000
     (let ((pm (fin-report--planned-month 2025)))
-      (should (= 1000000 (nth 0 pm)))           ; liquid
-      (should (= 300000  (nth 1 pm)))           ; out (fix 200k + var 100k)
-      (should (= 700000  (nth 2 pm))))))        ; liquid - out
+      (should (= 1000000 (nth 0 pm)))           ; brute
+      (should (= 390000  (nth 1 pm)))           ; 200k fix + 90k free + 100k cnpj
+      (should (= 610000  (nth 2 pm))))))
+
+(ert-deftest budget/var-total-spend-only-skips-saving-rows ()
+  (fin-test-with-db
+    (fin-test-insert-budget "brute" nil "income" 1000000 nil)
+    (fin-test-insert-budget "investments" nil "var" nil 0.2)      ; 200000, saves
+    (fin-test-insert-budget "retirement" nil "var" nil 0.1)       ; 100000, saves
+    (fin-test-insert-budget "free" nil "var" nil 0.05)            ; 50000
+    (should (= 350000 (fin-report--var-total 2026)))
+    (should (= 50000 (fin-report--var-total 2026 t)))))
+
+(ert-deftest budget/realized-income-excludes-withdrawals ()
+  (fin-test-with-db
+    (fin-test-insert-entry "2025-01-31" "in" "salary"  500000 nil)
+    (fin-test-insert-entry "2025-01-31" "in" "reserve" 200000 nil)
+    (should (= 500000 (nth 0 (fin-report--monthly-income 2025))))))
 
 (provide 'test-budget)
 ;;; test-budget.el ends here

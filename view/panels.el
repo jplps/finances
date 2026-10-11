@@ -107,7 +107,7 @@ signed number (drawn in CSS so it centers on the text)."
      "<div class=\"stats-body\">"
      "<div class=\"stats-col\">"
      (fin-dashboard--block "Net worth"
-                           "Cumulative liquid (Σ in − Σ out) per month — cash-only net worth proxy."
+                           "Cumulative liquid (Σ in − Σ out, savings moves excluded) per month — cash-only net worth proxy."
                            (fin-dashboard--svg-line netw (fin-dashboard--c 'pos))
                            "networth")
      (fin-dashboard--block "Rolling save %"
@@ -129,7 +129,7 @@ signed number (drawn in CSS so it centers on the text)."
                            (fin-dashboard--svg-pareto pareto)
                            "pareto")
      (fin-dashboard--block "Yearly save %"
-                           "Per-year save rate: (in - out) / in × 100. Green = positive, red = negative."
+                           "Per-year save rate: (in - out) / in × 100, savings moves excluded. Green = positive, red = negative."
                            (if save-rows (fin-dashboard--svg-bars save-rows) "")
                            "yearly")
      (fin-dashboard--block "Spend heatmap"
@@ -139,11 +139,11 @@ signed number (drawn in CSS so it centers on the text)."
      "</div>"
      "<div class=\"stats-col\">"
      (fin-dashboard--block "Category share"
-                           "All-time outflow share by category (summary rows only)"
+                           "All-time spending share by category (savings contributions excluded)"
                            (fin-dashboard--svg-donut cat-slices)
                            "cat")
      (fin-dashboard--block "Income share"
-                           "All-time inflow share by source (CNPJ tax stored as negative shows net of taxes)"
+                           "All-time income share by source, savings withdrawals excluded (CNPJ tax stored as negative shows net of taxes)"
                            (fin-dashboard--svg-donut inc-slices)
                            "inc")
      "</div>"
@@ -176,21 +176,29 @@ signed number (drawn in CSS so it centers on the text)."
               (fin-dashboard--esc cat) (fin-dashboard--esc cat))
     (fin-dashboard--esc cat)))
 
+(defun fin-dashboard--goal-amounts (mtd target)
+  "(MTD TARGET) as strings in whole reais, or with cents when rounding would
+show two different amounts as equal."
+  (let ((m (round mtd)) (tg (round target)))
+    (if (and (/= m tg) (equal (fin-dashboard--grouped m) (fin-dashboard--grouped tg)))
+        (list (fin-dashboard--money-str m) (fin-dashboard--money-str tg))
+      (list (fin-dashboard--grouped m) (fin-dashboard--grouped tg)))))
+
 (defun fin-dashboard--goal-row (r parents)
   "Goal row R.  PARENTS maps category to parent: rows other rows hang under
 fold them, and each row names its ancestors so folding one hides it."
   (let* ((cat (plist-get r :category)) (target (plist-get r :target)) (mtd (plist-get r :mtd))
          (anc (fin-dashboard--goal-ancestors r parents))
          (toggle (cl-some (lambda (p) (equal p cat)) (hash-table-values parents)))
-         (title (format "%s · this month R$ %s of R$ %s target"
-                        cat (fin-dashboard--grouped mtd) (fin-dashboard--grouped target))))
+         (shown (fin-dashboard--goal-amounts mtd target))
+         (title (format "%s · this month R$ %s of R$ %s target" cat (nth 0 shown) (nth 1 shown))))
     (format "<tr class=\"goal%s\"%s><td class=\"cat\">%s</td><td class=\"viz\">%s</td><td class=\"num\">%s</td><td class=\"num dim\">%s</td></tr>"
             (pcase (plist-get r :depth) (1 " child") (2 " child deep") (_ ""))
             (if anc (format " data-anc=\"%s\"" (fin-dashboard--esc (string-join anc " "))) "")
             (fin-dashboard--goal-cat cat toggle)
             (fin-dashboard--svg-bullet target mtd (eq (plist-get r :direction) 'save) title)
-            (fin-dashboard--grouped mtd)
-            (fin-dashboard--grouped target))))
+            (nth 0 shown)
+            (nth 1 shown))))
 
 (defun fin-dashboard--goals-fold-css (parents)
   "Rules hiding the rows under each folded (unchecked) parent of PARENTS."
@@ -300,6 +308,7 @@ fold them, and each row names its ancestors so folding one hides it."
          (var-pct (funcall pct "var"))
          (kind-rows (lambda (kind) (cl-remove-if-not (lambda (r) (equal (plist-get r :kind) kind)) goals)))
          (over (cl-count 'over goals :key (lambda (r) (plist-get r :status))))
+         (spend (cl-count 'spend goals :key (lambda (r) (plist-get r :direction))))
          (liquid (nth 2 (fin-report--monthly-income year)))
          (unalloc (- 100.0 fix-pct var-pct))
          (rw (fin-report--runway)))
@@ -313,7 +322,7 @@ fold them, and each row names its ancestors so folding one hides it."
                            (format "monthly liquid · %.1f%% (R$ %s) unallocated" unalloc
                                    (fin-dashboard--grouped (round (* liquid unalloc 0.01))))))
      (fin-dashboard--kpi "runway" (format "%.1f mo" (nth 2 rw)) "emergency reserve / fixed costs")
-     (fin-dashboard--kpi "Over target" (format "%d of %d" over (length goals))
+     (fin-dashboard--kpi "Over target" (format "%d of %d" over spend)
                          (format "in %s" (fin-dashboard--month-name month))
                          (if (zerop over) "good" "bad"))
      "</div>"
@@ -386,7 +395,7 @@ fold them, and each row names its ancestors so folding one hides it."
     (fin-dashboard--block
      "Patrimony"
      "Owned items: cost, lifespan, monthly amortization (cost / lifespan); % share of total monthly"
-     (fin-dashboard--alist '("category" "items" "amount" "%") rows
+     (fin-dashboard--alist '("category" "items" "monthly" "%") rows
                            (list "total" "" (fin-dashboard--money-cell (round total-monthly)) ""))
      "register")))
 

@@ -99,6 +99,8 @@
     (with-sqlite-transaction db
       (dolist (tbl fin-db--tables)
         (sqlite-execute db (format "DROP TABLE IF EXISTS %s" tbl)))
+      ;; Stale view from an older schema; nothing creates it any more.
+      (sqlite-execute db "DROP VIEW IF EXISTS leaf")
       (dolist (stmt fin-db--ddl)
         (sqlite-execute db stmt)))
     (message "fin-db: rebuilt at %s" fin-db-path)))

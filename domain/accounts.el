@@ -17,7 +17,8 @@
   (fin-db-query
    "SELECT category, balance,
            ROUND(100.0 * balance /
-                 NULLIF((SELECT balance FROM account WHERE category = ?1),0), 1)
+                 NULLIF((SELECT balance FROM account
+                          WHERE category = ?1 AND parent IS NULL),0), 1)
       FROM account
      WHERE parent = ?1
      ORDER BY balance DESC"

@@ -8,6 +8,10 @@
   "Cap on cells per row when expanding `number-columns-repeated'."
   :type 'integer :group 'fin)
 
+(defcustom fin-ods-max-row-repeat 1000
+  "Cap on copies of a non-empty row when expanding `number-rows-repeated'."
+  :type 'integer :group 'fin)
+
 (defun fin-ods-parse (path)
   "Return libxml DOM of PATH's content.xml.  Errors if unreadable."
   (let ((p (expand-file-name path)))
@@ -53,10 +57,18 @@ text, nil for empty."
   (cl-find-if (lambda (s) (equal (dom-attr s 'name) name))
               (fin-ods-sheets dom)))
 
+(defun fin-ods-expand-rows (row)
+  "ROW's cell list, once per `number-rows-repeated' (capped at
+`fin-ods-max-row-repeat'); an empty row (trailing filler) only once."
+  (let* ((cells (fin-ods-expand-row row))
+         (rep   (string-to-number (or (dom-attr row 'number-rows-repeated) "1")))
+         (rep   (if (cl-some #'identity cells) (min (max rep 1) fin-ods-max-row-repeat) 1)))
+    (cl-loop repeat rep collect (copy-sequence cells))))
+
 (defun fin-ods-rows (sheet)
   "Return all row-cell lists for SHEET, no trimming."
   (when sheet
-    (mapcar #'fin-ods-expand-row (dom-by-tag sheet 'table-row))))
+    (mapcan #'fin-ods-expand-rows (dom-by-tag sheet 'table-row))))
 
 (defun fin-ods-rows-trimmed (sheet)
   "Like `fin-ods-rows' but trims each row to header (first row) width."

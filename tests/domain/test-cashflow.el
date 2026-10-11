@@ -58,5 +58,37 @@
     (let ((yms (mapcar #'car (fin-report--monthly-flow))))
       (should (equal '("2025-01" "2025-02" "2025-03") yms)))))
 
+;;; ── transfers (savings moves) ───────────────────────────────
+
+(defun fin-test--seed-transfers ()
+  "Jan 2025: income 1000, spending 400; 300 + 100 saved, 50 withdrawn."
+  (fin-test-insert-entry "2025-01-31" "in"  "salary"      1000 nil)
+  (fin-test-insert-entry "2025-01-31" "out" "food"        400  nil)
+  (fin-test-insert-entry "2025-01-31" "out" "investments" 300  "car")
+  (fin-test-insert-entry "2025-01-31" "out" "retirement"  100  nil)
+  (fin-test-insert-entry "2025-01-31" "in"  "reserve"     50   nil))
+
+(ert-deftest cashflow/transfers-are-neither-income-nor-spending ()
+  (fin-test-with-db
+    (fin-test--seed-transfers)
+    (should (equal '(1 1000 400 600) (car (fin-report--year-months 2025))))
+    (should (equal '(2025 1000 400 600 60.0) (car (fin-report--annual-sums))))
+    (should (equal '(("2025-01" 1000 400)) (fin-report--monthly-flow)))
+    (should (equal '(("food" "food" 400 "2025-01-31")) (fin-report--month-items 2025 1)))))
+
+(ert-deftest cashflow/flow-signs-saves-contributions-minus-withdrawals ()
+  (fin-test-with-db
+    (fin-test--seed-transfers)
+    (should (= 350 (caar (fin-report--flow-query "SELECT SUM(amount) FROM flow WHERE type='save'"))))))
+
+(ert-deftest cashflow/transfer-categories-are-configurable ()
+  (fin-test-with-db
+    (fin-test--seed-transfers)
+    (fin-test-insert-entry "2025-01-31" "out" "d'água" 7 nil)
+    (let ((fin-report-transfer-categories nil))
+      (should (equal '(1 1050 807 243) (car (fin-report--year-months 2025)))))
+    (let ((fin-report-transfer-categories '(("out" "d'água"))))
+      (should (equal '(1 1050 800 250) (car (fin-report--year-months 2025)))))))
+
 (provide 'test-cashflow)
 ;;; test-cashflow.el ends here

@@ -53,5 +53,27 @@
         (should (string-search (format "<section id=\"%s\"" n) html))
         (should (string-search (format "href=\"#%s\"" n) html))))))
 
+;;; ── panels ─────────────────────────────────────────────────
+
+(ert-deftest dashboard/goal-amounts-show-cents-only-when-rounding-hides-gap ()
+  (should (equal '("139.00" "139.46") (fin-dashboard--goal-amounts 13900 13946)))
+  (should (equal '("139" "200") (fin-dashboard--goal-amounts 13900 20000)))
+  (should (equal '("139" "139") (fin-dashboard--goal-amounts 13900 13900))))
+
+(ert-deftest dashboard/over-target-counts-spending-rows-only ()
+  (fin-test-with-db
+    (cl-letf (((symbol-function 'fin-goals)
+               (lambda (_y _m)
+                 (list (list :category "food" :kind "fix" :depth 0 :direction 'spend
+                             :target 100 :mtd 200 :status 'over)
+                       (list :category "retirement" :kind "var" :depth 0 :direction 'save
+                             :target 100 :mtd 0 :status 'pending)))))
+      (should (string-search "1 of 1" (fin-dashboard--panel-cockpit))))))
+
+(ert-deftest dashboard/patrimony-header-names-monthly-column ()
+  (fin-test-with-db
+    (fin-test-insert-patrimony "car" "wheels" 1200000 60)
+    (should (string-search "<th>items</th><th>monthly</th>" (fin-dashboard--block-patrimony)))))
+
 (provide 'test-dashboard)
 ;;; test-dashboard.el ends here

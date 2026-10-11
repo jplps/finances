@@ -38,5 +38,14 @@
     (let ((row (car (fin-report--account-children "emergency"))))
       (should (null (nth 2 row))))))
 
+(ert-deftest accounts/children-share-of-top-level-parent ()
+  "A sub-account named like a top-level one must not stand in for it."
+  (fin-test-with-db
+    (fin-test-insert-account "emergency"   "other"     100     nil)
+    (fin-test-insert-account "emergency-a" "emergency" 600000  nil)
+    (should (null (nth 2 (car (fin-report--account-children "emergency")))))
+    (fin-test-insert-account "emergency"   nil         1000000 nil)
+    (should (= 60.0 (nth 2 (car (fin-report--account-children "emergency")))))))
+
 (provide 'test-accounts)
 ;;; test-accounts.el ends here

@@ -86,5 +86,17 @@
     (should (equal (car rows) '("a" "b")))
     (should (equal (cadr rows) '("1" "2")))))
 
+;;; ── --rows (handles number-rows-repeated) ─────────────────
+
+(ert-deftest parser/rows-expand-repeated-non-empty-rows ()
+  (let* ((dom (fin-test--parse
+               (concat "<table name=\"t\">"
+                       "<table-row number-rows-repeated=\"3\"><table-cell><p>x</p></table-cell></table-row>"
+                       "<table-row number-rows-repeated=\"9999\"><table-cell/></table-row>"
+                       "</table>"))))
+    (should (equal '(("x") ("x") ("x") (nil)) (fin-ods-rows dom)))
+    (let ((fin-ods-max-row-repeat 2))
+      (should (= 3 (length (fin-ods-rows dom)))))))
+
 (provide 'test-parser)
 ;;; test-parser.el ends here

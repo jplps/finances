@@ -66,5 +66,11 @@ parts are actual values."
     (fin-db-truncate "entry")
     (should (= 0 (fin-db-count "entry")))))
 
+(ert-deftest db/rebuild-drops-stale-leaf-view ()
+  (fin-test-with-db
+    (fin-db-exec "CREATE VIEW leaf AS SELECT * FROM entry")
+    (fin-db-rebuild)
+    (should (null (fin-db-query "SELECT name FROM sqlite_master WHERE name='leaf'")))))
+
 (provide 'test-db)
 ;;; test-db.el ends here

@@ -44,6 +44,11 @@
          (out    (fin-dashboard--svg-flow `(("2020-01" 100 80) (,future 0 0)))))
     (should (string-match-p "opacity=\"0.25\"" out))))
 
+(ert-deftest charts/flow-hover-shows-reais ()
+  (let ((out (fin-dashboard--svg-flow '(("2020-01" 12345 6789)))))
+    (should (string-search "in 123.45" out))
+    (should (string-search "out 67.89" out))))
+
 ;;; ── --svg-line ─────────────────────────────────────────────
 
 (ert-deftest charts/line-emits-polyline ()

@@ -1,6 +1,7 @@
 ;;; budget.el --- Budget plan + runway  -*- lexical-binding: t; -*-
 
 (require 'db)
+(require 'cashflow)
 
 (defconst fin-budget-fix-target 55
   "Target share (%) of monthly liquid earmarked for fix outflows.
@@ -13,23 +14,23 @@ Derived from `fin-budget-fix-target' so the two always sum to 100.")
 (defun fin-report--realized-income (year)
   "Average monthly (BRUTE CNPJ) realized from entries for YEAR, in cents.
 Averages complete months only; falls back to every month carrying rows when
-YEAR has no complete month yet."
+YEAR has no complete month yet.  Withdrawals from savings are no income."
   (or (car
-       (fin-db-query
-        "WITH m AS (
+       (fin-report--flow-query
+        ", m AS (
            SELECT strftime('%Y-%m', date) AS ym,
                   SUM(CASE WHEN type='in' THEN amount ELSE 0 END) AS brute,
                   SUM(CASE WHEN type<>'in' AND category='cnpj'
                            THEN amount ELSE 0 END) AS cnpj
-             FROM entry
+             FROM flow
             WHERE strftime('%Y', date)=?
               AND (type='in' OR category='cnpj')
             GROUP BY ym)
          SELECT CAST(ROUND(COALESCE(
-                  (SELECT AVG(brute) FROM m WHERE ym < strftime('%Y-%m','now')),
+                  (SELECT AVG(brute) FROM m WHERE ym < strftime('%Y-%m','now','localtime')),
                   (SELECT AVG(brute) FROM m), 0)) AS INTEGER),
                 CAST(ROUND(COALESCE(
-                  (SELECT AVG(cnpj) FROM m WHERE ym < strftime('%Y-%m','now')),
+                  (SELECT AVG(cnpj) FROM m WHERE ym < strftime('%Y-%m','now','localtime')),
                   (SELECT AVG(cnpj) FROM m), 0)) AS INTEGER)"
         (list (format "%d" year))))
       (list 0 0)))
@@ -117,13 +118,16 @@ never double-counted.  Percentage column is share of the parent's amount."
        ORDER BY amt DESC"
      (list base parent parent-amt))))
 
-(defun fin-report--var-total (year)
+(defun fin-report--var-total (year &optional spend-only)
   "Sum of var leaves for YEAR, in cents.
 A parent with children contributes those children \u2014 investments' patrimony
-amortization among them; a childless parent contributes its own amount."
-  (let ((total 0))
+amortization among them; a childless parent contributes its own amount.
+SPEND-ONLY skips the rows that save, those named as `out' transfers in
+`fin-report-transfer-categories', with their children."
+  (let ((saving (and spend-only (cdr (assoc "out" fin-report-transfer-categories))))
+        (total 0))
     (dolist (row (fin-report--budget-share year) total)
-      (when (equal (nth 1 row) "var")
+      (when (and (equal (nth 1 row) "var") (not (member (nth 0 row) saving)))
         (let ((kids (fin-report--budget-children (nth 0 row) year)))
           (setq total
                 (+ total
@@ -132,12 +136,16 @@ amortization among them; a childless parent contributes its own amount."
                      (or (nth 2 row) 0)))))))))
 
 (defun fin-report--planned-month (year)
-  "Plan-derived monthly (in, out, liquid) placeholder for forecast months."
-  (let* ((liquid  (round (fin-report--monthly-liquid year)))
+  "Plan-derived monthly (in, out, liquid) placeholder for forecast months.
+Booked like actual months: in is the gross (brute) income, out the fix and
+spending var rows plus the company tax (cnpj); saving rows are left in
+liquid, as transfers are in `fin-report--year-months'."
+  (let* ((inc     (fin-report--monthly-income year))
+         (in      (round (nth 0 inc)))
          (fix     (or (nth 1 (fin-report--runway)) 0))
-         (var     (round (fin-report--var-total year)))
-         (out     (+ fix var)))
-    (list liquid out (- liquid out))))
+         (var     (round (fin-report--var-total year t)))
+         (out     (+ fix var (round (nth 1 inc)))))
+    (list in out (- in out))))
 
 (defun fin-report--runway ()
   "Return (RESERVE FIX-MONTHLY MONTHS)."
