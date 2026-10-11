@@ -165,20 +165,48 @@ inserted, or nil if the file was already imported."
   (cl-flet ((strip (s) (replace-regexp-in-string "<DTSERVER>[^<\n]*\\(</DTSERVER>\\)?" "" s)))
     (string= (strip a) (strip b))))
 
+(defun fin-bank--exported-at (text)
+  "Export timestamp (DTSERVER, YYYYMMDDHHMMSS) of OFX TEXT, or nil."
+  (let ((v (fin-ofx--field text "DTSERVER")))
+    (and v (string-match "\\`[0-9]\\{14\\}" v) (match-string 0 v))))
+
+(defun fin-bank--supersede (text)
+  "Drop bank rows of the statement period that OFX TEXT, a later export of
+it, no longer lists (an open bill re-dates installments as it closes)."
+  (pcase-let* ((`(,_ ,start ,end) (fin-ofx-period text))
+               (ids (mapcar #'car (car (fin-bank--ofx-rows text))))
+               (n (fin-bankdb-drop-superseded (fin-bank--kind text) start end ids)))
+    (when (> n 0)
+      (message "fin-bank: dropped %d rows the later export no longer lists" n))
+    n))
+
 (defun fin-bank--normalize-file (path)
   "Rename PATH inside the inbox to its canonical name.
-Delete it when the canonical file holds the same statement; signal when
-it holds a different one.  Return the resulting path or nil."
+Delete it when the canonical file holds the same statement.  When both
+differ, the later export replaces the earlier (an open card bill gains
+rows until it closes); without telling export times apart, signal.
+Return the resulting path or nil."
   (let* ((text (fin-ofx-read-file path))
          (dst (expand-file-name (fin-bank--canonical-name text) fin-bank-inbox)))
     (cond ((string= (expand-file-name path) dst) dst)
           ((not (file-exists-p dst)) (rename-file path dst) dst)
-          ((fin-bank--same-statement-p text (fin-ofx-read-file dst))
-           (delete-file path)
-           (message "fin-bank: removed re-export %s" (file-name-nondirectory path))
-           nil)
-          (t (user-error "fin-bank: %s and %s cover the same period but differ"
-                         (file-name-nondirectory path) (file-name-nondirectory dst))))))
+          (t (let* ((old (fin-ofx-read-file dst))
+                    (new-at (fin-bank--exported-at text)) (old-at (fin-bank--exported-at old)))
+               (cond ((fin-bank--same-statement-p text old)
+                      (delete-file path)
+                      (message "fin-bank: removed re-export %s" (file-name-nondirectory path))
+                      nil)
+                     ((and new-at old-at (string< old-at new-at))
+                      (fin-bank--supersede text)
+                      (rename-file path dst t)
+                      (message "fin-bank: %s replaced by its later export" (file-name-nondirectory dst))
+                      dst)
+                     ((and new-at old-at (string< new-at old-at))
+                      (delete-file path)
+                      (message "fin-bank: removed older export %s" (file-name-nondirectory path))
+                      nil)
+                     (t (user-error "fin-bank: %s and %s cover the same period but differ"
+                                    (file-name-nondirectory path) (file-name-nondirectory dst)))))))))
 
 (defconst fin-bank--pdf-name-re
   "\\`nubank-card-bill-[0-9]\\{4\\}-[0-9]\\{2\\}-[0-9]\\{2\\}\\.pdf\\'"

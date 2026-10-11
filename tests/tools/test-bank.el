@@ -183,7 +183,7 @@ the last two rows are a genuine double charge.")
                            (directory-files fin-bank-inbox nil "\\`[^.]"))))
         (delete-directory fin-bank-inbox t)))))
 
-(ert-deftest bank/import-removes-re-export-and-refuses-conflict ()
+(ert-deftest bank/import-removes-re-export-keeps-later-export-and-refuses-conflict ()
   (fin-test-with-db
     (let ((fin-bank-inbox (make-temp-file "fin-inbox-" t))
           (coding-system-for-write 'utf-8))
@@ -196,8 +196,32 @@ the last two rows are a genuine double charge.")
                            (directory-files fin-bank-inbox nil "\\.ofx\\'")))
             (put "c.ofx" (replace-regexp-in-string "Padaria" "Mercado" test-bank--ofx))
             (should-error (fin-bank-import) :type 'user-error)
-            (should (file-exists-p (expand-file-name "c.ofx" fin-bank-inbox))))
+            (should (file-exists-p (expand-file-name "c.ofx" fin-bank-inbox)))
+            (delete-file (expand-file-name "c.ofx" fin-bank-inbox))
+            ;; A later export of the period (an open bill grew) replaces it.
+            (put "d.ofx" (replace-regexp-in-string
+                          "20261002101930" "20261009000000"
+                          (replace-regexp-in-string "Padaria" "Mercado" test-bank--ofx)))
+            (fin-bank-import)
+            (should (equal '("nubank-account-2025-06-01_2025-06-30.ofx")
+                           (directory-files fin-bank-inbox nil "\\.ofx\\'")))
+            (should (string-search "Mercado" (fin-ofx-read-file
+                                              (expand-file-name "nubank-account-2025-06-01_2025-06-30.ofx"
+                                                                fin-bank-inbox)))))
         (delete-directory fin-bank-inbox t)))))
+
+(ert-deftest bank/later-export-drops-rows-it-no-longer-lists ()
+  (fin-test-with-db
+    (fin-bankdb-insert (list (list "old-before" "nubank-ofx" "card" "2026-10-06" "out" 100 "Boundary")
+                             (list "old-future" "nubank-ofx" "card" "2026-10-12" "out" 200 "Loja - Parcela 8/12")
+                             (list "other-acct" "nubank-ofx" "account" "2026-10-12" "out" 300 "Padaria")))
+    (let ((text (concat "<CCACCTFROM><BANKTRANLIST><DTSTART>20261006</DTSTART><DTEND>20261106</DTEND>"
+                        "<STMTTRN><DTPOSTED>20261006</DTPOSTED><TRNAMT>-2.00</TRNAMT><FITID>L</FITID>"
+                        "<MEMO>Loja - Parcela 8/12</MEMO></STMTTRN></BANKTRANLIST>")))
+      (should (= 1 (fin-bank--supersede text)))
+      ;; Its first day (the previous statement's last) and other accounts stay.
+      (should (equal '("old-before" "other-acct")
+                     (mapcar #'car (fin-db-query "SELECT id FROM bank_txn ORDER BY id")))))))
 
 (ert-deftest bank/kind-tells-company-accounts-apart ()
   (let ((fin-bank-pj-accounts '("PJ1" "PJC")))

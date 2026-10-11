@@ -143,6 +143,20 @@ any write.  Return the number of rows actually inserted."
                                 ORDER BY date DESC LIMIT 1" (list account)))))
     (and r (cons (car r) (cadr r)))))
 
+(defun fin-bankdb-drop-superseded (account after upto keep)
+  "Delete ACCOUNT rows dated after ISO AFTER up to UPTO whose id is not in
+KEEP: a later export of the statement no longer lists them.  Return the
+number deleted."
+  (unless (and (string-match-p fin-bankdb--date-re after) (string-match-p fin-bankdb--date-re upto))
+    (error "fin-bankdb: bad period %S %S" after upto))
+  (let* ((db (fin-bankdb-ensure))
+         (ids (mapcar #'car (fin-db-query "SELECT id FROM bank_txn WHERE account = ? AND date > ? AND date <= ?"
+                                          (list account after upto))))
+         (gone (cl-set-difference ids keep :test #'equal)))
+    (with-sqlite-transaction db
+      (dolist (id gone) (sqlite-execute db "DELETE FROM bank_txn WHERE id = ?" (list id))))
+    (length gone)))
+
 (defun fin-bankdb-record-fix-run (changes dry flags)
   "Record a `fin-bank-fix' run: CHANGES count, DRY (non-nil for a dry run),
 and FLAGS, the (id date amount description reason) bank rows it only
