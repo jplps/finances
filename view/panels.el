@@ -332,8 +332,8 @@ against the bank, taxes, the accounts sheet, the inbox, open items."
     (fin-dashboard--block
      (format "To do <span class=\"%s\">%s</span>" (if (zerop todo) "pos" "neg")
              (if (zerop todo) "✓ all clear" (format "⚠ %d" todo)))
-     "Ledger against the bank, taxes, accounts sheet, inbox documents, open items"
-     (concat "<div class=\"health\">" (mapconcat #'cadr parts "") "</div>"))))
+     "Ledger against the bank, taxes, accounts sheet, inbox documents, open items; only what needs doing is listed"
+     (concat "<div class=\"health\">" (mapconcat #'cadr (cl-remove-if #'car parts) "") "</div>"))))
 
 (defun fin-dashboard--panel-cockpit ()
   (let* ((year   (fin-report--year-now))

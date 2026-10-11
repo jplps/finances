@@ -253,15 +253,16 @@ tax the excess adds over the closed years when full books are not verified."
                 (list nil "full books unknown: set <b>fin-ir-full-books</b> (verified once the balance sheet is on file)")))))
 
 (defun fin-dashboard--ir-lines (name title lines)
-  "Block NAME of to-do LINES, (OK HTML) each, counting those not ok."
-  (let ((todo (cl-count-if-not #'car lines)))
-    (fin-dashboard--block
-     (format "%s <span class=\"%s\">%s</span>" name (if (zerop todo) "pos" "neg")
-             (if (zerop todo) "✓" (format "⚠ %d" todo)))
-     title
-     (concat "<div class=\"health\">"
-             (mapconcat (lambda (l) (fin-dashboard--health-line (car l) (cadr l))) lines "")
-             "</div>"))))
+  "Block NAME of to-do LINES, (OK HTML) each: only those not ok are listed;
+nil when every line is ok."
+  (let ((open (cl-remove-if #'car lines)))
+    (when open
+      (fin-dashboard--block
+       (format "%s <span class=\"neg\">⚠ %d</span>" name (length open))
+       title
+       (concat "<div class=\"health\">"
+               (mapconcat (lambda (l) (fin-dashboard--health-line nil (cadr l))) open "")
+               "</div>")))))
 
 (defun fin-dashboard--ir-detail (pos)
   "One year's income and deductions."
