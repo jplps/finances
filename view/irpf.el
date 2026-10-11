@@ -220,7 +220,7 @@ Invoices are the reference; without them, client payments in the bank."
               (mapcar (lambda (tx) (list (car tx) (cdr tx))) taxes)
               (list (list "to cpf" (plist-get pos :drawn))
                     (list "taxable" (plist-get pos :taxable))
-                    (list "inss" (plist-get pos :inss))
+                    (list "inss on pró-labore" (plist-get pos :inss))
                     (list "profit" (plist-get pos :profit))
                     (list "presumed profit" (plist-get pos :presumed))
                     (list "health" (plist-get pos :health))

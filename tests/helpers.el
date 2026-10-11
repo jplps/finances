@@ -37,12 +37,13 @@
 ;;; ── DB fixture ──────────────────────────────────────────────
 
 (defmacro fin-test-with-db (&rest body)
-  "Run BODY with `fin-db-path' bound to a fresh temp sqlite, schema initialized.
-Closes connection and deletes the file after."
+  "Run BODY with `fin-db-path' bound to a fresh temp sqlite, schema initialized,
+and no Receita payment lists.  Closes connection and deletes the file after."
   (declare (indent 0))
   `(let* ((tmp (make-temp-file "fin-test-" nil ".db"))
           (fin-db-path tmp)
-          (fin-db--conn nil))
+          (fin-db--conn nil)
+          (fin-ir-payments-dir (expand-file-name "fin-test-no-payments/" temporary-file-directory)))
      (unwind-protect
          (progn (fin-db-rebuild) ,@body)
        (fin-db-close)

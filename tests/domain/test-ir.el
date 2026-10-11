@@ -105,6 +105,27 @@
     (should-not (fin-ir--pj-covered-p 2021))
     (should (fin-ir--pj-covered-p 2022))))
 
+(ert-deftest ir/company-taxes-named-by-receita-payment ()
+  (fin-test-with-db
+    (fin-bankdb-ensure)
+    (test-ir--bank "d1" "pj" "2025-02-13" "out" 60931 "Pix - RECEITA FEDERAL")
+    (test-ir--bank "i1" "pj" "2025-02-10" "out" 16698 "Pix - RECEITA FEDERAL")
+    (test-ir--bank "u1" "pj" "2025-03-01" "out" 17831 "Pix - RECEITA FEDERAL")
+    (let ((dir (make-temp-file "fin-pay-" t)))
+      (unwind-protect
+          (progn
+            (write-region "arrecadacao,receita,documento,apuracao,total\n2025-02-13,3333,1,2025-01-01,609.31\n2025-02-11,1410,2,2025-01-31,166.98\n"
+                          nil (expand-file-name "pagamentos-cnpj-2025.csv" dir))
+            (let* ((fin-ir-payments-dir dir)
+                   (fin-pj-tax-items '(("RECEITA FED" . "darf"))))
+              (should (equal '(("das" . 60931) ("inss" . 16698) ("darf" . 17831))
+                             (plist-get (fin-ir-company 2025) :taxes)))))
+        (delete-directory dir t)))))
+
+(ert-deftest ir/bad-payment-line-fails-loud ()
+  (should-error (fin-ir--payment-row "2025-02-13,3333,1,2025-01-01,609" "f.csv"))
+  (should-error (fin-ir--payment-row "x" "f.csv")))
+
 (ert-deftest ir/bad-pro-labore-fails-loud ()
   (let ((fin-ir-pro-labore '((2025 . "3000"))))
     (should-error (fin-ir--pro-labore 2025 12))))

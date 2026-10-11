@@ -20,6 +20,7 @@
 (require 'cl-lib)
 (require 'db)
 (require 'pj)
+(require 'reconcile)
 
 (defvar fin-conv-salary-regexps)
 
@@ -42,6 +43,22 @@ the company deposited in the personal account."
   "Revenue the company invoiced (NFS-e not cancelled) per calendar year, by
 competência: list of (YEAR . CENTS)."
   :type '(alist :key-type integer :value-type integer) :group 'fin)
+
+(defcustom fin-ir-payments-dir
+  (expand-file-name "../infra/inbox/ir/"
+                    (file-name-directory (or load-file-name buffer-file-name default-directory)))
+  "Directory of Receita payment lists (pagamentos-*.csv: arrecadacao,
+receita, documento, apuracao, total)."
+  :type 'directory :group 'fin)
+
+(defcustom fin-ir-payment-window 5
+  "Days a bank payment may sit from the Receita payment it matches."
+  :type 'integer :group 'fin)
+
+(defconst fin-ir-receita-codes
+  '(("3333" . "das") ("0055" . "das") ("1410" . "inss")
+    ("0211" . "irpf") ("5320" . "irpf fine"))
+  "Receita codes (código de receita) -> tax item.  Other codes keep their number.")
 
 (defcustom fin-ir-defis-exempt nil
   "Exempt profit paid to the partner per DEFIS, by calendar year: list of
@@ -219,15 +236,59 @@ Lei 15.270/2025 (Lei 9.250 art. 16-A), from 2026.")
                   WHERE account = 'pj' AND strftime('%Y', date) = ?"
                 (fin-ir--year-arg year)))
 
+(defun fin-ir--payment-row (line file)
+  "(ISO-DATE CODE CENTS) of a Receita payments CSV LINE from FILE."
+  (pcase (split-string line ",")
+    (`(,date ,code ,_doc ,_pa ,total)
+     (unless (and (string-match-p "\\`[0-9]\\{4\\}-[0-9]\\{2\\}-[0-9]\\{2\\}\\'" date)
+                  (string-match-p "\\`[0-9]+\\'" code)
+                  (string-match-p "\\`[0-9]+\\.[0-9]\\{2\\}\\'" total))
+       (error "fin-ir: bad payment line in %s: %S" file line))
+     (list date code (round (* 100 (string-to-number total)))))
+    (_ (error "fin-ir: bad payment line in %s: %S" file line))))
+
+(defun fin-ir-payments ()
+  "Receita payments, (ISO-DATE CODE CENTS) each, from the
+pagamentos-*.csv files in `fin-ir-payments-dir'."
+  (let (out)
+    (dolist (f (and (file-directory-p fin-ir-payments-dir)
+                    (directory-files fin-ir-payments-dir t "\\`pagamentos-.*\\.csv\\'")))
+      (with-temp-buffer
+        (insert-file-contents f)
+        (dolist (line (cdr (split-string (buffer-string) "\n" t)))
+          (push (fin-ir--payment-row line f) out))))
+    (nreverse out)))
+
+(defun fin-ir--payment-code (b payments used)
+  "Receita code of the payment in PAYMENTS that bank row B paid: same
+amount, nearest date within `fin-ir-payment-window' days, not in USED (a
+hash table, updated)."
+  (let ((day (fin-reconcile--day (nth 1 b))) best best-gap)
+    (dolist (p payments)
+      (when (and (= (nth 2 p) (nth 3 b)) (not (gethash p used)))
+        (let ((gap (abs (- day (fin-reconcile--day (car p))))))
+          (when (and (<= gap fin-ir-payment-window) (or (null best) (< gap best-gap)))
+            (setq best p best-gap gap)))))
+    (when best (puthash best t used) (nth 1 best))))
+
+(defun fin-ir--tax-label (b payments used)
+  "Item of PJ tax row B: its Receita code's name when a payment matches,
+else its `fin-pj-tax-items' item."
+  (let ((code (fin-ir--payment-code b payments used)))
+    (if code (or (cdr (assoc code fin-ir-receita-codes)) code) (fin-pj-tax-item b))))
+
 (defun fin-ir-company (year)
-  "Plist of YEAR's company :revenue and :taxes, an alist (ITEM . CENTS)."
-  (let ((revenue 0) taxes)
+  "Plist of YEAR's company :revenue and :taxes, an alist (ITEM . CENTS).
+Tax rows are named by the Receita payment they match (DAS and INSS both
+leave the bank as a Pix to Receita)."
+  (let ((payments (fin-ir-payments)) (used (make-hash-table :test #'eq)) (revenue 0) taxes)
     (dolist (b (fin-ir--pj-rows year))
       (cond ((fin-pj-income-category b) (cl-incf revenue (nth 3 b)))
             ((fin-pj-tax-item b)
-             (let ((cell (assoc (fin-pj-tax-item b) taxes)))
+             (let* ((item (fin-ir--tax-label b payments used))
+                    (cell (assoc item taxes)))
                (if cell (cl-incf (cdr cell) (nth 3 b))
-                 (push (cons (fin-pj-tax-item b) (nth 3 b)) taxes))))))
+                 (push (cons item (nth 3 b)) taxes))))))
     (list :revenue revenue :taxes (nreverse taxes))))
 
 (defun fin-ir-withdrawals (year)
