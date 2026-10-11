@@ -90,16 +90,5 @@
          (out   (fin-dashboard--svg-heatmap cells)))
     (should (= 3 (fin-test--substring-count "<rect" out)))))
 
-(ert-deftest charts/bullet-red-only-past-target-when-spending ()
-  (let ((under (fin-dashboard--svg-bullet 1000 500 nil "t"))
-        (over  (fin-dashboard--svg-bullet 1000 1500 nil "t"))
-        (saved (fin-dashboard--svg-bullet 1000 1500 t "t")))
-    (should (string-search "mtd good" under))
-    (should-not (string-search "mtd bad" under))
-    (should (string-search "mtd good" over))
-    (should (string-search "mtd bad" over))
-    (should (string-search "class=\"mtd bad\" x=\"120.0\"" over))   ; 50% over: right half
-    (should-not (string-search "mtd bad" saved))))
-
 (provide 'test-charts)
 ;;; test-charts.el ends here

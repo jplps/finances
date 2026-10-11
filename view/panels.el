@@ -175,12 +175,12 @@ fold them, and each row names its ancestors so folding one hides it."
          (anc (fin-dashboard--goal-ancestors r parents))
          (toggle (cl-some (lambda (p) (equal p cat)) (hash-table-values parents)))
          (shown (fin-dashboard--goal-amounts mtd target))
-         (title (format "%s · this month R$ %s of R$ %s target" cat (nth 0 shown) (nth 1 shown))))
-    (format "<tr class=\"goal%s\"%s><td class=\"cat\">%s</td><td class=\"viz\">%s</td><td class=\"num\">%s</td><td class=\"num dim\">%s</td></tr>"
+         (over (and (not (eq (plist-get r :direction) 'save)) (> mtd target))))
+    (format "<tr class=\"goal%s\"%s><td class=\"cat\">%s</td><td class=\"num%s\">%s</td><td class=\"num dim\">%s</td></tr>"
             (pcase (plist-get r :depth) (1 " child") (2 " child deep") (_ ""))
             (if anc (format " data-anc=\"%s\"" (fin-dashboard--esc (string-join anc " "))) "")
             (fin-dashboard--goal-cat cat toggle)
-            (fin-dashboard--svg-bullet target mtd (eq (plist-get r :direction) 'save) title)
+            (if over " neg" "")
             (nth 0 shown)
             (nth 1 shown))))
 
@@ -199,8 +199,8 @@ fold them, and each row names its ancestors so folding one hides it."
     (dolist (r rows)
       (when (plist-get r :parent) (puthash (plist-get r :category) (plist-get r :parent) parents)))
     (concat (fin-dashboard--goals-fold-css parents)
-            "<table class=\"goals\"><thead><tr><th>category</th><th class=\"viz\">progress</th>"
-            "<th class=\"num\">month</th><th class=\"num\">target</th></tr></thead><tbody>"
+            "<table class=\"goals\"><thead><tr><th>category</th>"
+            "<th class=\"num\">month</th><th class=\"num\">plan</th></tr></thead><tbody>"
             (mapconcat (lambda (r) (fin-dashboard--goal-row r parents)) rows "")
             "</tbody></table>")))
 

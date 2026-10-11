@@ -272,33 +272,5 @@ Spend magnitude: the out hue, light to dark."
       cells "")
      "</svg>")))
 
-(defconst fin-dashboard--bullet-geom '(:w 240 :h 16 :bar 10)
-  "Bullet chart geometry (SVG units).")
-
-(defun fin-dashboard--svg-bullet (target mtd save title)
-  "Progress bar: the full width is TARGET; MTD fills it green.  Spending
-past TARGET grows red from the right end, by the overrun's share of
-TARGET; a saving row (SAVE) never turns red.  TITLE is the hover text.
-Amounts in cents."
-  (let* ((g (fin-dashboard--g fin-dashboard--bullet-geom :w))
-         (h (fin-dashboard--g fin-dashboard--bullet-geom :h))
-         (bh (fin-dashboard--g fin-dashboard--bullet-geom :bar))
-         (frac (lambda (v) (if (> target 0) (min 1.0 (/ (max 0 v) (float target))) (if (> v 0) 1.0 0.0))))
-         (fill (funcall frac mtd))
-         (over (if save 0.0 (funcall frac (- mtd (max 0 target)))))
-         (rect (lambda (cls x w color)
-                 (format "<rect class=\"%s\" x=\"%.1f\" y=\"%.1f\" width=\"%.1f\" height=\"%d\" rx=\"1\" fill=\"%s\"/>"
-                         cls x (/ (- h bh) 2.0) w bh color))))
-    (concat
-     (format "<svg viewBox=\"0 0 %d %d\" xmlns=\"http://www.w3.org/2000/svg\" class=\"bullet\" preserveAspectRatio=\"none\" role=\"img\"><title>%s</title>"
-             g h (fin-dashboard--esc title))
-     (funcall rect "track" 0 g (fin-dashboard--c 'track))
-     (when (> fill 0)
-       (funcall rect "mtd good" 0 (max 2 (* g fill)) (fin-dashboard--c 'pos)))
-     (when (> over 0)
-       (let ((w (max 2 (* g over))))
-         (funcall rect "mtd bad" (- g w) w (fin-dashboard--c 'neg))))
-     "</svg>")))
-
 (provide 'charts)
 ;;; charts.el ends here

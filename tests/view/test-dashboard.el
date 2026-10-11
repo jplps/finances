@@ -65,7 +65,7 @@
     (let ((html (fin-dashboard--panel-cockpit)))
       (should (string-search "saved" html))
       (should (string-search "runway" html))
-      (should-not (string-search ">plan<" html))
+      (should-not (string-search "kpi-label\">plan<" html))
       (should-not (string-search "Over target" html)))))
 
 (ert-deftest dashboard/patrimony-header-names-monthly-column ()

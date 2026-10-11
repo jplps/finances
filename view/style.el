@@ -101,10 +101,8 @@ p b     { font-weight: 600; }
 section > .stat-block.register:first-child { margin-top: 0; }
 table.goals { table-layout: fixed; }
 table.goals td { padding-top: 6px; padding-bottom: 6px; vertical-align: middle; }
-table.goals th:nth-child(1) { width: 24%; }
-table.goals th:nth-child(2) { width: 52%; }
-table.goals th:nth-child(n+3) { width: 12%; }
-table.goals th.viz, table.goals td.viz { text-align: left; }
+table.goals th:nth-child(1) { width: 64%; }
+table.goals th:nth-child(n+2) { width: 18%; }
 table.goals td.cat { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 table.goals tr.child td.cat { padding-left: 22px; color: var(--text-2); }
 table.goals tr.child td.cat::before { content: '└ '; color: var(--muted); }
@@ -116,7 +114,6 @@ table.goals td.cat label::before {
   line-height: 1; color: var(--accent); transition: transform .15s;
 }
 table.goals td.cat label:has(input:checked)::before { transform: rotate(90deg); color: var(--accent-2); }
-svg.bullet { display: block; width: 100%; height: 16px; overflow: visible; }
 
 /* ── ledger health to-do ───────────────────────────── */
 .health .todo { padding: 4px 0; font-size: var(--font-sm); }
