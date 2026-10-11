@@ -47,5 +47,31 @@
     (fin-test-insert-account "emergency"   nil         1000000 nil)
     (should (= 60.0 (nth 2 (car (fin-report--account-children "emergency")))))))
 
+(ert-deftest accounts/derived-from-opening-and-bank-flows ()
+  (fin-test-with-db
+    (fin-bankdb-ensure)
+    (fin-test-insert-account "emergency" nil 600000)
+    (fin-test-insert-account "nu" "emergency" 520000)
+    (cl-flet ((bank (id date type amount desc)
+                (fin-db-exec "INSERT INTO bank_txn (id, source, account, date, type, amount, description)
+                              VALUES (?,'t','account',?,?,?,?)" (list id date type amount desc))))
+      (bank "a" "2025-12-31" "out" 99999 "Aplicação RDB")          ; on the anchor day: already counted
+      (bank "b" "2026-01-10" "out" 100000 "Aplicação RDB")
+      (bank "c" "2026-02-10" "in" 30000 "Resgate RDB")
+      (bank "d" "2026-02-11" "out" 5000 "Compra no débito - Loja"))
+    (fin-bankdb-record-balance "account" "2026-02-28" 12345)
+    (let ((fin-accounts-derived
+           '((:name "nubank" :sheet ("emergency/nu") :since "2025-12-31" :opening 400000
+              :into ("\\`Aplicação RDB") :out-of ("\\`Resgate RDB"))
+             (:name "checking" :balance "account"))))
+      (should (equal '(("nubank" 470000 520000 "since 2025-12-31")
+                       ("checking" 12345 nil "2026-02-28"))
+                     (fin-report--accounts-derived))))))
+
+(ert-deftest accounts/derived-spec-fails-loud ()
+  (fin-test-with-db
+    (let ((fin-accounts-derived '((:name "x" :sheet ("y")))))
+      (should-error (fin-report--accounts-derived)))))
+
 (provide 'test-accounts)
 ;;; test-accounts.el ends here

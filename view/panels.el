@@ -334,6 +334,24 @@ fold them, and each row names its ancestors so folding one hides it."
                            (fin-dashboard--goals-table (funcall kind-rows "var")))
      (fin-dashboard--health-block))))
 
+(defun fin-dashboard--block-accounts-derived ()
+  "Accounts rebuilt from the bank next to the sheet's, nil when none are set."
+  (let ((rows (fin-report--accounts-derived)))
+    (when rows
+      (fin-dashboard--block
+       "Accounts from data"
+       "Opening balance plus bank flows, or the statement balance; the gap to the sheet is yield or a missing move"
+       (fin-dashboard--table
+        '("account" "data" "sheet" "gap")
+        (mapcar (lambda (r)
+                  (pcase-let ((`(,name ,data ,sheet ,note) r))
+                    (list (format "%s (%s)" name note)
+                          (if data (fin-dashboard--money-cell data) "?")
+                          (if sheet (fin-dashboard--money-cell sheet) "–")
+                          (if (and data sheet) (fin-dashboard--money-signed-cell (- sheet data)) ""))))
+                rows))
+       "register"))))
+
 (defun fin-dashboard--block-accounts ()
   (let* ((accts (fin-report--accounts))
          (rows  (mapcar
@@ -513,6 +531,7 @@ Future months of the current year use the objectives forecast
      "Wealth" "wealth"
      "Savings (accounts), patrimony, and the yearly cashflow"
      (fin-dashboard--block-accounts)
+     (fin-dashboard--block-accounts-derived)
      (fin-dashboard--block-patrimony)
      (fin-dashboard--block "Yearly" "Year → month → category drilldown of in/out/liquid"
                            (fin-dashboard--alist '("year" "in" "out" "liquid" "%") rows)
