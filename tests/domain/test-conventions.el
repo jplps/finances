@@ -123,6 +123,31 @@
                     (test-conv--b "c" "2026-09-30" "out" 1314 "Pix no Crédito - UBER")))))
     (should (equal '("f" "c") (mapcar #'car (plist-get res :rows))))))
 
+(ert-deftest conv/normalize-refund-of-whole-installment-series ()
+  ;; Refund equals installment 1 plus the anticipated rest of one purchase.
+  (let* ((rows (append (list (test-conv--b "i1" "2025-01-28" "out" 19162 "Mp *Lgelectronics - Parcela 1/12")
+                             (test-conv--b "x" "2025-03-24" "out" 19158 "Mp *Outra - Parcela 3/12"))
+                       (mapcar (lambda (k) (test-conv--b (format "i%d" k) "2025-03-24" "out" 19158
+                                                         (format "Mp *Lgelectronics - Parcela %d/12" k)))
+                               (number-sequence 2 12))
+                       (list (test-conv--b "r" "2025-03-27" "in" 229900 "Estorno de \"Mp *Lgelectronics\"")
+                             (test-conv--b "s" "2025-03-27" "in" 100 "Estorno de \"Mp *Lgelectronics\""))))
+         (res (fin-conv-normalize rows)))
+    (should (equal '("x" "s") (mapcar #'car (plist-get res :rows))))
+    (should (= 12 (cl-count "refunded installment" (plist-get res :notes) :key #'cdr :test #'equal)))))
+
+(ert-deftest conv/normalize-dispute-credits-cancel-their-reversal ()
+  (let ((res (fin-conv-normalize
+              (list (test-conv--b "c" "2025-03-24" "in" 191580 "Crédito de Confiança de \"Mp *Lgelectronics\"")
+                    (test-conv--b "d" "2025-03-24" "in" 38320 "Depósito de Confiança de \"Mp *Lgelectronics\"")
+                    (test-conv--b "v" "2025-03-27" "out" 229900 "Reversão do Crédito de Confiança de \"Mp *Lgelectronics\"")
+                    (test-conv--b "r" "2025-03-27" "in" 229900 "Estorno de \"Mp *Lgelectronics\"")
+                    (test-conv--b "h" "2024-09-19" "out" 3990 "Dm*Helpmaxcom")
+                    (test-conv--b "k" "2024-09-19" "in" 3990 "Crédito de Confiança de \"Dm*Helpmaxcom\"")))))
+    ;; The refund no longer cancels the reversal; an unreversed credit still refunds.
+    (should (equal '("r") (mapcar #'car (plist-get res :rows))))
+    (should (= 3 (cl-count "dispute credit reversed" (plist-get res :notes) :key #'cdr :test #'equal)))))
+
 ;;; ── Plan ───────────────────────────────────────────────────
 
 (defun test-conv--plan (&rest args)
@@ -149,7 +174,9 @@
          (acts (fin-conv-plan :history test-conv--history :bank-only bank
                               :months '(("2024-03" 800000 795000) ("2024-04" 600000 500000)))))
     (should (equal '(:report :report :add) (mapcar #'car acts)))
-    (should (string-match-p "2024-03: ledger 7950.00 \\+ bank-only 61.00 > bank 8000.00" (caddr (car acts))))))
+    (should (string-match-p "2024-03: ledger 7950.00 \\+ bank-only 61.00 > bank 8000.00" (caddr (car acts))))
+    (should (equal '("a" "b") (mapcar (lambda (a) (car (cadr a))) (seq-take acts 2))))   ; bank ids kept
+    (should (equal "c" (nth 3 (nth 2 acts))))))
 
 (ert-deftest conv/plan-refund-deletes-matched-purchase ()
   (let* ((purchase (test-conv--b "p" "2025-04-13" "out" 10498 "Compra no débito via NuPay - TUNA*AnotaAi"))

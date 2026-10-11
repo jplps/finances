@@ -6,11 +6,12 @@
 ;;
 ;; - Income: client payments (`fin-pj-income-payers' names each payer's
 ;;   income category) match the ledger's item-less income rows of that
-;;   category (an income row with an item, a bonus, has another source), the
-;;   nearest date within `fin-pj-window' days, an equal amount first.  A
-;;   different amount is edited to the bank's; an unmatched payment is
-;;   added; a ledger income row the PJ never received is reported, never
-;;   deleted (a bonus may come from elsewhere).
+;;   category (an income row with an item, a bonus, has another source)
+;;   within `fin-pj-window' days: the payment's month first (the ledger
+;;   books it at that month's end), then an equal amount, then the
+;;   nearest.  A different amount is edited to the bank's; an unmatched
+;;   payment is added; a ledger income row the PJ never received is
+;;   reported, never deleted (a bonus may come from elsewhere).
 ;; - Taxes: payments named by `fin-pj-tax-items' are `cnpj / ITEM' rows.
 ;;   The ledger's item-less `cnpj' rows were monthly estimates of them, so
 ;;   in covered months they give way: deleted, the real payments added.
@@ -27,25 +28,28 @@
   :type '(alist :key-type regexp :value-type string) :group 'fin)
 
 (defcustom fin-pj-tax-items nil
-  "PJ tax and accounting payments -> `cnpj' item: list of (REGEXP . ITEM)."
+  "PJ tax and accounting payments -> `cnpj' item: list of (REGEXP . ITEM).
+Matched case-sensitively."
   :type '(alist :key-type regexp :value-type string) :group 'fin)
 
 (defcustom fin-pj-window 31
   "Days a client payment may sit from the ledger income row it matches."
   :type 'integer :group 'fin)
 
-(defun fin-pj--lookup (alist desc)
-  "Value of the first (REGEXP . VALUE) in ALIST matching DESC, ignoring case."
-  (let ((case-fold-search t))
+(defun fin-pj--lookup (alist desc fold)
+  "Value of the first (REGEXP . VALUE) in ALIST matching DESC, ignoring
+case when FOLD is non-nil."
+  (let ((case-fold-search fold))
     (cdr (cl-find-if (lambda (a) (string-match-p (car a) desc)) alist))))
 
 (defun fin-pj-income-category (b)
-  "Income category of PJ bank row B, or nil."
-  (and (equal (nth 2 b) "in") (fin-pj--lookup fin-pj-income-payers (nth 4 b))))
+  "Income category of PJ bank row B, or nil.  Payer names ignore case."
+  (and (equal (nth 2 b) "in") (fin-pj--lookup fin-pj-income-payers (nth 4 b) t)))
 
 (defun fin-pj-tax-item (b)
-  "`cnpj' item of PJ bank row B, or nil."
-  (and (equal (nth 2 b) "out") (fin-pj--lookup fin-pj-tax-items (nth 4 b))))
+  "`cnpj' item of PJ bank row B, or nil.  Case counts: `DAS' is the
+tax, `das' a Portuguese word in shop names."
+  (and (equal (nth 2 b) "out") (fin-pj--lookup fin-pj-tax-items (nth 4 b) nil)))
 
 (defun fin-pj-months (first last)
   "YYYY-MM months fully inside ISO dates FIRST .. LAST."
@@ -62,18 +66,25 @@
     (nreverse out)))
 
 (defun fin-pj--best (b ledger cat used)
-  "Unused ledger row of LEDGER in CAT for bank row B: equal amount first,
-then nearest date, within `fin-pj-window'."
-  (let ((day (fin-reconcile--day (nth 1 b))) best best-key)
+  "Unused ledger row of LEDGER in CAT for bank row B, within `fin-pj-window':
+its month first (the ledger books a payment at the end of the month it
+arrives), then an equal amount, then a row on or after B, then the
+nearest date."
+  (let ((day (fin-reconcile--day (nth 1 b))) (ym (substring (nth 1 b) 0 7)) best best-key)
     (dolist (l ledger)
       (when (and (equal (nth 3 l) cat) (not (memq l used)))
-        (let ((d (abs (- day (fin-reconcile--day (nth 1 l))))))
-          (when (<= d fin-pj-window)
-            (let ((key (list (if (= (nth 5 l) (nth 3 b)) 0 1) d)))
-              (when (or (null best-key) (or (< (car key) (car best-key))
-                                            (and (= (car key) (car best-key)) (< (cadr key) (cadr best-key)))))
-                (setq best l best-key key)))))))
+        (let* ((dd (- (fin-reconcile--day (nth 1 l)) day))
+               (key (list (if (string-prefix-p ym (nth 1 l)) 0 1) (if (= (nth 5 l) (nth 3 b)) 0 1)
+                          (if (< dd 0) 1 0) (abs dd))))
+          (when (and (<= (abs dd) fin-pj-window) (or (null best-key) (fin-pj--key< key best-key)))
+            (setq best l best-key key)))))
     best))
+
+(defun fin-pj--key< (a b)
+  "Non-nil if number list A sorts before B of the same length."
+  (cl-assert (= (length a) (length b)))
+  (let ((d (cl-find-if-not #'zerop (cl-mapcar #'- a b))))
+    (and d (< d 0))))
 
 (defun fin-pj-plan-income (rows ledger)
   "Actions fixing ledger income rows LEDGER from PJ client payments ROWS."

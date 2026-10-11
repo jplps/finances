@@ -212,15 +212,18 @@ the last two rows are a genuine double charge.")
 
 (ert-deftest bank/later-export-drops-rows-it-no-longer-lists ()
   (fin-test-with-db
-    (fin-bankdb-insert (list (list "old-before" "nubank-ofx" "card" "2026-10-06" "out" 100 "Boundary")
+    (fin-bankdb-insert (list (list "old-before" "nubank-ofx" "card" "2026-10-05" "out" 100 "Previous bill")
+                             (list "old-first" "nubank-ofx" "card" "2026-10-06" "out" 150 "First day")
                              (list "old-future" "nubank-ofx" "card" "2026-10-12" "out" 200 "Loja - Parcela 8/12")
+                             (list "next-bill" "nubank-ofx" "card" "2026-11-06" "out" 250 "Next bill")
                              (list "other-acct" "nubank-ofx" "account" "2026-10-12" "out" 300 "Padaria")))
     (let ((text (concat "<CCACCTFROM><BANKTRANLIST><DTSTART>20261006</DTSTART><DTEND>20261106</DTEND>"
                         "<STMTTRN><DTPOSTED>20261006</DTPOSTED><TRNAMT>-2.00</TRNAMT><FITID>L</FITID>"
                         "<MEMO>Loja - Parcela 8/12</MEMO></STMTTRN></BANKTRANLIST>")))
-      (should (= 1 (fin-bank--supersede text)))
-      ;; Its first day (the previous statement's last) and other accounts stay.
-      (should (equal '("old-before" "other-acct")
+      (should (= 2 (fin-bank--supersede text)))
+      ;; A bill is [start, end): its closing day opens the next bill, which
+      ;; keeps its rows, as do the previous bill and other accounts.
+      (should (equal '("next-bill" "old-before" "other-acct")
                      (mapcar #'car (fin-db-query "SELECT id FROM bank_txn ORDER BY id")))))))
 
 (ert-deftest bank/kind-tells-company-accounts-apart ()

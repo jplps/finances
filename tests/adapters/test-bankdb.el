@@ -72,5 +72,19 @@
     (should (equal '("2026-10-05" . 0) (fin-bankdb-latest-balance "pj")))
     (should-error (fin-bankdb-record-balance "account" "1/10/2026" 1))))
 
+(ert-deftest bankdb/superseded-period-per-kind ()
+  (fin-test-with-db
+    (fin-bankdb-insert
+     (list (list "c0" "t" "pj-card" "2025-03-06" "out" 1 "first day")
+           (list "c1" "t" "pj-card" "2025-04-06" "out" 1 "next bill's first day")
+           (list "a0" "t" "account" "2025-03-01" "out" 1 "first day")
+           (list "a1" "t" "account" "2025-03-31" "out" 1 "last day")
+           (list "a2" "t" "account" "2025-04-01" "out" 1 "next month")))
+    ;; Card bills are [start, end); account statements [start, end].
+    (should (= 1 (fin-bankdb-drop-superseded "pj-card" "2025-03-06" "2025-04-06" nil)))
+    (should (= 2 (fin-bankdb-drop-superseded "account" "2025-03-01" "2025-03-31" nil)))
+    (should (equal '("a2" "c1") (mapcar #'car (fin-db-query "SELECT id FROM bank_txn ORDER BY id"))))
+    (should-error (fin-bankdb-drop-superseded "account" "2025-3-1" "2025-03-31" nil))))
+
 (provide 'test-bankdb)
 ;;; test-bankdb.el ends here

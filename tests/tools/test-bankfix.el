@@ -106,13 +106,44 @@
   (fin-test-with-db
     (fin-test-insert-entry "2026-09-06" "out" "car" 5090 "bateria" 6 10)
     (fin-test-insert-entry "2026-09-06" "out" "food" 5090 "other thing")       ; no installment
+    (fin-test-insert-entry "2026-09-07" "out" "health" 2990 "otica sol" 4 10)
+    (fin-test-insert-entry "2026-09-06" "out" "house" 1500 "sofa" 2 3)       ; another merchant's
+    (fin-bankdb-insert '(("p6" "t" "card" "2026-09-06" "out" 5090 "Propig *Center Car Com - Parcela 6/10")
+                         ("s2" "t" "card" "2026-09-06" "out" 1500 "Loja Movel - Parcela 2/3")))
     (let ((acts (fin-bank-fix--continue-series
-                 '((:add ("2026-10-06" "out" "free" "propig" 5090 7 10) "Propig *Center Car Com - Parcela 7/10")
-                   (:add ("2026-10-06" "out" "free" "otica" 2990 5 10) "Otica - Parcela 5/10")
+                 '((:add ("2026-10-06" "out" "free" "propig" 5090 7 10) "Propig *Center Car Com - Parcela 7/10" "p7")
+                   (:add ("2026-10-06" "out" "free" "otica" 2990 5 10) "Otica Sol - Parcela 5/10")
+                   (:add ("2026-10-06" "out" "free" "farmacia" 1500 3 3) "Farmacia Lua - Parcela 3/3")
                    (:add ("2026-10-06" "out" "free" "ifood" 5952 nil nil) "iFood")))))
-      (should (equal '("2026-10-06" "out" "car" "bateria" 5090 7 10) (cadr (nth 0 acts))))
-      (should (equal "free" (nth 2 (cadr (nth 1 acts)))))       ; no booked 4/10
-      (should (equal "ifood" (nth 3 (cadr (nth 2 acts))))))))
+      ;; Booked under another name: the bank's 6/10 of the merchant beside it tells.
+      (should (equal '(:add ("2026-10-06" "out" "car" "bateria" 5090 7 10)
+                            "Propig *Center Car Com - Parcela 7/10" "p7")
+                     (nth 0 acts)))
+      (should (equal "health" (nth 2 (cadr (nth 1 acts)))))      ; item names the payee
+      (should (equal "free" (nth 2 (cadr (nth 2 acts)))))        ; 2/3 is another merchant's
+      (should (equal "ifood" (nth 3 (cadr (nth 3 acts))))))))
+
+(ert-deftest bankfix/changes-take-adds-carrying-a-bank-id ()
+  (should (equal '((:add ("2025-05-06" "out" "food" "x" 100 nil nil)))
+                 (fin-bank-fix--changes (list (list :add '("2025-05-06" "out" "food" "x" 100 nil nil) "X" "id1"))))))
+
+(ert-deftest bankfix/room-reports-keep-the-bank-id-for-flags ()
+  (let* ((fin-bank-fix-flag-min 100) (fin-bank-fix-flag-ignore-regexps nil)
+         (day (format-time-string "%Y-%m-%d"))
+         (acts (fin-conv--within-room
+                (list (list :add (list day "out" "free" "loja" 500 1 2) "Loja - Parcela 1/2" "nu:a:1"))
+                (list (list (substring day 0 7) 100 0)))))
+    (should (equal (list "nu:a:1" day "out" 500 "Loja - Parcela 1/2") (cadr (car acts))))
+    (should (equal "nu:a:1" (caar (fin-bank-fix--flags acts))))
+    (should (equal "nu:b:2" (car (cadr (car (fin-bank-fix--lumped
+                                            (list (list :add '("2021-05-03" "in" "extras" "x" 1 nil nil) "X" "nu:b:2"))
+                                            "2022-07-01"))))))))
+
+(ert-deftest bankfix/pj-months-start-at-the-fix-start ()
+  (should (equal '("2024-01" "2024-02") (fin-bank-fix--pj-months '("2021-10-05" . "2024-03-10") "2024-01-01")))
+  (should (equal '("2024-02") (fin-bank-fix--pj-months '("2021-10-05" . "2024-03-10") "2024-01-15")))
+  (should (equal '("2022-11") (fin-bank-fix--pj-months '("2022-10-05" . "2022-12-10") "2022-01-01")))
+  (should-not (fin-bank-fix--pj-months '("2021-10-05" . "2023-12-31") "2024-01-01")))
 
 (provide 'test-bankfix)
 ;;; test-bankfix.el ends here

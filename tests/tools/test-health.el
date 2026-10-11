@@ -16,11 +16,15 @@
              (list "b" "nubank-ofx" "account" day "out" 50000 "Pagamento da fatura - Cartão Nubank") ; ignored
              (list "c" "nubank-ofx" "account" day "out" 30000 "Aplicação RDB")                       ; savings
              (list "d" "nubank-ofx" "pj" day "out" 20000 "Pagamento de boleto efetuado - DAS")       ; tax
-             (list "e" "nubank-ofx" "account" day "in" 90000 "Pix recebido")))
+             (list "e" "nubank-ofx" "account" day "in" 90000 "Pix recebido")
+             (list "f" "nubank-ofx" "account" day "out" 700 "Compra no débito - Casarao das Ferragens")
+             (list "g" "nubank-ofx" "account" day "out" 200 "Pagamento de boleto efetuado - DAS")     ; not the PJ's
+             (list "h" "nubank-ofx" "card" day "out" 4000 "Loja")                                    ; refunded
+             (list "i" "nubank-ofx" "card" day "in" 4000 "Estorno de \"Loja\"")))
       (fin-test-insert-entry day "out" "food" 12000 "padaria")
       (fin-test-insert-entry day "out" "cnpj" 20000 "das")                                           ; unspent
       (let ((m (car (last (fin-health-months 3)))))
-        (should (equal (list ym 10000 12000) m)))
+        (should (equal (list ym 10900 12000) m)))
       (should (= 3 (length (fin-health-months 3)))))))
 
 (ert-deftest health/inbox-wants-last-month-covered ()

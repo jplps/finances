@@ -41,5 +41,32 @@
                           (list :delete est "cnpj estimate replaced by the PJ payments"))
                     acts)))))
 
+(ert-deftest pj/tax-items-match-case-sensitively ()
+  (test-pj--with-maps
+   (should (equal "das" (fin-pj-tax-item '("a" "2025-03-20" "out" 1 "Pagamento de boleto efetuado - DAS-SIMPLES NACIONAL"))))
+   (should-not (fin-pj-tax-item '("b" "2025-03-08" "out" 1 "Compra no débito - Casarao das Ferragens")))
+   (should-not (fin-pj-tax-item '("c" "2022-06-05" "out" 1 "Casa Das Essencias")))
+   ;; Payer names still ignore case.
+   (should (equal "bp" (fin-pj-income-category '("d" "2024-06-05" "in" 1 "Pix - BRASIL PARALELO"))))))
+
+(ert-deftest pj/income-pairs-the-ledger-row-of-the-payment-month ()
+  ;; The ledger books a payment at the end of the month it arrives.
+  (test-pj--with-maps
+   (let* ((jul '(1 "2024-07-30" "in" "bp" nil 750000 nil))
+          (aug '(2 "2024-08-31" "in" "bp" nil 750000 nil))
+          (sep '(3 "2024-09-30" "in" "bp" nil 1281000 nil))
+          (rows '(("a" "2024-07-05" "in" 750000 "Pix - Brasil Paralelo")
+                  ("b" "2024-08-05" "in" 750000 "Pix - Brasil Paralelo")
+                  ("c" "2024-09-05" "in" 1281000 "Pix - Brasil Paralelo"))))
+     (should-not (fin-pj-plan-income rows (list jul aug sep)))
+     ;; Without one in its month: an equal amount, then a later row first.
+     (let ((before '(4 "2024-07-25" "in" "bp" nil 750000 nil))
+           (after '(5 "2024-09-05" "in" "bp" nil 750000 nil))
+           (closer '(6 "2024-09-01" "in" "bp" nil 1281000 nil)))
+       (should (equal (list (list :report before "income the PJ account never received")
+                            (list :report closer "income the PJ account never received"))
+                      (fin-pj-plan-income '(("x" "2024-08-15" "in" 750000 "Pix - Brasil Paralelo"))
+                                          (list before after closer))))))))
+
 (provide 'test-pj)
 ;;; test-pj.el ends here

@@ -73,8 +73,14 @@ In a month no card statement covers, the card bill paid from the account
     (when (file-exists-p lock)
       (user-error "fin-bank: close %s in LibreOffice first" (file-name-nondirectory path)))))
 
-(defun fin-bank-fix--pj-split (bank raw)
-  "Split BANK rows and RAW ledger rows for the PJ account (pj.el).
+(defun fin-bank-fix--pj-months (span from)
+  "YYYY-MM months the PJ statement SPAN (FIRST . LAST) fully covers on or
+after ISO FROM, where the bank rows start."
+  (let ((first (if (string< (car span) from) from (car span))))
+    (unless (string< (cdr span) first) (fin-pj-months first (cdr span)))))
+
+(defun fin-bank-fix--pj-split (bank raw from)
+  "Split BANK rows since FROM and RAW ledger rows for the PJ account (pj.el).
 Return plist :bank and :raw (left to the general match) and :pj (actions).
 In the months a PJ statement fully covers, client payments and tax
 payments reconcile against income and `cnpj' rows there, transfers from
@@ -83,7 +89,7 @@ dropped (a partial month cannot be judged)."
   (pcase-let* ((`(,ids . ,span) (fin-bankdb-account-rows "pj")))
     (if (null span)
         (list :bank bank :raw raw :pj nil)
-      (let* ((months (fin-pj-months (car span) (cdr span)))
+      (let* ((months (fin-bank-fix--pj-months span from))
              (pj (let ((h (make-hash-table :test #'equal))) (dolist (i ids) (puthash i t h)) h))
              (cov (lambda (r) (member (substring (nth 1 r) 0 7) months)))
              (pj-row (lambda (b) (gethash (car b) pj)))
@@ -113,7 +119,8 @@ dropped (a partial month cannot be judged)."
          (span   (fin-bank--date-span bank))
          (split  (fin-bank-fix--pj-split
                   bank (fin-bank--ledger-span span (max fin-reconcile-shift-window
-                                                        fin-reconcile-exact-window))))
+                                                        fin-reconcile-exact-window))
+                  from))
          (bank   (plist-get split :bank))
          (raw    (plist-get split :raw))
          (ledger (fin-reconcile-net raw))
@@ -135,7 +142,7 @@ dropped (a partial month cannot be judged)."
   (mapcar (lambda (a)
             (if (and (eq (car a) :add) (string< (car (cadr a)) itemized-from))
                 (pcase-let ((`(,date ,type ,_c ,_i ,amount . ,_) (cadr a)))
-                  (list :report (list nil date type amount (caddr a))
+                  (list :report (list (cadddr a) date type amount (caddr a))
                         (format "before %s the ledger books monthly lumps" itemized-from)))
               a))
           actions))
@@ -221,27 +228,46 @@ credits are reported."
               (t (push (list :edit l (cdr r) "card rows itemize the remainder") out)))))
     (nreverse out)))
 
-(defun fin-bank-fix--series (date amount k n)
-  "(CATEGORY . ITEM) of the ledger's installment K-1 of N before an
-installment of AMOUNT cents on ISO DATE: amount within 1%, 20 to 45 days
-earlier.  Nil when K is 1 or none is booked."
+(defun fin-bank-fix--merchant-installment-p (date amount k n desc)
+  "Non-nil if the bank holds installment K of N of DESC's merchant, of
+AMOUNT cents within 1%, up to 45 days before ISO DATE."
+  (let ((item (fin-conv-item desc)))
+    (cl-some (lambda (r) (and (equal (fin-conv-installment (car r)) (list k n))
+                              (equal (fin-conv-item (car r)) item)))
+             (fin-db-query
+              "SELECT description FROM bank_txn
+                WHERE type = 'out' AND julianday(?) - julianday(date) BETWEEN 0 AND 45
+                  AND abs(amount - ?) <= max(1, ? / 100) AND description LIKE ?"
+              (list date amount amount (format "%%Parcela %d/%d%%" k n))))))
+
+(defun fin-bank-fix--series (date amount k n desc)
+  "(CATEGORY ITEM) of the ledger's installment K-1 of N before an
+installment of AMOUNT cents on ISO DATE, bank DESC: amount within 1%, 20
+to 45 days earlier, and of DESC's payee: its item names the payee, else
+it is the only candidate and the bank holds the merchant's installment
+K-1.  Nil when K is 1 or none is booked."
   (when (and k n (> k 1))
-    (car (fin-db-query
-          "SELECT category, item FROM entry
-            WHERE type = 'out' AND installments = ? AND installment = ?
-              AND abs(amount - ?) <= max(1, ? / 100)
-              AND julianday(?) - julianday(date) BETWEEN 20 AND 45
-            ORDER BY abs(amount - ?) LIMIT 1"
-          (list n (1- k) amount amount date amount)))))
+    (let ((words (fin-conv--bank-words desc))
+          (cands (fin-db-query
+                  "SELECT category, item FROM entry
+                    WHERE type = 'out' AND installments = ? AND installment = ?
+                      AND abs(amount - ?) <= max(1, ? / 100)
+                      AND julianday(?) - julianday(date) BETWEEN 20 AND 45
+                    ORDER BY abs(amount - ?)"
+                  (list n (1- k) amount amount date amount))))
+      (or (cl-find-if (lambda (c) (and (cadr c) (fin-conv--item-hit-p desc words (cadr c)))) cands)
+          (and (= (length cands) 1)
+               (fin-bank-fix--merchant-installment-p date amount (1- k) n desc)
+               (car cands))))))
 
 (defun fin-bank-fix--continue-series (actions)
   "ACTIONS with each installment add booked like its previous installment."
   (mapcar (lambda (a)
             (pcase a
-              (`(:add (,date ,type ,_cat ,_item ,amount ,k ,n) ,src)
-               (let ((s (fin-bank-fix--series date amount k n)))
+              (`(:add (,date ,type ,_cat ,_item ,amount ,k ,n) ,src . ,id)
+               (let ((s (fin-bank-fix--series date amount k n src)))
                  (if (and s (equal type "out"))
-                     (list :add (list date type (car s) (cadr s) amount k n) src)
+                     (append (list :add (list date type (car s) (cadr s) amount k n) src) id)
                    a)))
               (_ a)))
           actions))
@@ -258,7 +284,7 @@ earlier.  Nil when K is 1 or none is booked."
         (edited nil) (out nil))
     (dolist (a actions)
       (pcase a
-        (`(:add ,fields ,_)
+        (`(:add ,fields . ,_)
          (pcase-let ((`(,date ,type ,cat ,item ,amount ,k ,n) fields))
            (push (list :add (list date type cat (or item "") amount k n)) out)))
         (`(:edit ,l ,new ,_)

@@ -143,15 +143,17 @@ any write.  Return the number of rows actually inserted."
                                 ORDER BY date DESC LIMIT 1" (list account)))))
     (and r (cons (car r) (cadr r)))))
 
-(defun fin-bankdb-drop-superseded (account after upto keep)
-  "Delete ACCOUNT rows dated after ISO AFTER up to UPTO whose id is not in
-KEEP: a later export of the statement no longer lists them.  Return the
-number deleted."
-  (unless (and (string-match-p fin-bankdb--date-re after) (string-match-p fin-bankdb--date-re upto))
-    (error "fin-bankdb: bad period %S %S" after upto))
+(defun fin-bankdb-drop-superseded (account start end keep)
+  "Delete ACCOUNT rows of the statement period ISO START .. END whose id is
+not in KEEP: a later export of the statement no longer lists them.  A card
+bill's period is [START, END), its closing day the next bill's first; an
+account statement's is [START, END].  Return the number deleted."
+  (unless (and (string-match-p fin-bankdb--date-re start) (string-match-p fin-bankdb--date-re end))
+    (error "fin-bankdb: bad period %S %S" start end))
   (let* ((db (fin-bankdb-ensure))
-         (ids (mapcar #'car (fin-db-query "SELECT id FROM bank_txn WHERE account = ? AND date > ? AND date <= ?"
-                                          (list account after upto))))
+         (sql (format "SELECT id FROM bank_txn WHERE account = ? AND date >= ? AND date %s ?"
+                      (if (member account '("card" "pj-card")) "<" "<=")))
+         (ids (mapcar #'car (fin-db-query sql (list account start end))))
          (gone (cl-set-difference ids keep :test #'equal)))
     (with-sqlite-transaction db
       (dolist (id gone) (sqlite-execute db "DELETE FROM bank_txn WHERE id = ?" (list id))))

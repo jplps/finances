@@ -3,8 +3,9 @@
 ;; Pure functions over row lists; no DB or ODS access.  They encode how the
 ;; ledger books bank activity:
 ;;
-;; - A refund cancels the purchase it refunds; a refunded purchase already
-;;   in the ledger is deleted.
+;; - A refund cancels the purchase it refunds, or all the installments of
+;;   one it returns whole; a refunded purchase already in the ledger is
+;;   deleted.  A dispute's provisional credits and their reversal cancel.
 ;; - IOF and installment discounts fold into their purchase.
 ;; - A Pix funded by "Pix no Crédito" counts once, on the card.
 ;; - Salary is booked gross under `bp' with the tax under `cnpj'; a deposit
@@ -172,14 +173,57 @@ payee name, lowercase."
   (and (equal (nth 2 row) "in") (fin-conv--match-p fin-conv-refund-re row)
        (not (fin-conv--savings-p row))))
 
+(defconst fin-conv--reversal-re "\\`Reversão do Crédito de Confiança"
+  "Card debit taking back a dispute's provisional credits.")
+
+(defun fin-conv--quoted (desc)
+  "The merchant DESC quotes (`Estorno de \"Loja\"'), or nil."
+  (and (string-match "\"\\([^\"]+\\)\"" desc) (match-string 1 desc)))
+
 (defun fin-conv--refunded-purchase (refund rows gone)
   "Out row of ROWS, not in GONE, with REFUND's amount up to
 `fin-conv-refund-days' before it."
   (cl-find-if (lambda (r)
                 (and (not (gethash (car r) gone)) (equal (nth 2 r) "out")
                      (= (nth 3 r) (nth 3 refund)) (not (fin-conv--savings-p r))
+                     (not (fin-conv--match-p fin-conv--reversal-re r))
                      (<= 0 (fin-conv--days r refund) fin-conv-refund-days)))
               rows))
+
+(defun fin-conv--refunded-series (refund rows gone)
+  "Installments of ROWS, not in GONE, of the purchase REFUND returns whole:
+the merchant REFUND quotes, one installment count N, dated up to N
+months before REFUND, summing to its amount.  Nil when none does."
+  (let* ((name (fin-conv--quoted (nth 4 refund)))
+         (item (and name (fin-conv-item name)))
+         series)
+    (when item
+      (dolist (r rows)
+        (pcase-let ((`(,k ,n) (fin-conv-installment (nth 4 r))))
+          (when (and k (not (gethash (car r) gone)) (equal (nth 2 r) "out")
+                     (equal (fin-conv-item (nth 4 r)) item)
+                     (<= 0 (fin-conv--days r refund) (* 31 n)))
+            (push r (alist-get n series)))))
+      (cl-loop for (_ . rs) in series
+               when (= (apply #'+ (mapcar (lambda (r) (nth 3 r)) rs)) (nth 3 refund))
+               return rs))))
+
+(defun fin-conv--trust-credits (reversal rows gone)
+  "Dispute credits of ROWS, not in GONE, that REVERSAL takes back: of its
+quoted merchant, up to `fin-conv-refund-days' before it, the one of its
+amount, else all of them when they sum to it."
+  (let* ((name (fin-conv--quoted (nth 4 reversal)))
+         (cands (and name
+                     (cl-remove-if-not
+                      (lambda (r)
+                        (and (not (gethash (car r) gone)) (equal (nth 2 r) "in")
+                             (fin-conv--match-p "\\`\\(Crédito\\|Depósito\\) de Confiança" r)
+                             (equal (fin-conv--quoted (nth 4 r)) name)
+                             (<= 0 (fin-conv--days r reversal) fin-conv-refund-days)))
+                      rows)))
+         (one (cl-find-if (lambda (r) (= (nth 3 r) (nth 3 reversal))) cands)))
+    (cond (one (list one))
+          ((and cands (= (apply #'+ (mapcar (lambda (r) (nth 3 r)) cands)) (nth 3 reversal))) cands))))
 
 (defun fin-conv--fee-p (row)
   (string-match-p "\\`\\(IOF de \\|Desconto Antecipação \\)" (nth 4 row)))
@@ -249,11 +293,26 @@ a list of (row . reason) for every row removed."
                                                 (fin-conv--match-p "Pix" r)))
                                bank)))
             (when p (drop p "pass-through: paid via Pix no Crédito")))))
+      ;; A dispute's provisional credits and their reversal: cancel out.
+      (dolist (v bank)
+        (when (and (equal (nth 2 v) "out") (fin-conv--match-p fin-conv--reversal-re v)
+                   (not (gethash (car v) gone)))
+          (let ((cs (fin-conv--trust-credits v bank gone)))
+            (when cs
+              (drop v "dispute credit reversed")
+              (dolist (c cs) (drop c "dispute credit reversed"))))))
       ;; Refund and refunded purchase both in the statement: cancel out.
       (dolist (r bank)
         (when (and (fin-conv--refund-p r) (not (gethash (car r) gone)))
           (let ((p (fin-conv--refunded-purchase r bank gone)))
             (when p (drop r "refund") (drop p "refunded purchase")))))
+      ;; Refund of a whole installment purchase (anticipated ones included).
+      (dolist (r bank)
+        (when (and (fin-conv--refund-p r) (not (gethash (car r) gone)))
+          (let ((ps (fin-conv--refunded-series r bank gone)))
+            (when ps
+              (drop r "refund")
+              (dolist (p ps) (drop p "refunded installment"))))))
       ;; Partial refund: reduces the payee's larger purchase before it.
       (dolist (r bank)
         (when (and (fin-conv--refund-p r) (not (gethash (car r) gone)))
@@ -382,7 +441,7 @@ is the suggested one when it names the same payee, else the bank payee."
                              (if (and s (fin-conv--same-payee-p desc (cdr s))) (cdr s) (fin-conv-item desc))
                              (nth 3 b))
                        (fin-conv-installment desc))
-          desc)))
+          desc (car b))))
 
 (defun fin-conv--inflow-action (b)
   "Add money received B as income from its payer."
@@ -391,7 +450,7 @@ is the suggested one when it names the same payee, else the bank payee."
                        (fin-conv--payer (nth 4 b))
                      (fin-conv-item (nth 4 b)))
                    (nth 3 b) nil nil)
-        (nth 4 b)))
+        (nth 4 b) (car b)))
 
 (defun fin-conv--within-room (adds months)
   "ADDS kept for months whose room holds them all; the others reported.
@@ -407,7 +466,7 @@ MONTHS is a list of (YYYY-MM bank-out ledger-out): room is their gap."
                                               (list (substring (car fields) 0 7) 0 0))))
          (if (<= (+ ledger (gethash ym sums)) bank)
              a
-           (list :report (list nil (car fields) "out" (nth 4 fields) (caddr a))
+           (list :report (list (cadddr a) (car fields) "out" (nth 4 fields) (caddr a))
                  (format "%s: ledger %s + bank-only %s > bank %s"
                          ym (fin-conv--money ledger) (fin-conv--money (gethash ym sums))
                          (fin-conv--money bank))))))
@@ -419,7 +478,8 @@ MATCHED, NEAR, SHIFTED are (bank . ledger) pairs; BANK-ONLY and ENTRY-ONLY
 leftovers; HISTORY (category item count) rows; MONTHS (YYYY-MM bank-out
 ledger-out) totals bounding what a month may get added.
 Each action is one of
-  (:add (date type category item amount installment installments) source)
+  (:add (date type category item amount installment installments) source
+        [bank-id])     the id of the bank row it adds, when one
   (:edit ledger-row new-amount reason)
   (:delete ledger-row reason)
   (:report row reason)   needs a look

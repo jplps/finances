@@ -11,7 +11,8 @@
 ;; - Classify: large recent bank rows that run could only report.
 ;; - Gaps: complete months where ledger spending is off the bank's by more
 ;;   than `fin-health-gap-share', counted as `fin-bank-fix' counts room:
-;;   ignored bank rows, savings moves and PJ tax payments left out; ledger
+;;   bank rows normalized (refunds, fees, Pix no Crédito), ignored rows,
+;;   savings moves and the PJ account's tax payments left out; ledger
 ;;   savings, tax and company rows left out.
 
 (require 'cl-lib)
@@ -58,12 +59,19 @@ balance date, OK non-nil when it reaches last month's end."
        (list :run-at at :changes changes :dry (= dry 1) :since since
              :ok (and (zerop since) (or (= dry 0) (zerop changes))))))))
 
-(defun fin-health--bank-spent-p (b)
-  "Non-nil if bank row B is spending as the ledger books it."
+(defun fin-health--bank-spent-p (b pj)
+  "Non-nil if bank row B is spending as the ledger books it.  PJ holds the
+ids of the company account's rows, whose tax payments are not spending."
   (and (equal (nth 2 b) "out")
        (not (fin-bank--ignored-p b))
        (not (fin-conv--savings-p b))
-       (not (fin-pj-tax-item b))))
+       (not (and (gethash (car b) pj) (fin-pj-tax-item b)))))
+
+(defun fin-health--pj-ids ()
+  "Set of the company account's bank row ids."
+  (let ((h (make-hash-table :test #'equal)))
+    (dolist (i (car (fin-bankdb-account-rows "pj"))) (puthash i t h))
+    h))
 
 (defun fin-health-months (n)
   "(YYYY-MM BANK LEDGER) for the N complete months before this one."
@@ -71,9 +79,10 @@ balance date, OK non-nil when it reaches last month's end."
   (let* ((from (fin-health--month-start n))
          (to (fin-health--month-start 0))
          (bank (make-hash-table :test #'equal))
-         (ledger (fin-bank-fix--ledger-out from)))
-    (dolist (b (fin-bankdb-since from))
-      (when (and (string< (nth 1 b) to) (fin-health--bank-spent-p b))
+         (ledger (fin-bank-fix--ledger-out from))
+         (pj (fin-health--pj-ids)))
+    (dolist (b (plist-get (fin-conv-normalize (fin-bankdb-since from)) :rows))
+      (when (and (string< (nth 1 b) to) (fin-health--bank-spent-p b pj))
         (let ((ym (substring (nth 1 b) 0 7)))
           (puthash ym (+ (gethash ym bank 0) (nth 3 b)) bank))))
     (cl-loop for k from n downto 1
