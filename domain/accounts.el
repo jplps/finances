@@ -91,15 +91,15 @@ statements, so a rebuilt balance trails the real one by them."
                                since)))))))
 
 (defun fin-report--accounts-derived ()
-  "(NAME DERIVED SHEET NOTE YIELD-KNOWN) per `fin-accounts-derived'; SHEET nil
-when the sheet has none of its accounts."
+  "(NAME DERIVED SHEET NOTE YIELD-KNOWN REFS) per `fin-accounts-derived'; SHEET
+nil when the sheet has none of its accounts; REFS its :sheet references."
   (fin-bankdb-ensure)
   (mapcar (lambda (spec)
             (cl-assert (stringp (plist-get spec :name)) nil "fin-accounts: bad spec %S" spec)
             (let* ((d (fin-report--derived-balance spec))
                    (sheet (delq nil (mapcar #'fin-report--sheet-balance (plist-get spec :sheet)))))
               (list (plist-get spec :name) (car d) (and sheet (apply #'+ sheet)) (cdr d)
-                    (and (plist-get spec :yield) t))))
+                    (and (plist-get spec :yield) t) (plist-get spec :sheet))))
           fin-accounts-derived))
 
 (provide 'accounts)

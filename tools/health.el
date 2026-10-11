@@ -130,7 +130,7 @@ their yield is known, else below the data or above it by more than the
 yield `fin-health-yield-rate' allows since the anchor."
   (cl-remove-if-not
    (lambda (r)
-     (pcase-let ((`(,_ ,data ,sheet ,note ,known) r))
+     (pcase-let ((`(,_ ,data ,sheet ,note ,known ,_) r))
        (when (and data sheet)
          (let ((gap (- sheet data)) (slack (max 10000 (* 0.01 sheet))))
            (cond (known (> (abs gap) slack))

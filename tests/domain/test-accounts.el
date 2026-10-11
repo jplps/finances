@@ -64,8 +64,8 @@
            '((:name "nubank" :sheet ("emergency/nu") :since "2025-12-31" :opening 400000
               :into ("\\`Aplicação RDB") :out-of ("\\`Resgate RDB"))
              (:name "checking" :balance "account"))))
-      (should (equal '(("nubank" 470000 520000 "since 2025-12-31" nil)
-                       ("checking" 12345 nil "2026-02-28" nil))
+      (should (equal '(("nubank" 470000 520000 "since 2025-12-31" nil ("emergency/nu"))
+                       ("checking" 12345 nil "2026-02-28" nil nil))
                      (fin-report--accounts-derived))))))
 
 (ert-deftest accounts/derived-from-zero-notes-first-flow ()
@@ -75,9 +75,9 @@
                   VALUES ('a','t','account','2023-04-13','out',5000,'Aplicação RDB')")
     (let ((fin-accounts-derived '((:name "nu" :sheet () :since "2020-01-01" :opening 0
                                    :into ("\\`Aplicação RDB") :out-of ()))))
-      (should (equal '(("nu" 5000 nil "since 2023-04-13" nil)) (fin-report--accounts-derived)))
+      (should (equal '(("nu" 5000 nil "since 2023-04-13" nil nil)) (fin-report--accounts-derived)))
       (let ((fin-accounts-derived (list (append (car fin-accounts-derived) '(:yield 700)))))
-        (should (equal '(("nu" 5700 nil "since 2023-04-13 + yield 7.00" t)) (fin-report--accounts-derived)))))))
+        (should (equal '(("nu" 5700 nil "since 2023-04-13 + yield 7.00" t nil)) (fin-report--accounts-derived)))))))
 
 (ert-deftest accounts/closed-account-shows-result ()
   (fin-test-with-db
@@ -87,7 +87,7 @@
                          ('b','t','account','2026-01-17','in',45000,'Venda de criptomoedas')")
     (let ((fin-accounts-derived '((:name "crypto" :sheet () :since "2020-01-01" :opening 0 :closed t
                                    :into ("\\`Compra de cripto") :out-of ("\\`Venda de cripto")))))
-      (should (equal '(("crypto" 0 nil "closed, loss 50.00" nil)) (fin-report--accounts-derived))))))
+      (should (equal '(("crypto" 0 nil "closed, loss 50.00" nil nil)) (fin-report--accounts-derived))))))
 
 (ert-deftest accounts/derived-spec-fails-loud ()
   (fin-test-with-db

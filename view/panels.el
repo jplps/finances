@@ -371,49 +371,61 @@ against the bank, taxes, the accounts sheet, the inbox, open items."
                            (fin-dashboard--goals-table (funcall kind-rows "var")))
      (fin-dashboard--health-block))))
 
-(defun fin-dashboard--block-accounts-derived ()
-  "Accounts rebuilt from the bank next to the sheet's, nil when none are set."
-  (let ((rows (fin-report--accounts-derived)))
-    (when rows
-      (fin-dashboard--block
-       "Accounts from data"
-       "Opening balance plus bank flows, or the statement balance; the gap to the sheet is yield or a missing move"
-       (fin-dashboard--table
-        '("account" "data" "sheet" "gap")
-        (mapcar (lambda (r)
-                  (pcase-let ((`(,name ,data ,sheet ,note ,_) r))
-                    (list (format "%s (%s)" name note)
-                          (if data (fin-dashboard--money-cell data) "?")
-                          (if sheet (fin-dashboard--money-cell sheet) "–")
-                          (if (and data sheet) (fin-dashboard--money-signed-cell (- sheet data)) ""))))
-                rows))
-       "register"))))
+(defun fin-dashboard--account-bank (d)
+  "Bank cell of rebuilt account D, (NAME DATA SHEET NOTE KNOWN REFS): red when
+off the sheet by more than 1%, the note in its hover title."
+  (pcase-let ((`(,_ ,data ,sheet ,note ,_ ,_) d))
+    (let ((off (and data sheet (> (abs (- sheet data)) (max 10000 (* 0.01 (abs sheet)))))))
+      (list :raw (format "<span title=\"%s\"%s>%s</span>"
+                         (fin-dashboard--esc note) (if off " class=\"neg\"" "")
+                         (cond ((string-prefix-p "closed" note) "sold")
+                               (data (fin-dashboard--money-str data))
+                               (t "?")))))))
+
+(defun fin-dashboard--account-bank-for (ref derived)
+  "Bank cell of the account in DERIVED rebuilding sheet REF alone, else \"\"."
+  (let ((d (cl-find-if (lambda (d) (equal (nth 5 d) (list ref))) derived)))
+    (if d (fin-dashboard--account-bank d) "")))
+
+(defun fin-dashboard--account-extras (derived)
+  "Rows for rebuilt accounts no single sheet row holds: (LABEL CELLS)."
+  (mapcar (lambda (d)
+            (list (nth 0 d)
+                  (list (if (nth 2 d) (fin-dashboard--money-cell (nth 2 d)) "–")
+                        (fin-dashboard--account-bank d) "")))
+          (cl-remove-if (lambda (d) (= (length (nth 5 d)) 1)) derived)))
 
 (defun fin-dashboard--block-accounts ()
+  "Sheet balances with the bank-rebuilt balance beside each account it covers."
   (let* ((accts (fin-report--accounts))
+         (derived (fin-report--accounts-derived))
          (rows  (mapcar
                  (lambda (r)
                    (let* ((cat  (nth 0 r))
                           (kids (fin-report--account-children cat)))
                      (list cat
                            (list (fin-dashboard--money-cell (nth 1 r))
+                                 (fin-dashboard--account-bank-for cat derived)
                                  (nth 2 r))
                            (when kids
                              (fin-dashboard--table
-                              '("category" "balance" "%")
+                              '("category" "balance" "bank" "%")
                               (mapcar (lambda (k) (list (nth 0 k)
                                                         (fin-dashboard--money-cell (nth 1 k))
+                                                        (fin-dashboard--account-bank-for
+                                                         (format "%s/%s" cat (nth 0 k)) derived)
                                                         (nth 2 k)))
                                       kids))))))
                  accts)))
     (fin-dashboard--block
      "Accounts"
-     "Account balances; expand a row to see sub-accounts"
-     (fin-dashboard--alist '("category" "balance" "%") rows
+     "Sheet balances; bank = rebuilt from the statements plus known yields (hover for its basis), red when off the sheet by more than 1%; expand a row to see sub-accounts"
+     (fin-dashboard--alist '("category" "balance" "bank" "%")
+                           (append rows (fin-dashboard--account-extras derived))
                            (list "total"
                                  (fin-dashboard--money-cell
                                   (apply #'+ (mapcar (lambda (r) (or (nth 1 r) 0)) accts)))
-                                 ""))
+                                 "" ""))
      "register")))
 
 (defun fin-dashboard--block-patrimony ()
@@ -568,7 +580,6 @@ Future months of the current year use the objectives forecast
      "Wealth" "wealth"
      "Savings (accounts), patrimony, and the yearly cashflow"
      (fin-dashboard--block-accounts)
-     (fin-dashboard--block-accounts-derived)
      (fin-dashboard--block-patrimony)
      (fin-dashboard--block "Yearly" "Year → month → category drilldown of in/out/liquid"
                            (fin-dashboard--alist '("year" "in" "out" "liquid" "%") rows)
