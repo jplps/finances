@@ -77,11 +77,13 @@
 
 (ert-deftest health/account-gaps-allow-yield ()
   (cl-letf (((symbol-function 'fin-report--accounts-derived)
-             (lambda () '(("savings" 4700000 5300000 "since 2025-12-31")
-                          ("invest" 650000 800000 "since 2025-12-31")
-                          ("crypto" 45000 0 "since 2025-12-31")
-                          ("checking" 150000 nil "2026-10-06")))))
-    (should (equal '("invest" "crypto")
+             (lambda () '(("savings" 4700000 5300000 "since 2025-12-31" nil)
+                          ("invest" 650000 800000 "since 2025-12-31" nil)
+                          ("crypto" 45000 0 "since 2025-12-31" nil)
+                          ("treasury" 731571 731571 "since 2026-06-05 + yield 761.26" t)
+                          ("etf" 300000 381650 "since 2026-08-06 + yield 14.62" t)
+                          ("checking" 150000 nil "2026-10-06" nil)))))
+    (should (equal '("invest" "crypto" "etf")
                    (mapcar #'car (fin-health-account-gaps "2026-10-11"))))))
 
 (provide 'test-health)

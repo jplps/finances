@@ -34,7 +34,9 @@ LEDGERBAL is the balance) or :since (ISO date of a known balance), :opening
 (cents on that date), :into and :out-of (regexps of personal-account
 descriptions moving money into and out of it).  :closed t marks an account
 emptied for good: its balance is 0 and the note gives the result (money
-taken out less money put in, a gain or a loss).  Yields never reach the
+taken out less money put in, a gain or a loss).  :yield (cents) adds the
+earnings the statements never show, as the bank app or the yearly informe
+gives them.  Yields never reach the
 statements, so a rebuilt balance trails the real one by them."
   :type '(repeat plist) :group 'fin)
 
@@ -74,6 +76,10 @@ statements, so a rebuilt balance trails the real one by them."
            (let ((result (- (fin-report--bank-sum "in" (plist-get spec :out-of) since)
                             (fin-report--bank-sum "out" (plist-get spec :into) since))))
              (cons 0 (format "closed, %s %.2f" (if (< result 0) "loss" "gain") (/ (abs result) 100.0)))))
+          ((plist-get spec :yield)
+           (let ((b (fin-report--derived-balance (cl-list* :yield nil spec))))
+             (cons (+ (car b) (plist-get spec :yield))
+                   (format "%s + yield %.2f" (cdr b) (/ (plist-get spec :yield) 100.0)))))
           (t (cl-assert (and (stringp since) (integerp (plist-get spec :opening))) nil
                         "fin-accounts: %S needs :since and :opening" (plist-get spec :name))
              (cons (+ (plist-get spec :opening)
@@ -85,14 +91,15 @@ statements, so a rebuilt balance trails the real one by them."
                                since)))))))
 
 (defun fin-report--accounts-derived ()
-  "(NAME DERIVED SHEET NOTE) per `fin-accounts-derived'; SHEET nil when the
-sheet has none of its accounts."
+  "(NAME DERIVED SHEET NOTE YIELD-KNOWN) per `fin-accounts-derived'; SHEET nil
+when the sheet has none of its accounts."
   (fin-bankdb-ensure)
   (mapcar (lambda (spec)
             (cl-assert (stringp (plist-get spec :name)) nil "fin-accounts: bad spec %S" spec)
             (let* ((d (fin-report--derived-balance spec))
                    (sheet (delq nil (mapcar #'fin-report--sheet-balance (plist-get spec :sheet)))))
-              (list (plist-get spec :name) (car d) (and sheet (apply #'+ sheet)) (cdr d))))
+              (list (plist-get spec :name) (car d) (and sheet (apply #'+ sheet)) (cdr d)
+                    (and (plist-get spec :yield) t))))
           fin-accounts-derived))
 
 (provide 'accounts)

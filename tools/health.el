@@ -125,16 +125,19 @@ ids of the company account's rows, whose tax payments are not spending."
      365.25))
 
 (defun fin-health-account-gaps (today)
-  "(NAME DATA SHEET) of rebuilt accounts whose sheet balance is below the
-data, or above it by more than the yield allowed since the anchor."
+  "(NAME DATA SHEET) of rebuilt accounts off the sheet: by more than 1% when
+their yield is known, else below the data or above it by more than the
+yield `fin-health-yield-rate' allows since the anchor."
   (cl-remove-if-not
    (lambda (r)
-     (pcase-let ((`(,_ ,data ,sheet ,note) r))
-       (when (and data sheet (string-match "\\`since \\(.+\\)\\'" note))
-         (let ((allowed (* sheet fin-health-yield-rate
-                           (fin-health--years-since (match-string 1 note) today)))
-               (gap (- sheet data)))
-           (or (< gap (- (max 10000 (* 0.01 sheet)))) (> gap (+ allowed 10000)))))))
+     (pcase-let ((`(,_ ,data ,sheet ,note ,known) r))
+       (when (and data sheet)
+         (let ((gap (- sheet data)) (slack (max 10000 (* 0.01 sheet))))
+           (cond (known (> (abs gap) slack))
+                 ((string-match "\\`since \\([0-9-]+\\)" note)
+                  (or (< gap (- slack))
+                      (> gap (+ slack (* sheet fin-health-yield-rate
+                                         (fin-health--years-since (match-string 1 note) today)))))))))))
    (fin-report--accounts-derived)))
 
 (defun fin-health--inbox-root ()

@@ -381,7 +381,7 @@ against the bank, taxes, the accounts sheet, the inbox, open items."
        (fin-dashboard--table
         '("account" "data" "sheet" "gap")
         (mapcar (lambda (r)
-                  (pcase-let ((`(,name ,data ,sheet ,note) r))
+                  (pcase-let ((`(,name ,data ,sheet ,note ,_) r))
                     (list (format "%s (%s)" name note)
                           (if data (fin-dashboard--money-cell data) "?")
                           (if sheet (fin-dashboard--money-cell sheet) "–")

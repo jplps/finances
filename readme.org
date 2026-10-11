@@ -180,7 +180,7 @@ Four synced sheets (a fifth, =debt=, is free-form notes in reais and is not sync
 
 - Children of a bucket (e.g., =nu=, =bb=, =wanu= under =emergency=) sum into the parent.
 - Reserve target = 12 × fix-monthly; runway derived from =SUM(balance WHERE parent='emergency') / fix=.
-- /Accounts from data/ (Wealth) rebuilds balances from the bank to compare with this sheet: =fin-accounts-derived= gives each account an opening balance on a date (e.g. bens e direitos of the last DIRPF) plus the personal-account rows moving money into and out of it, or a statement balance (=:balance "account"=).  With =:opening 0= and an early =:since=, an account is rebuilt over every statement and its note shows the first move.  Yields never reach the statements, so the gap to the sheet is yield or a missing move.
+- /Accounts from data/ (Wealth) rebuilds balances from the bank to compare with this sheet: =fin-accounts-derived= gives each account an opening balance on a date (e.g. bens e direitos of the last DIRPF) plus the personal-account rows moving money into and out of it, or a statement balance (=:balance "account"=).  With =:opening 0= and an early =:since=, an account is rebuilt over every statement and its note shows the first move.  =:yield= adds the earnings the bank app or yearly informe shows; =:closed t= marks an emptied account, shown with its gain or loss.  Yields never reach the statements, so the gap to the sheet is yield or a missing move.
 
 * Liquid
 
