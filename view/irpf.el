@@ -265,8 +265,8 @@ nil when every line is ok."
                            rows)))))
 
 (defun fin-dashboard--ir-revenue (pos)
-  "Revenue group of POS: bank, PGDAS-D and NFS-e over the months PGDAS-D
-declares, and the bank revenue of the months after."
+  "Revenue group of POS: PGDAS-D and NFS-e over the months PGDAS-D declares,
+the bank's when it differs, and the bank revenue of the months after."
   (let ((through (plist-get pos :declared-through)))
     (if (null through)
         (fin-dashboard--ir-group "revenue" (plist-get pos :revenue)
@@ -276,10 +276,12 @@ declares, and the bank revenue of the months after."
             (span (if (string-suffix-p "-12" through) ""
                     (format ", through %s" (fin-dashboard--month-name (string-to-number (substring through 5)))))))
         (fin-dashboard--ir-group (concat "revenue" span) (plist-get pos :declared-revenue)
-                                 (delq nil (list (list "bank" (plist-get pos :revenue-through))
-                                                 (list "PGDAS-D" (plist-get pos :declared-revenue))
+                                 (delq nil (list (list "PGDAS-D" (plist-get pos :declared-revenue))
                                                  (list "NFS-e" (plist-get pos :invoiced-through))
-                                                 (and (> after 0) (list "bank, not declared yet" after)))))))))
+                                                 (unless (eql (plist-get pos :revenue-through)
+                                                              (plist-get pos :declared-revenue))
+                                                   (list "bank" (plist-get pos :revenue-through)))
+                                                 (and (> after 0) (list "not declared yet" after)))))))))
 
 (defun fin-dashboard--ir-detail (pos)
   "One year's revenue, company taxes, money to the CPF, deductions and tax,
@@ -293,7 +295,7 @@ each group folded."
                                     (mapcar (lambda (tx) (list (car tx) (cdr tx))) taxes))
            (fin-dashboard--ir-group "to cpf" (plist-get pos :drawn)
                                     (delq nil
-                                          (list (list "pró-labore, taxable" (plist-get pos :taxable))
+                                          (list (list "pró-labore" (plist-get pos :taxable))
                                                 (list "inss on pró-labore" (plist-get pos :inss))
                                                 (unless (eql (plist-get pos :profit) (plist-get pos :exempt))
                                                   (list "profit" (plist-get pos :profit)))
