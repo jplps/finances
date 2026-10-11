@@ -90,5 +90,14 @@
     (let ((fin-report-transfer-categories '(("out" "d'água"))))
       (should (equal '(1 1050 800 250) (car (fin-report--year-months 2025)))))))
 
+(ert-deftest cashflow/month-saved-nets-withdrawals ()
+  (fin-test-with-db
+    (fin-test-insert-entry "2026-10-05" "out" "investments" 30000 "car")
+    (fin-test-insert-entry "2026-10-06" "out" "retirement" 116000)
+    (fin-test-insert-entry "2026-10-07" "in" "investments" 10000 "house")
+    (fin-test-insert-entry "2026-10-08" "out" "food" 5000)
+    (should (= 136000 (fin-report--month-saved 2026 10)))
+    (should (= 0 (fin-report--month-saved 2026 9)))))
+
 (provide 'test-cashflow)
 ;;; test-cashflow.el ends here

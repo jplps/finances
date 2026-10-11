@@ -344,24 +344,13 @@ against the bank, taxes, the accounts sheet, the inbox, open items."
          (fix-pct (funcall pct "fix"))
          (var-pct (funcall pct "var"))
          (kind-rows (lambda (kind) (cl-remove-if-not (lambda (r) (equal (plist-get r :kind) kind)) goals)))
-         (over (cl-count 'over goals :key (lambda (r) (plist-get r :status))))
-         (spend (cl-count 'spend goals :key (lambda (r) (plist-get r :direction))))
-         (liquid (nth 2 (fin-report--monthly-income year)))
-         (unalloc (- 100.0 fix-pct var-pct))
          (rw (fin-report--runway)))
     (fin-dashboard--panel
      "Cockpit" "cockpit"
-     "This month, balance, savings, plan targets and ledger health"
-     "<div class=\"kpis three\">"
+     "This month, balance, savings, runway, plan targets and the to do list"
+     "<div class=\"kpis\">"
      (fin-dashboard--now-tiles year month)
-     (fin-dashboard--kpi "plan" (concat "R$ " (fin-dashboard--grouped liquid))
-                         (if (< (abs unalloc) 0.05) "monthly liquid, fully allocated"
-                           (format "monthly liquid · %.1f%% (R$ %s) unallocated" unalloc
-                                   (fin-dashboard--grouped (round (* liquid unalloc 0.01))))))
      (fin-dashboard--kpi "runway" (format "%.1f mo" (nth 2 rw)) "emergency reserve / fixed costs")
-     (fin-dashboard--kpi "Over target" (format "%d of %d" over spend)
-                         (format "in %s" (fin-dashboard--month-name month))
-                         (if (zerop over) "good" "bad"))
      "</div>"
      (fin-dashboard--block (format "Fixed <span class=\"dim\">%.1f%% / %d%%</span>" fix-pct fin-budget-fix-target)
                            "Fixed monthly outflows, driven by amount"
@@ -541,7 +530,9 @@ Future months of the current year use the objectives forecast
          (money (lambda (c) (concat "R$ " (fin-dashboard--grouped c)))))
     (concat
      (fin-dashboard--kpi (fin-dashboard--month-name now-m) (funcall money (nth 3 m))
-                         (format "in %s · out %s" (fin-dashboard--grouped (nth 1 m)) (fin-dashboard--grouped (nth 2 m)))
+                         (format "in %s · out %s · to savings %s" (fin-dashboard--grouped (nth 1 m))
+                                 (fin-dashboard--grouped (nth 2 m))
+                                 (fin-dashboard--grouped (fin-report--month-saved now-y now-m)))
                          (if (< (nth 3 m) 0) "bad" "good"))
      (fin-dashboard--kpi "balance" (if (or pf pj) (funcall money bal) "—")
                          (if (or pf pj)

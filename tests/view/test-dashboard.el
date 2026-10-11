@@ -60,15 +60,13 @@
   (should (equal '("139" "200") (fin-dashboard--goal-amounts 13900 20000)))
   (should (equal '("139" "139") (fin-dashboard--goal-amounts 13900 13900))))
 
-(ert-deftest dashboard/over-target-counts-spending-rows-only ()
+(ert-deftest dashboard/cockpit-tiles-month-balance-savings-runway ()
   (fin-test-with-db
-    (cl-letf (((symbol-function 'fin-goals)
-               (lambda (_y _m)
-                 (list (list :category "food" :kind "fix" :depth 0 :direction 'spend
-                             :target 100 :mtd 200 :status 'over)
-                       (list :category "retirement" :kind "var" :depth 0 :direction 'save
-                             :target 100 :mtd 0 :status 'pending)))))
-      (should (string-search "1 of 1" (fin-dashboard--panel-cockpit))))))
+    (let ((html (fin-dashboard--panel-cockpit)))
+      (should (string-search "to savings" html))
+      (should (string-search "runway" html))
+      (should-not (string-search ">plan<" html))
+      (should-not (string-search "Over target" html)))))
 
 (ert-deftest dashboard/patrimony-header-names-monthly-column ()
   (fin-test-with-db

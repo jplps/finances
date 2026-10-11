@@ -42,24 +42,15 @@
   (mapcar (lambda (p) (cons p (fin-ir-duty p)))
           (cl-remove-if-not (lambda (p) (fin-ir-rule (plist-get p :year) :deadline)) positions)))
 
-(defun fin-dashboard--ir-returns (closed)
-  "Table of each closed year's filing duty and return."
-  (fin-dashboard--table
-   '("year" "taxable" "exempt" "due" "return")
-   (mapcar (lambda (c)
-             (let ((p (car c)) (d (cdr c)))
-               (list (format "%d" (plist-get p :year))
-                     (if (plist-get p :taxable) (fin-dashboard--money-cell (plist-get p :taxable)) "?")
-                     (if (plist-get p :exempt) (fin-dashboard--money-cell (plist-get p :exempt)) "?")
-                     (pcase (plist-get d :required) ('t "yes") ('nil "no") (_ "?"))
-                     (list :raw (pcase (plist-get d :status)
-                                  ('on-time (fin-dashboard--dm (plist-get d :filed)))
-                                  ('late (format "<span class=\"neg\">%s late</span>"
-                                                 (fin-dashboard--dm (plist-get d :filed))))
-                                  ('missing "<span class=\"neg\">missing</span>")
-                                  ('not-required "–")
-                                  (_ "?"))))))
-           closed)))
+(defun fin-dashboard--ir-return-cell (duty)
+  "Return column of a year's DUTY plist (nil for the current year)."
+  (list :raw (pcase (plist-get duty :status)
+               ('on-time (fin-dashboard--dm (plist-get duty :filed)))
+               ('late (format "<span class=\"neg\">%s late</span>" (fin-dashboard--dm (plist-get duty :filed))))
+               ('missing "<span class=\"neg\">missing</span>")
+               ('not-required "–")
+               ('nil "–")
+               (_ "?"))))
 
 (defun fin-dashboard--ir-date (iso)
   "ISO date as dd/mm/yyyy."
@@ -264,54 +255,60 @@ nil when every line is ok."
                (mapconcat (lambda (l) (fin-dashboard--health-line nil (cadr l))) open "")
                "</div>")))))
 
-(defun fin-dashboard--ir-detail (pos)
-  "One year's income and deductions."
-  (let ((taxes (plist-get pos :taxes)))
-    (fin-dashboard--table
-     (list "" (number-to-string (plist-get pos :year)))
-     (mapcar (lambda (r) (list (car r) (if (cadr r) (fin-dashboard--money-cell (cadr r)) "?")))
-             (append
-              (list (list "revenue, bank" (plist-get pos :revenue))
-                    (list "revenue, PGDAS-D" (plist-get pos :declared-revenue))
-                    (list "revenue, NFS-e" (plist-get pos :invoiced)))
-              (mapcar (lambda (tx) (list (car tx) (cdr tx))) taxes)
-              (list (list "to cpf" (plist-get pos :drawn))
-                    (list "taxable" (plist-get pos :taxable))
-                    (list "inss on pró-labore" (plist-get pos :inss))
-                    (list "returned to pj" (plist-get pos :returned))
-                    (list "cpf taxes paid by pj" (plist-get pos :partner-taxes))
-                    (list "profit" (plist-get pos :profit))
-                    (list "presumed profit" (plist-get pos :presumed))
-                    (list "exempt" (plist-get pos :exempt))
-                    (list "health" (plist-get pos :health))
-                    (list "health, unclassified" (plist-get pos :health-unknown))
-                    (list "retirement" (plist-get pos :retirement))
-                    (list "complete" (plist-get pos :complete))
-                    (list "simplified" (plist-get pos :simplified))
-                    (list "tax" (plist-get pos :tax))))))))
+(defun fin-dashboard--ir-group (label value rows)
+  "Accordion row LABEL showing VALUE, ROWS ((NAME CENTS) ...) as its body."
+  (list label
+        (list (if value (fin-dashboard--money-cell value) "?"))
+        (and rows (fin-dashboard--table
+                   '("" "amount")
+                   (mapcar (lambda (r) (list (car r) (if (cadr r) (fin-dashboard--money-cell (cadr r)) "?")))
+                           rows)))))
 
-(defun fin-dashboard--ir-years-switch (positions)
-  "CSS-only year switch over each position's detail, the last year checked."
+(defun fin-dashboard--ir-detail (pos)
+  "One year's revenue, company taxes, money to the CPF, deductions and tax,
+each group folded."
+  (let ((taxes (plist-get pos :taxes)))
+    (fin-dashboard--alist
+     '("" "amount")
+     (list (fin-dashboard--ir-group "revenue" (plist-get pos :declared-revenue)
+                                    (list (list "bank" (plist-get pos :revenue))
+                                          (list "PGDAS-D" (plist-get pos :declared-revenue))
+                                          (list "NFS-e" (plist-get pos :invoiced))))
+           (fin-dashboard--ir-group "company taxes" (apply #'+ (mapcar #'cdr taxes))
+                                    (mapcar (lambda (tx) (list (car tx) (cdr tx))) taxes))
+           (fin-dashboard--ir-group "to cpf" (plist-get pos :drawn)
+                                    (list (list "pró-labore, taxable" (plist-get pos :taxable))
+                                          (list "inss on pró-labore" (plist-get pos :inss))
+                                          (list "returned to pj" (plist-get pos :returned))
+                                          (list "cpf taxes paid by pj" (plist-get pos :partner-taxes))
+                                          (list "profit" (plist-get pos :profit))
+                                          (list "presumed profit" (plist-get pos :presumed))
+                                          (list "exempt" (plist-get pos :exempt))))
+           (fin-dashboard--ir-group "deductions" (plist-get pos :complete)
+                                    (list (list "health" (plist-get pos :health))
+                                          (list "health, unclassified" (plist-get pos :health-unknown))
+                                          (list "retirement" (plist-get pos :retirement))
+                                          (list "complete" (plist-get pos :complete))
+                                          (list "simplified" (plist-get pos :simplified))))
+           (fin-dashboard--ir-group "tax" (plist-get pos :tax) nil)))))
+
+(defun fin-dashboard--ir-years-table (positions closed)
+  "Every year, newest first: taxable, exempt, filing duty and return; a
+year expands into its detail.  The current year starts open."
   (let ((last (plist-get (car (last positions)) :year)))
-    (concat
-     "<style>section#ir .iry{display:none;}"
-     ".iry-pick{display:flex;flex-wrap:wrap;gap:12px;margin:0 0 8px;}"
-     ".iry-pick input{position:absolute;opacity:0;}"
-     ".iry-pick label{cursor:pointer;color:var(--muted);}"
-     ".iry-pick input:checked+label{color:var(--accent-2);}"
-     (mapconcat (lambda (p) (format "section#ir:has(#iry-%d:checked) .iry-%d{display:block;}"
-                                    (plist-get p :year) (plist-get p :year)))
-                positions "")
-     "</style><div class=\"iry-pick\">"
-     (mapconcat (lambda (p)
-                  (let ((y (plist-get p :year)))
-                    (format "<input type=\"radio\" name=\"iry\" id=\"iry-%d\"%s><label for=\"iry-%d\">%d</label>"
-                            y (if (= y last) " checked" "") y y)))
-                positions "")
-     "</div>"
-     (mapconcat (lambda (p) (format "<div class=\"iry iry-%d\">%s</div>"
-                                    (plist-get p :year) (fin-dashboard--ir-detail p)))
-                positions ""))))
+    (fin-dashboard--alist
+     '("year" "taxable" "exempt" "due" "return")
+     (mapcar (lambda (p)
+               (let ((d (cdr (cl-find p closed :key #'car :test #'eq))))
+                 (list (number-to-string (plist-get p :year))
+                       (list (if (plist-get p :taxable) (fin-dashboard--money-cell (plist-get p :taxable)) "?")
+                             (if (plist-get p :exempt) (fin-dashboard--money-cell (plist-get p :exempt)) "?")
+                             (if d (pcase (plist-get d :required) ('t "yes") ('nil "no") (_ "?")) "–")
+                             (fin-dashboard--ir-return-cell d))
+                       (fin-dashboard--ir-detail p)
+                       nil
+                       (= (plist-get p :year) last))))
+             (reverse positions)))))
 
 (defun fin-dashboard--ir-risk-lines (positions closed ctx)
   "Risk lines, (OK HTML) each."
@@ -343,14 +340,8 @@ nil when every line is ok."
          (current (car (last positions))))
     (fin-dashboard--panel
      "IR" "ir"
-     "Imposto de renda: risks with Receita, returns per year, the 2026 rules, income and deductions"
+     "Imposto de renda per year: taxable and exempt income, filing duty and return, revenue, company taxes, money to the CPF, deductions and tax; risks are in the cockpit's to do"
      (when current (fin-dashboard--ir-tiles current))
-     (fin-dashboard--ir-lines
-      "Risks" "What Receita can charge or question: open debts, returns due, DEFIS, DIRPF and PGDAS-D against the bank and the NFS-e"
-      (fin-dashboard--ir-risk-lines positions closed ctx))
-     (when closed
-       (fin-dashboard--block "Returns" "Filing duty per year (each exercício's IN RFB) and the return delivered"
-                             (fin-dashboard--ir-returns closed)))
      (when (and current (>= (plist-get current :year) 2026))
        (fin-dashboard--ir-lines
         "Watch" "This year's Lei 15.270/2025 limits, income from individuals, inputs missing"
@@ -358,8 +349,8 @@ nil when every line is ok."
                           (list (fin-dashboard--ir-individual-line (list current)))
                           (fin-dashboard--ir-input-lines)))))
      (when positions
-       (fin-dashboard--block "Year" "Company revenue and taxes, deposits to the CPF, deductions and tax"
-                             (fin-dashboard--ir-years-switch positions))))))
+       (fin-dashboard--block "Years" "Filing duty per year (each exercício's IN RFB), the return delivered; expand a year for its detail"
+                             (fin-dashboard--ir-years-table positions closed))))))
 
 (provide 'irpf)
 ;;; irpf.el ends here
