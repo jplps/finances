@@ -61,65 +61,99 @@
                                   (_ "?"))))))
            closed)))
 
+(defun fin-dashboard--ir-date (iso)
+  "ISO date as dd/mm/yyyy."
+  (format "%s/%s" (fin-dashboard--dm iso) (substring iso 0 4)))
+
+(defun fin-dashboard--ir-span (years)
+  "YEARS (ascending) as 2021–2025 when consecutive, else 2021, 2023."
+  (if (equal years (number-sequence (car years) (car (last years))))
+      (if (cdr years) (format "%d–%d" (car years) (car (last years))) (format "%d" (car years)))
+    (mapconcat #'number-to-string years ", ")))
+
+(defun fin-dashboard--ir-detail-span (text detail)
+  "TEXT (HTML) with DETAIL (plain) as its hover title."
+  (format "<span title=\"%s\">%s</span>" (fin-dashboard--esc detail) text))
+
+(defun fin-dashboard--ir-debts-line ()
+  "One line for every open debt Receita notified: (OK HTML), nil when none."
+  (when fin-ir-open-debts
+    (list nil (fin-dashboard--ir-detail-span
+               (format "pay %s overdue: %s"
+                       (fin-dashboard--ir-money (apply #'+ (mapcar #'caddr fin-ir-open-debts)))
+                       (mapconcat (lambda (d) (format "%s %s" (fin-dashboard--esc (nth 3 d))
+                                                      (fin-dashboard--ir-money (nth 2 d))))
+                                  fin-ir-open-debts " · "))
+               (mapconcat (lambda (d) (format "code %s due %s" (nth 1 d) (fin-dashboard--ir-date (nth 0 d)))) fin-ir-open-debts "; ")))))
+
 (defun fin-dashboard--ir-return-risks (closed)
-  "Risk lines of the closed years' returns: (OK HTML) each."
+  "One line per closed year whose return is missing, late or unknown."
   (delq nil
         (mapcar (lambda (c)
                   (let* ((p (car c)) (d (cdr c)) (y (plist-get p :year)))
                     (pcase (plist-get d :status)
                       ('missing
-                       (list nil (format "file DIRPF %d (ano %d), due %s/%s: %s; fine at least %s"
-                                         (1+ y) y (fin-dashboard--dm (plist-get d :deadline))
-                                         (substring (plist-get d :deadline) 0 4)
-                                         (if (> (plist-get p :taxable) (fin-ir-rule y :filing-taxable))
-                                             "taxable income over the limit"
-                                           (format "exempt income %s over %s"
-                                                   (fin-dashboard--ir-money (plist-get p :profit))
-                                                   (fin-dashboard--ir-money (fin-ir-rule y :filing-exempt))))
-                                         (fin-dashboard--ir-money fin-ir-late-fine-min))))
-                      ('late (list t (format "DIRPF %d filed late on %s/%s: late fine charged"
-                                             (1+ y) (fin-dashboard--dm (plist-get d :filed))
-                                             (substring (plist-get d :filed) 0 4))))
-                      ('unknown (list nil (format "ano %d: set <b>fin-ir-pro-labore</b> to tell whether a return was due" y))))))
+                       (list nil (fin-dashboard--ir-detail-span
+                                  (format "file DIRPF %d (ano %d), overdue since %s · fine ≥ %s"
+                                          (1+ y) y (fin-dashboard--ir-date (plist-get d :deadline))
+                                          (fin-dashboard--ir-money fin-ir-late-fine-min))
+                                  (format "taxable %s (limit %s), exempt %s (limit %s)"
+                                          (fin-dashboard--ir-money (plist-get p :taxable))
+                                          (fin-dashboard--ir-money (fin-ir-rule y :filing-taxable))
+                                          (fin-dashboard--ir-money (plist-get p :profit))
+                                          (fin-dashboard--ir-money (fin-ir-rule y :filing-exempt))))))
+                      ('late (list t (format "DIRPF %d filed late on %s" (1+ y) (fin-dashboard--ir-date (plist-get d :filed)))))
+                      ('unknown (list nil (format "ano %d: set <b>fin-ir-pro-labore</b>" y))))))
                 closed)))
 
-(defun fin-dashboard--ir-defis-line (pos)
-  "DEFIS exempt profit against the profit that reached the CPF: (OK HTML)."
-  (let ((defis (plist-get pos :defis-exempt))
-        (profit (plist-get pos :profit)))
-    (when (and defis profit (> (- profit defis) 100000))
-      (list nil (format "ano %d DEFIS reports %s of exempt profit, %s reached the CPF: rectify the DEFIS"
-                        (plist-get pos :year) (fin-dashboard--ir-money defis) (fin-dashboard--ir-money profit))))))
+(defun fin-dashboard--ir-defis-line (positions)
+  "One line for the years whose DEFIS exempt profit is below what reached the CPF."
+  (let ((off (cl-remove-if-not (lambda (p) (and (plist-get p :defis-exempt) (plist-get p :profit)
+                                                (> (- (plist-get p :profit) (plist-get p :defis-exempt)) 100000)))
+                               positions)))
+    (when off
+      (list nil (fin-dashboard--ir-detail-span
+                 (format "rectify DEFIS %s: %s exempt profit declared, %s reached the CPF"
+                         (fin-dashboard--ir-span (mapcar (lambda (p) (plist-get p :year)) off))
+                         (fin-dashboard--ir-money (apply #'+ (mapcar (lambda (p) (plist-get p :defis-exempt)) off)))
+                         (fin-dashboard--ir-money (apply #'+ (mapcar (lambda (p) (plist-get p :profit)) off))))
+                 (mapconcat (lambda (p) (format "%d: %s" (plist-get p :year) (fin-dashboard--ir-money (plist-get p :profit))))
+                            off ", "))))))
 
-(defun fin-dashboard--ir-revenue-line (pos)
-  "PGDAS-D revenue against client payments in the bank: (OK HTML)."
-  (let ((declared (plist-get pos :declared-revenue))
-        (bank (plist-get pos :revenue)))
-    (when (and declared (plist-get pos :bank-covered)
-               (> (abs (- bank declared)) (* 0.05 declared)))
-      (list nil (format "ano %d PGDAS-D revenue %s, client payments in the bank %s"
-                        (plist-get pos :year) (fin-dashboard--ir-money declared) (fin-dashboard--ir-money bank))))))
+(defun fin-dashboard--ir-profit-line (positions)
+  "One line for the years whose profit exceeds the presumed one."
+  (let ((over (cl-remove-if-not (lambda (p) (and (plist-get p :profit)
+                                                 (> (plist-get p :profit) (plist-get p :presumed))))
+                                positions)))
+    (when over
+      (list (eq fin-ir-full-books 'yes)
+            (fin-dashboard--ir-detail-span
+             (format "profit over the presumed %s: %s"
+                     (fin-dashboard--ir-span (mapcar (lambda (p) (plist-get p :year)) over))
+                     (if (eq fin-ir-full-books 'yes) "keep full books" "exempt only with full books"))
+             (mapconcat (lambda (p) (format "%d: %s over %s" (plist-get p :year)
+                                            (fin-dashboard--ir-money (plist-get p :profit))
+                                            (fin-dashboard--ir-money (plist-get p :presumed))))
+                        over ", "))))))
 
-(defun fin-dashboard--ir-debt-lines ()
-  "Open debts Receita notified: (OK HTML) each."
-  (mapcar (lambda (d)
-            (pcase-let ((`(,due ,code ,cents ,text) d))
-              (list nil (format "pay %s (%s) %s, due %s/%s: Cadin, then dívida ativa"
-                                (fin-dashboard--esc text) code (fin-dashboard--ir-money cents)
-                                (fin-dashboard--dm due) (substring due 0 4)))))
-          fin-ir-open-debts))
+(defun fin-dashboard--ir-revenue-gap (p)
+  "\"YEAR R$ X invoiced not declared\" (or the reverse) for position P, or nil.
+Invoices are the reference; without them, client payments in the bank."
+  (let* ((declared (plist-get p :declared-revenue))
+         (invoiced (plist-get p :invoiced))
+         (bank (and (plist-get p :bank-covered) (plist-get p :revenue)))
+         (ref (or invoiced bank))
+         (what (if invoiced "invoiced" "received")))
+    (when (and declared ref (if invoiced (> (abs (- ref declared)) 100) (> (abs (- ref declared)) (* 0.05 declared))))
+      (if (> ref declared)
+          (format "%d %s %s not declared" (plist-get p :year) (fin-dashboard--ir-money (- ref declared)) what)
+        (format "%d %s declared not %s" (plist-get p :year) (fin-dashboard--ir-money (- declared ref)) what)))))
 
-(defun fin-dashboard--ir-profit-line (pos)
-  "Distributed profit against the presumed one: (OK HTML)."
-  (let ((profit (plist-get pos :profit))
-        (presumed (plist-get pos :presumed)))
-    (cond ((null profit) nil)
-          ((<= profit presumed) nil)
-          (t (list (eq fin-ir-full-books 'yes)
-                   (format "ano %d profit %s over the presumed %s: exempt only with full books%s"
-                           (plist-get pos :year) (fin-dashboard--ir-money profit)
-                           (fin-dashboard--ir-money presumed)
-                           (if (eq fin-ir-full-books 'yes) ", kept: keep the balance sheet" "")))))))
+(defun fin-dashboard--ir-revenue-line (positions)
+  "One line for the years whose PGDAS-D revenue is off the invoices."
+  (let ((gaps (delq nil (mapcar #'fin-dashboard--ir-revenue-gap positions))))
+    (when gaps
+      (list nil (format "rectify PGDAS-D: %s" (mapconcat #'identity gaps " · "))))))
 
 (defun fin-dashboard--ir-watch-lines (pos)
   "Lei 15.270 lines for a year from 2026: (OK HTML) each."
@@ -181,7 +215,8 @@
      (mapcar (lambda (r) (list (car r) (if (cadr r) (fin-dashboard--money-cell (cadr r)) "?")))
              (append
               (list (list "revenue, bank" (plist-get pos :revenue))
-                    (list "revenue, PGDAS-D" (plist-get pos :declared-revenue)))
+                    (list "revenue, PGDAS-D" (plist-get pos :declared-revenue))
+                    (list "revenue, NFS-e" (plist-get pos :invoiced)))
               (mapcar (lambda (tx) (list (car tx) (cdr tx))) taxes)
               (list (list "to cpf" (plist-get pos :drawn))
                     (list "taxable" (plist-get pos :taxable))
@@ -228,11 +263,11 @@
      (when current (fin-dashboard--ir-tiles current))
      (fin-dashboard--ir-lines
       "Risks" "What Receita can charge or question: open debts, returns due, DEFIS and PGDAS-D against the bank"
-      (append (fin-dashboard--ir-debt-lines)
-              (fin-dashboard--ir-return-risks closed)
-              (delq nil (mapcar #'fin-dashboard--ir-defis-line positions))
-              (delq nil (mapcar #'fin-dashboard--ir-profit-line positions))
-              (delq nil (mapcar #'fin-dashboard--ir-revenue-line positions))))
+      (delq nil (append (list (fin-dashboard--ir-debts-line))
+                        (fin-dashboard--ir-return-risks closed)
+                        (list (fin-dashboard--ir-defis-line positions)
+                              (fin-dashboard--ir-revenue-line positions)
+                              (fin-dashboard--ir-profit-line positions)))))
      (when closed
        (fin-dashboard--block "Returns" "Filing duty per year (each exercício's IN RFB) and the return delivered"
                              (fin-dashboard--ir-returns closed)))

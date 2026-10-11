@@ -38,6 +38,11 @@ the company deposited in the personal account."
 (YEAR REVENUE-CENTS DAS-CENTS)."
   :type '(repeat (list integer integer integer)) :group 'fin)
 
+(defcustom fin-ir-invoiced nil
+  "Revenue the company invoiced (NFS-e not cancelled) per calendar year, by
+competência: list of (YEAR . CENTS)."
+  :type '(alist :key-type integer :value-type integer) :group 'fin)
+
 (defcustom fin-ir-defis-exempt nil
   "Exempt profit paid to the partner per DEFIS, by calendar year: list of
 (YEAR . CENTS)."
@@ -325,6 +330,7 @@ the pró-labore net of its INSS."
          (retirement (fin-ir-retirement year)))
     (append
      (list :year year :revenue (plist-get company :revenue) :declared-revenue (car declared)
+           :invoiced (cdr (assq year fin-ir-invoiced))
            :bank-covered (fin-ir--pj-covered-p year)
            :taxes (plist-get company :taxes)
            :drawn drawn :months (length wd) :peak-month (if wd (apply #'max (mapcar #'cdr wd)) 0)
