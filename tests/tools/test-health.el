@@ -27,6 +27,24 @@
         (should (equal (list ym 10900 12000) m)))
       (should (= 3 (length (fin-health-months 3)))))))
 
+(ert-deftest health/cash-check-matches-ledger-and-bank ()
+  (fin-test-with-db
+    (let ((fin-accounts-derived '((:name "nu" :since "2020-01-01" :opening 0
+                                   :into ("\\`Aplicação RDB") :out-of ("\\`Resgate RDB"))))
+          (fin-report-transfer-categories '(("out" "investments"))))
+      (fin-bankdb-insert
+       (list (list "a" "nubank-ofx" "account" "2026-10-01" "in" 500000 "Pix recebido")
+             (list "b" "nubank-ofx" "account" "2026-10-02" "out" 300000 "Aplicação RDB")
+             (list "c" "nubank-ofx" "card" "2026-10-03" "out" 80000 "Loja")
+             (list "d" "nubank-ofx" "account" "2026-10-04" "out" 50000 "Pagamento de fatura") ; ignored
+             (list "e" "nubank-ofx" "card" "2026-10-04" "in" 50000 "Pagamento recebido")))    ; ignored
+      (fin-test-insert-entry "2026-10-01" "in" "salary" 500000)
+      (fin-test-insert-entry "2026-10-03" "out" "food" 80000)
+      (fin-test-insert-entry "2026-10-02" "out" "investments" 100000 "car")   ; allocation, not counted
+      (should (equal '(120000 120000) (fin-health-cash 2026 10)))
+      (fin-test-insert-entry "2026-10-05" "out" "food" 20000)
+      (should (equal '(100000 120000) (fin-health-cash 2026 10))))))
+
 (ert-deftest health/inbox-wants-last-month-covered ()
   (fin-test-with-db
     (let ((need (fin-health--last-month-end)))

@@ -287,6 +287,17 @@ fold them, and each row names its ancestors so folding one hides it."
                                                (fin-dashboard--money-cell (nth 2 m))))
                              gaps)))))))
 
+(defun fin-dashboard--health-cash ()
+  (let ((gaps (fin-health-cash-gaps)))
+    (if (null gaps)
+        (list t (fin-dashboard--health-line t "this month and the last: cash in line with the bank"))
+      (list nil (fin-dashboard--health-line
+                 nil (format "book the missing flows: %s"
+                             (mapconcat (lambda (g) (format "%s ledger left %s, bank cash %s" (nth 0 g)
+                                                            (fin-dashboard--grouped (nth 1 g))
+                                                            (fin-dashboard--grouped (nth 2 g))))
+                                        gaps " · ")))))))
+
 (declare-function fin-dashboard--ir-todo "irpf" ())
 
 (defun fin-dashboard--health-accounts ()
@@ -324,7 +335,7 @@ fold them, and each row names its ancestors so folding one hides it."
 against the bank, taxes, the accounts sheet, the inbox, open items."
   (let* ((parts (delq nil (append (list (fin-dashboard--health-inbox) (fin-dashboard--health-fix)
                                         (fin-dashboard--health-flags) (fin-dashboard--health-gaps)
-                                        (fin-dashboard--health-accounts))
+                                        (fin-dashboard--health-cash) (fin-dashboard--health-accounts))
                                   (fin-dashboard--ir-todo)
                                   (fin-dashboard--health-docs)
                                   (fin-dashboard--health-todo))))
@@ -527,13 +538,17 @@ Future months of the current year use the objectives forecast
          (bal (+ (or (cdr pf) 0) (or (cdr pj) 0)))
          (asof (car (sort (delq nil (list (car pf) (car pj))) #'string>)))
          (saved (apply #'+ (mapcar (lambda (r) (or (nth 1 r) 0)) (fin-report--accounts))))
+         (cash (fin-health-cash now-y now-m))
+         (left (car cash))
          (money (lambda (c) (concat "R$ " (fin-dashboard--grouped c)))))
     (concat
-     (fin-dashboard--kpi (fin-dashboard--month-name now-m) (funcall money (nth 3 m))
-                         (format "in %s · out %s · saved %s" (fin-dashboard--grouped (nth 1 m))
-                                 (fin-dashboard--grouped (nth 2 m))
-                                 (fin-dashboard--grouped (fin-report--month-saved now-y now-m)))
-                         (if (< (nth 3 m) 0) "bad" "good"))
+     (fin-dashboard--kpi (fin-dashboard--month-name now-m) (funcall money left)
+                         (format "in %s · out %s · saved %s · <span title=\"bank cash change %s\">%s</span>"
+                                 (fin-dashboard--grouped (nth 1 m)) (fin-dashboard--grouped (nth 2 m))
+                                 (fin-dashboard--grouped (fin-report--month-bank-saved now-y now-m))
+                                 (fin-dashboard--grouped (cadr cash))
+                                 (fin-dashboard--health-mark (<= (abs (- left (cadr cash))) fin-health-cash-slack)))
+                         (if (< left 0) "bad" "good"))
      (fin-dashboard--kpi "balance" (if (or pf pj) (funcall money bal) "—")
                          (if (or pf pj)
                              (format "account %s · pj %s · %s" (fin-dashboard--grouped (or (cdr pf) 0))

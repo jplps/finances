@@ -86,14 +86,6 @@ NULL item and surface under their category in the drilldown."
      ORDER BY date ASC, id ASC"
    (list year month)))
 
-(defun fin-report--month-saved (year month)
-  "Cents moved into savings in YEAR-MONTH, net of withdrawals (Σ save in flow)."
-  (or (caar (fin-report--flow-query
-             "SELECT COALESCE(SUM(amount), 0) FROM flow
-               WHERE type = 'save' AND strftime('%Y-%m', date) = printf('%04d-%02d', ?, ?)"
-             (list year month)))
-      0))
-
 (defun fin-report--annual-sums ()
   "Per-year (year, in, out, liquid, savings %), transfers excluded."
   (fin-report--flow-query

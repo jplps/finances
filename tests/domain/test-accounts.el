@@ -94,5 +94,24 @@
     (let ((fin-accounts-derived '((:name "x" :sheet ("y")))))
       (should-error (fin-report--accounts-derived)))))
 
+(ert-deftest accounts/month-bank-saved-nets-withdrawals ()
+  (fin-test-with-db
+    (fin-bankdb-ensure)
+    (fin-db-exec "INSERT INTO bank_txn (id, source, account, date, type, amount, description)
+                  VALUES ('a','t','account','2026-10-02','out',100000,'Aplicação RDB'),
+                         ('b','t','account','2026-10-03','in',30000,'Resgate RDB'),
+                         ('c','t','account','2026-10-04','out',20000,'Compra de ETF'),
+                         ('d','t','account','2026-10-05','in',1000,'Compra de ETF'),
+                         ('e','t','account','2026-10-06','out',5000,'Compra no débito - Loja'),
+                         ('f','t','pj','2026-10-07','out',7000,'Aplicação RDB'),
+                         ('g','t','account','2026-09-30','out',9000,'Aplicação RDB')")
+    (let ((fin-accounts-derived
+           '((:name "nu" :since "2020-01-01" :opening 0 :into ("\\`Aplicação RDB") :out-of ("\\`Resgate RDB"))
+             (:name "etf" :since "2020-01-01" :opening 0 :into ("\\`Compra de ETF") :out-of ("\\`Compra de ETF"))
+             (:name "checking" :balance "account"))))
+      (should (= 89000 (fin-report--month-bank-saved 2026 10)))
+      (should (= 9000 (fin-report--month-bank-saved 2026 9)))
+      (should (= 0 (fin-report--month-bank-saved 2026 8))))))
+
 (provide 'test-accounts)
 ;;; test-accounts.el ends here

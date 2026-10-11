@@ -14,6 +14,9 @@
 ;;   bank rows normalized (refunds, fees, Pix no Crédito), ignored rows,
 ;;   savings moves and the PJ account's tax payments left out; ledger
 ;;   savings, tax and company rows left out.
+;; - Cash: this month and the last, ledger income less spending less what
+;;   the bank moved into savings against the cash all bank accounts gained,
+;;   card bill payments left out; flagged past `fin-health-cash-slack'.
 ;; - Accounts: an account rebuilt from the bank (`fin-accounts-derived') off
 ;;   the sheet by more than the yield it could have earned since its anchor.
 ;; - Documents: each `fin-health-expected-docs' entry no inbox file matches;
@@ -27,6 +30,7 @@
 (require 'bankfix)
 (require 'pj)
 (require 'accounts)
+(require 'cashflow)
 
 (defconst fin-health-accounts '("account" "card" "pj" "pj-card")
   "Account kinds whose statements the inbox check follows.")
@@ -38,6 +42,10 @@
 (defcustom fin-health-yield-rate 0.15
   "Yearly yield a rebuilt account may trail the sheet by before it is flagged."
   :type 'number :group 'fin)
+
+(defcustom fin-health-cash-slack 10000
+  "Cents a month's cash check may be off before it is flagged."
+  :type 'integer :group 'fin)
 
 (defcustom fin-health-expected-docs nil
   "Documents the inbox should hold: list of (LABEL . REGEXP), REGEXP matched
@@ -117,6 +125,40 @@ ids of the company account's rows, whose tax payments are not spending."
   (cl-remove-if-not (lambda (m) (pcase-let ((`(,_ ,bank ,led) m))
                                   (and (> bank 0) (> (abs (- led bank)) (* fin-health-gap-share bank)))))
                     (fin-health-months n)))
+
+(defconst fin-health--bill-regexp "\\`Pagamento d[ae] fatura\\|\\`Pagamento recebido\\'"
+  "A card bill payment: paid on the account, received on the card.")
+
+(defun fin-health--bank-cash (year month)
+  "Signed cents all bank accounts gained in YEAR-MONTH, card bill payments
+left out: they only move money between the account and the card."
+  (let ((total 0))
+    (dolist (r (fin-db-query "SELECT type, amount, description FROM bank_txn
+                               WHERE strftime('%Y-%m', date) = printf('%04d-%02d', ?, ?)"
+                             (list year month))
+               total)
+      (pcase-let ((`(,type ,amount ,desc) r))
+        (unless (string-match-p fin-health--bill-regexp desc)
+          (cl-incf total (if (equal type "in") amount (- amount))))))))
+
+(defun fin-health-cash (year month)
+  "(LEFT CASH) of YEAR-MONTH: ledger income less spending less what the bank
+moved into savings, and the cash the bank accounts gained.  They match when
+the ledger holds the month's flows."
+  (pcase-let ((`(,_ ,in ,out ,_) (nth (1- month) (fin-report--year-months year))))
+    (list (- (or in 0) (or out 0) (fin-report--month-bank-saved year month))
+          (fin-health--bank-cash year month))))
+
+(defun fin-health-cash-gaps ()
+  "(YM LEFT CASH) of this month and the last whose cash check is off by more
+than `fin-health-cash-slack'."
+  (delq nil (mapcar (lambda (back)
+                      (let* ((ym (substring (fin-health--month-start back) 0 7))
+                             (c (fin-health-cash (string-to-number (substring ym 0 4))
+                                                 (string-to-number (substring ym 5 7)))))
+                        (when (> (abs (- (car c) (cadr c))) fin-health-cash-slack)
+                          (cons ym c))))
+                    '(0 1))))
 
 (defun fin-health--years-since (iso today)
   "Years from ISO date to TODAY (ISO), as a float."

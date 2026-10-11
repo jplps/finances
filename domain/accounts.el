@@ -90,6 +90,22 @@ statements, so a rebuilt balance trails the real one by them."
                                     (fin-report--first-flow (plist-get spec :into) since))
                                since)))))))
 
+(defun fin-report--month-bank-saved (year month)
+  "Cents the personal account moved into the accounts of `fin-accounts-derived'
+in YEAR-MONTH, net of what it took out of them."
+  (fin-bankdb-ensure)
+  (let ((total 0))
+    (dolist (r (fin-db-query "SELECT type, amount, description FROM bank_txn
+                               WHERE account = 'account'
+                                 AND strftime('%Y-%m', date) = printf('%04d-%02d', ?, ?)"
+                             (list year month))
+               total)
+      (pcase-let* ((`(,type ,amount ,desc) r)
+                   (key (if (equal type "out") :into :out-of)))
+        (when (cl-some (lambda (spec) (cl-some (lambda (re) (string-match-p re desc)) (plist-get spec key)))
+                       fin-accounts-derived)
+          (cl-incf total (if (equal type "out") amount (- amount))))))))
+
 (defun fin-report--accounts-derived ()
   "(NAME DERIVED SHEET NOTE YIELD-KNOWN REFS) per `fin-accounts-derived'; SHEET
 nil when the sheet has none of its accounts; REFS its :sheet references."
