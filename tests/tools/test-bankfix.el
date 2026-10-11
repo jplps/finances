@@ -102,5 +102,17 @@
   (should-not (fin-bank-fix--lump-card-p '("nu:pdf:a" "2022-07-10") "2022-07-01"))
   (should-not (fin-bank-fix--lump-card-p '("nu:x:a" "2021-01-10") "2022-07-01")))
 
+(ert-deftest bankfix/installment-continues-its-series ()
+  (fin-test-with-db
+    (fin-test-insert-entry "2026-09-06" "out" "car" 5090 "bateria" 6 10)
+    (fin-test-insert-entry "2026-09-06" "out" "food" 5090 "other thing")       ; no installment
+    (let ((acts (fin-bank-fix--continue-series
+                 '((:add ("2026-10-06" "out" "free" "propig" 5090 7 10) "Propig *Center Car Com - Parcela 7/10")
+                   (:add ("2026-10-06" "out" "free" "otica" 2990 5 10) "Otica - Parcela 5/10")
+                   (:add ("2026-10-06" "out" "free" "ifood" 5952 nil nil) "iFood")))))
+      (should (equal '("2026-10-06" "out" "car" "bateria" 5090 7 10) (cadr (nth 0 acts))))
+      (should (equal "free" (nth 2 (cadr (nth 1 acts)))))       ; no booked 4/10
+      (should (equal "ifood" (nth 3 (cadr (nth 2 acts))))))))
+
 (provide 'test-bankfix)
 ;;; test-bankfix.el ends here

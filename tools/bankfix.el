@@ -221,6 +221,31 @@ credits are reported."
               (t (push (list :edit l (cdr r) "card rows itemize the remainder") out)))))
     (nreverse out)))
 
+(defun fin-bank-fix--series (date amount k n)
+  "(CATEGORY . ITEM) of the ledger's installment K-1 of N before an
+installment of AMOUNT cents on ISO DATE: amount within 1%, 20 to 45 days
+earlier.  Nil when K is 1 or none is booked."
+  (when (and k n (> k 1))
+    (car (fin-db-query
+          "SELECT category, item FROM entry
+            WHERE type = 'out' AND installments = ? AND installment = ?
+              AND abs(amount - ?) <= max(1, ? / 100)
+              AND julianday(?) - julianday(date) BETWEEN 20 AND 45
+            ORDER BY abs(amount - ?) LIMIT 1"
+          (list n (1- k) amount amount date amount)))))
+
+(defun fin-bank-fix--continue-series (actions)
+  "ACTIONS with each installment add booked like its previous installment."
+  (mapcar (lambda (a)
+            (pcase a
+              (`(:add (,date ,type ,_cat ,_item ,amount ,k ,n) ,src)
+               (let ((s (fin-bank-fix--series date amount k n)))
+                 (if (and s (equal type "out"))
+                     (list :add (list date type (car s) (cadr s) amount k n) src)
+                   a)))
+              (_ a)))
+          actions))
+
 (defun fin-bank-fix--key (l)
   "ODS row key of ledger row L."
   (cl-assert (integerp (car l)) nil "fin-bank: not a ledger row: %S" l)
@@ -309,6 +334,7 @@ With prefix arg DRY-RUN, only report.  Run `fin' afterwards."
                           (fin-bank-fix--carve (cl-remove-if-not lump-p (plist-get r :bank-only))
                                                (plist-get r :history) fin-bank-fix-itemized-from)
                           (plist-get r :pj)))
+         (actions (fin-bank-fix--continue-series actions))
          (changes (fin-bank-fix--changes actions))
          (backup (when (and changes (not dry-run))
                    (fin-odsw-save fin-ods-path (fin-odsw-apply (fin-odsw-read fin-ods-path) changes)))))
