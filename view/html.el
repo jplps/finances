@@ -53,7 +53,7 @@ grid-area mapping)."
 
 (defun fin-dashboard--alist (header rows &optional foot)
   "Accordion <table>.  HEADER = column labels.
-ROWS = list of (LABEL CELLS BODY &optional CLASS OPEN).
+ROWS = list of (LABEL CELLS BODY &optional CLASS); <details> start closed.
 BODY non-nil wraps LABEL in <details>; a <tr.body> follows in a colspan'd <td>.
 FOOT, when non-nil, is a (LABEL . CELLS) totals row in <tfoot>."
   (cl-assert (or (null foot) (= (length foot) (length header))))
@@ -70,13 +70,11 @@ FOOT, when non-nil, is a (LABEL . CELLS) totals row in <tfoot>."
                (cells (nth 1 tup))
                (body  (nth 2 tup))
                (cls   (nth 3 tup))
-               (open  (nth 4 tup))
                (rcls  (concat "row"
                               (when (cl-evenp i) " even")
                               (when cls (concat " " cls))))
                (first (if body
-                          (format "<td><details%s><summary>%s</summary></details></td>"
-                                  (if open " open" "")
+                          (format "<td><details><summary>%s</summary></details></td>"
                                   (fin-dashboard--esc label))
                         (format "<td>%s</td>" (fin-dashboard--esc label)))))
           (concat

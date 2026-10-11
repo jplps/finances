@@ -494,7 +494,7 @@ Future months of the current year use the objectives forecast
            (list m (nth 1 r) (nth 2 r) (nth 3 r) nil))))
      (fin-report--year-months year))))
 
-(defun fin-dashboard--monthly-block (year eff now-y now-m)
+(defun fin-dashboard--monthly-block (year eff)
   "Accordion <table> of YEAR's effective months EFF (see
 `fin-dashboard--year-effective-months')."
   (let ((rows (mapcar
@@ -509,8 +509,7 @@ Future months of the current year use the objectives forecast
                                (if future? "" (fin-dashboard--money-signed-cell
                                                (fin-report--bank-saved (format "%04d-%02d" year m)))))
                          (when items (fin-dashboard--month-body items))
-                         (when future? "future")
-                         (and (= year now-y) (numberp m) (= m now-m)))))
+                         (when future? "future"))))
                eff)))
     (fin-dashboard--alist '("month" "in" "out" "liquid" "saved") rows)))
 
@@ -576,9 +575,7 @@ Future months of the current year use the objectives forecast
                                  (fin-dashboard--liquid-cell liq ahead)
                                  (fin-dashboard--money-signed-cell (fin-report--bank-saved (number-to-string y)))
                                  sav)
-                           (fin-dashboard--monthly-block y eff now-y now-m)
-                           nil
-                           nil)))   ; years start folded
+                           (fin-dashboard--monthly-block y eff))))
                  (reverse (fin-report--annual-sums)))))   ; newest year first
     (fin-dashboard--panel
      "Wealth" "wealth"

@@ -310,9 +310,8 @@ each group folded."
 
 (defun fin-dashboard--ir-years-table (positions closed)
   "Every year, newest first: taxable, exempt, filing duty and return; a
-year expands into its detail.  The current year starts open."
-  (let ((last (plist-get (car (last positions)) :year)))
-    (fin-dashboard--alist
+year expands into its detail."
+  (fin-dashboard--alist
      '("year" "taxable" "exempt" "due" "return")
      (mapcar (lambda (p)
                (let ((d (cdr (cl-find p closed :key #'car :test #'eq))))
@@ -321,10 +320,8 @@ year expands into its detail.  The current year starts open."
                              (if (plist-get p :exempt) (fin-dashboard--money-cell (plist-get p :exempt)) "?")
                              (if d (pcase (plist-get d :required) ('t "yes") ('nil "no") (_ "?")) "–")
                              (fin-dashboard--ir-return-cell d))
-                       (fin-dashboard--ir-detail p)
-                       nil
-                       (= (plist-get p :year) last))))
-             (reverse positions)))))
+                       (fin-dashboard--ir-detail p))))
+             (reverse positions))))
 
 (defun fin-dashboard--ir-risk-lines (positions closed ctx)
   "Risk lines, (OK HTML) each."
