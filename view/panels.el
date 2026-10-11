@@ -287,7 +287,7 @@ fold them, and each row names its ancestors so folding one hides it."
                                                (fin-dashboard--money-cell (nth 2 m))))
                              gaps)))))))
 
-(declare-function fin-dashboard--ir-summary "irpf" ())
+(declare-function fin-dashboard--ir-todo "irpf" ())
 
 (defun fin-dashboard--health-accounts ()
   (let ((gaps (fin-health-account-gaps (format-time-string "%Y-%m-%d"))))
@@ -324,8 +324,8 @@ fold them, and each row names its ancestors so folding one hides it."
 against the bank, taxes, the accounts sheet, the inbox, open items."
   (let* ((parts (delq nil (append (list (fin-dashboard--health-inbox) (fin-dashboard--health-fix)
                                         (fin-dashboard--health-flags) (fin-dashboard--health-gaps)
-                                        (fin-dashboard--ir-summary)
                                         (fin-dashboard--health-accounts))
+                                  (fin-dashboard--ir-todo)
                                   (fin-dashboard--health-docs)
                                   (fin-dashboard--health-todo))))
          (todo (cl-count-if-not #'car parts)))
@@ -550,6 +550,13 @@ Future months of the current year use the objectives forecast
                            "no statement imported"))
      (fin-dashboard--kpi "savings" (funcall money saved) "accounts"))))
 
+(defun fin-dashboard--liquid-cell (liq ahead)
+  "Signed LIQ, with AHEAD (forecast liquid of the months left) shown apart."
+  (if (null ahead) (fin-dashboard--money-signed-cell liq)
+    (list :raw (format "%s <span class=\"dim\" title=\"plan forecast for the months left\">%s%s</span>"
+                       (cadr (fin-dashboard--money-signed-cell liq))
+                       (if (< ahead 0) "−" "+") (fin-dashboard--grouped (abs ahead))))))
+
 (defun fin-dashboard--panel-wealth ()
   (let* ((now-y (fin-report--year-now))
          (now-m (fin-report--month-now))
@@ -558,11 +565,15 @@ Future months of the current year use the objectives forecast
                    (let* ((y    (nth 0 r))
                           (cur  (= y now-y))
                           (eff  (fin-dashboard--year-effective-months y now-y now-m))
-                          ;; Current year reconciles with its month rows by
-                          ;; summing actuals + forecast; past years are actuals.
-                          (in   (if cur (apply #'+ (mapcar (lambda (e) (or (nth 1 e) 0)) eff)) (nth 1 r)))
-                          (out  (if cur (apply #'+ (mapcar (lambda (e) (or (nth 2 e) 0)) eff)) (nth 2 r)))
+                          ;; The current year counts actual months only; the
+                          ;; forecast of the months left is shown apart, so the
+                          ;; row never reads as money already saved.
+                          (act  (cl-remove-if (lambda (e) (nth 4 e)) eff))
+                          (fut  (cl-remove-if-not (lambda (e) (nth 4 e)) eff))
+                          (in   (if cur (apply #'+ (mapcar (lambda (e) (or (nth 1 e) 0)) act)) (nth 1 r)))
+                          (out  (if cur (apply #'+ (mapcar (lambda (e) (or (nth 2 e) 0)) act)) (nth 2 r)))
                           (liq  (if cur (- in out) (nth 3 r)))
+                          (ahead (and cur fut (apply #'+ (mapcar (lambda (e) (or (nth 3 e) 0)) fut))))
                           (sav  (if cur
                                     (and (> in 0)
                                          (/ (fround (/ (* 1000.0 (- in out)) in)) 10.0))
@@ -570,7 +581,7 @@ Future months of the current year use the objectives forecast
                      (list (number-to-string y)
                            (list (fin-dashboard--money-cell in)
                                  (fin-dashboard--money-cell out)
-                                 (fin-dashboard--money-signed-cell liq)
+                                 (fin-dashboard--liquid-cell liq ahead)
                                  sav)
                            (fin-dashboard--monthly-block y eff now-y now-m)
                            nil
