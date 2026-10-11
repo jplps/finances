@@ -343,8 +343,7 @@ year expands into its detail.  The current year starts open."
     (when years
       (let* ((ctx (fin-ir-context))
              (positions (mapcar (lambda (y) (fin-ir-position y ctx)) years)))
-        (mapcar (lambda (l) (list nil (fin-dashboard--health-line
-                                       nil (format "ir · %s" (cadr l)))))
+        (mapcar (lambda (l) (list nil (fin-dashboard--health-line nil (cadr l))))
                 (cl-remove-if #'car (fin-dashboard--ir-risk-lines
                                      positions (fin-dashboard--ir-closed positions) ctx)))))))
 
