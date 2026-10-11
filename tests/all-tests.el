@@ -24,6 +24,7 @@
 (require 'test-conventions)
 (require 'test-goals)
 (require 'test-pj)
+(require 'test-ir)
 (require 'test-bank)
 (require 'test-bankfix)
 (require 'test-health)

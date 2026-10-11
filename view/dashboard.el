@@ -5,6 +5,7 @@
 (require 'panels)
 (require 'sync)
 (require 'stats)
+(require 'irpf)
 
 (defcustom fin-dashboard-output-path
   (expand-file-name "dashboard.html"
@@ -70,6 +71,7 @@
      (fin-dashboard--panel-cockpit)
      (fin-dashboard--panel-wealth)
      (fin-dashboard--panel-stats)
+     (fin-dashboard--panel-ir)
      "</main>"
      (fin-dashboard--status-bar)
      "</body></html>")))

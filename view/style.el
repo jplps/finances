@@ -16,7 +16,7 @@
    ".ticker{color-scheme:dark;" (fin-dashboard--css-tokens #'caddr) "}"))
 
 (defconst fin-dashboard--tabs
-  '(("cockpit" . "cockpit") ("wealth" . "wealth") ("stats" . "stats"))
+  '(("cockpit" . "cockpit") ("wealth" . "wealth") ("stats" . "stats") ("ir" . "ir"))
   "(SECTION-ID . BAR-LABEL) in status-bar order; the first is shown by default.")
 
 (defun fin-dashboard--tab-rules ()
