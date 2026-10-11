@@ -43,9 +43,9 @@
            (get (lambda (c) (cl-find c rows :key (lambda (r) (plist-get r :category)) :test #'equal))))
       (should (equal "investments" (plist-get (funcall get "emergency") :parent)))
       (should (= 50000 (plist-get (funcall get "emergency") :mtd)))   ; 800 in, 300 back
-      (should (= 25000 (plist-get (funcall get "family") :mtd)))
-      ;; Funds its children: 800 contributed - 300 withdrawn + 250 family.
-      (should (= 75000 (plist-get (funcall get "investments") :mtd))))))
+      (should (= 0 (plist-get (funcall get "family") :mtd)))            ; spending is no saving
+      ;; Holds every caixinha: 800 contributed - 300 withdrawn.
+      (should (= 50000 (plist-get (funcall get "investments") :mtd))))))
 
 (ert-deftest goals/patrimony-splits-into-register-classes ()
   (fin-test-with-db
@@ -53,21 +53,39 @@
     (fin-test-insert-budget "investments" nil "var" nil 0.2)
     (fin-test-insert-patrimony "car" "tires" 120000 12)        ; 10000/mo
     (fin-test-insert-patrimony "accessory" "skateboard" 120000 24) ; 5000/mo
-    (fin-test-insert-entry "2026-03-02" "out" "car" 3000 "gasolina")
-    (fin-test-insert-entry "2026-03-03" "out" "patrimony" 4000 "skate")
-    (fin-test-insert-entry "2026-03-04" "out" "patrimony" 500 "mystery")
-    (let* ((fin-goals-patrimony-classes '(("skate" . "accessory")))
-           (rows (fin-goals 2026 3))
+    (fin-test-insert-entry "2026-03-02" "out" "investments" 3000 "car")
+    (fin-test-insert-entry "2026-03-03" "out" "investments" 5000 "accessory")
+    (fin-test-insert-entry "2026-03-04" "out" "patrimony" 4000 "skate")      ; a purchase, not saving
+    (let* ((rows (fin-goals 2026 3))
            (get (lambda (c) (cl-find c rows :key (lambda (r) (plist-get r :category)) :test #'equal))))
       (should (= 3000 (plist-get (funcall get "car") :mtd)))
       (should (= 10000 (plist-get (funcall get "car") :target)))
-      (should (= 4000 (plist-get (funcall get "accessory") :mtd)))
+      (should (= 5000 (plist-get (funcall get "accessory") :mtd)))
+      (should (eq 'reached (plist-get (funcall get "accessory") :status)))
       (should (= 2 (plist-get (funcall get "accessory") :depth)))
-      (should (= 500 (plist-get (funcall get "unmapped") :mtd)))
-      (should (eq 'over (plist-get (funcall get "unmapped") :status)))
+      (should (= 8000 (plist-get (funcall get "patrimony") :mtd)))
       ;; Classes sit right after their parent row.
-      (should (equal '("patrimony" "car" "accessory" "unmapped")
-                     (seq-take (member "patrimony" (mapcar (lambda (r) (plist-get r :category)) rows)) 4))))))
+      (should (equal '("patrimony" "car" "accessory")
+                     (seq-take (member "patrimony" (mapcar (lambda (r) (plist-get r :category)) rows)) 3))))))
+
+(ert-deftest goals/caixinha-savings-count-for-their-goal ()
+  (fin-test-with-db
+    (fin-test-insert-budget "brute" nil "income" 1000000 nil)
+    (fin-test-insert-budget "investments" nil "var" nil 0.2)
+    (fin-test-insert-budget "family" "investments" "var" nil 0.5)
+    (fin-test-insert-patrimony "car" "tires" 120000 12)
+    (fin-test-insert-entry "2026-03-05" "out" "investments" 10000 "car")      ; car caixinha
+    (fin-test-insert-entry "2026-03-10" "in"  "investments" 4000 "car")       ; taken back...
+    (fin-test-insert-entry "2026-03-10" "out" "car" 4000 "revisão")           ; ...for a repair
+    (fin-test-insert-entry "2026-03-05" "out" "investments" 27900 "family")
+    (let* ((rows (fin-goals 2026 3))
+           (get (lambda (c) (cl-find c rows :key (lambda (r) (plist-get r :category)) :test #'equal))))
+      ;; 100 saved, 40 taken back; the repair is a car expense, not counted.
+      (should (= 6000 (plist-get (funcall get "car") :mtd)))
+      (should (eq 'pending (plist-get (funcall get "car") :status)))
+      (should (= 27900 (plist-get (funcall get "family") :mtd)))
+      (should (eq 'save (plist-get (funcall get "family") :direction)))
+      (should (= 6000 (plist-get (funcall get "patrimony") :mtd))))))
 
 (provide 'test-goals)
 ;;; test-goals.el ends here

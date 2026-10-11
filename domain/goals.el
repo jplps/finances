@@ -5,10 +5,11 @@
 ;; go `over' past the target, else stay `within'; saving rows (contributions)
 ;; are `reached' at the target, else `pending'.
 ;;
-;; The `patrimony' child splits into the register's classes, each against
-;; its monthly amortization: `car' entries are class `car'; `patrimony'
-;; entries take the class `fin-goals-patrimony-classes' maps their item to,
-;; and an `unmapped' row (target 0) reports the rest.
+;; Variable goals are caixinhas, measured by what goes into them: `out
+;; investments / GOAL' is money saved for GOAL, `in investments / GOAL' money
+;; taken back.  Spending (a car battery, a family trip) is an expense, never
+;; a saving.  The `patrimony' child splits into the register's classes,
+;; each against its monthly amortization.
 
 (require 'cl-lib)
 (require 'calendar)
@@ -16,29 +17,32 @@
 (require 'budget)
 (require 'patrimony)
 
-(defcustom fin-goals-patrimony-classes nil
-  "Patrimony entry item -> register class: list of (REGEXP . CLASS).
-First REGEXP matching the downcased item wins; set in infra/config.el."
-  :type '(alist :key-type regexp :value-type string) :group 'fin)
-
 (defconst fin-goals--measure
-  '(("investments" save ("investments") ("reserve") ("family") ("vacations") ("patrimony") ("car"))
+  '(("investments" save ("investments") ("reserve"))
     ("retirement"  save ("retirement"))
     ("emergency"   save ("investments" . "emergency") ("reserve"))
-    ("vacations"   spend ("vacations"))
-    ("family"      spend ("family"))
-    ("patrimony"   spend ("patrimony") ("car")))
+    ("vacations"   save ("investments" . "vacations"))
+    ("family"      save ("investments" . "family"))
+    ("patrimony"   save))
   "Plan row -> (DIRECTION SOURCE...).  A SOURCE is (CATEGORY) or
 \(CATEGORY . ITEM); its net is outflows minus inflows.  Rows not listed are
 spending, measured by the entry category of the same name.  `investments'
-funds all its children, so its actual is their sum.  Car and goods
-spending is weighed against the patrimony amortization that funds it;
-`reserve' rows are withdrawals from the emergency reserve.")
+holds every caixinha, so its actual is their sum.  `patrimony' takes each
+register class's caixinha (see `fin-goals--spec'); `reserve' rows are
+withdrawals from the emergency reserve.")
+
+(defun fin-goals--classes ()
+  "Patrimony register classes."
+  (mapcar #'car (fin-report--patrimony-summary)))
 
 (defun fin-goals--spec (category)
   "(DIRECTION SOURCES) for plan CATEGORY."
   (let ((m (assoc category fin-goals--measure)))
-    (if m (list (nth 1 m) (nthcdr 2 m)) (list 'spend (list (list category))))))
+    (cond ((null m) (list 'spend (list (list category))))
+          ((equal category "patrimony")
+           (list (nth 1 m) (append (nthcdr 2 m)
+                                   (mapcar (lambda (c) (cons "investments" c)) (fin-goals--classes)))))
+          (t (list (nth 1 m) (nthcdr 2 m))))))
 
 (defun fin-goals--net (sources from to)
   "Cents out minus in for SOURCES between ISO dates FROM and TO, inclusive."
@@ -71,38 +75,17 @@ spending is weighed against the patrimony amortization that funds it;
       (list :category category :kind kind :parent parent :depth (if parent 1 0)
             :direction dir :target target :mtd mtd :status (fin-goals-status dir target mtd)))))
 
-(defun fin-goals--patrimony-class (item)
-  "Register class for patrimony entry ITEM, or nil when unmapped."
-  (let ((it (downcase (or item ""))))
-    (cdr (cl-find-if (lambda (m) (string-match-p (car m) it)) fin-goals-patrimony-classes))))
-
-(defun fin-goals--patrimony-mtd (year month)
-  "Alist CLASS -> net cents this month; nil CLASS collects unmapped items."
-  (let* ((range (fin-goals--month-range year month))
-         (out (list (cons "car" (apply #'fin-goals--net '(("car")) range)))))
-    (dolist (r (fin-db-query
-                "SELECT item, SUM(CASE WHEN type='out' THEN amount ELSE -amount END)
-                   FROM entry WHERE category = 'patrimony' AND date BETWEEN ? AND ?
-                  GROUP BY item"
-                range))
-      (let* ((cls (fin-goals--patrimony-class (car r)))
-             (cell (assoc cls out)))
-        (if cell (setcdr cell (+ (cdr cell) (cadr r)))
-          (push (cons cls (cadr r)) out))))
-    out))
-
 (defun fin-goals--patrimony-rows (kind year month)
-  "Rows per register class under `patrimony', then `unmapped' when nonzero."
-  (let ((mtd (fin-goals--patrimony-mtd year month))
-        (row (lambda (cat target spent)
-               (list :category cat :kind kind :parent "patrimony" :depth 2
-                     :direction 'spend :target target :mtd spent
-                     :status (fin-goals-status 'spend target spent)))))
-    (append
-     (mapcar (lambda (s) (funcall row (nth 0 s) (or (nth 3 s) 0) (or (cdr (assoc (nth 0 s) mtd)) 0)))
-             (fin-report--patrimony-summary))
-     (let ((left (or (cdr (assoc nil mtd)) 0)))
-       (unless (zerop left) (list (funcall row "unmapped" 0 left)))))))
+  "Rows per register class under `patrimony': its caixinha this month
+against its monthly amortization."
+  (let ((range (fin-goals--month-range year month)))
+    (mapcar (lambda (s)
+              (let ((saved (apply #'fin-goals--net (list (cons "investments" (nth 0 s))) range))
+                    (target (or (nth 3 s) 0)))
+                (list :category (nth 0 s) :kind kind :parent "patrimony" :depth 2
+                      :direction 'save :target target :mtd saved
+                      :status (fin-goals-status 'save target saved))))
+            (fin-report--patrimony-summary))))
 
 (defun fin-goals (year month)
   "Goal rows for MONTH of YEAR: plan rows then their children.
