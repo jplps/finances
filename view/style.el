@@ -83,7 +83,7 @@ p       { margin: 4px 0; }
 p b     { font-weight: 600; }
 
 /* ── KPI tiles ─────────────────────────────────────── */
-.kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-bottom: 6px; }
+.kpis { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 8px; margin-bottom: 6px; }  /* tiles share the row, however many */
 .kpi  {
   border: 1px solid var(--border); padding: 10px 12px; background: var(--page);
 }
@@ -92,8 +92,7 @@ p b     { font-weight: 600; }
 .kpi-note  { color: var(--muted); font-size: var(--font-xs); }
 .kpi.good .kpi-value { color: var(--good-text); }
 .kpi.bad  .kpi-value { color: var(--bad-text); }
-.kpis.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-@media (max-width: 700px) { .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 700px) { .kpis { grid-auto-flow: row; grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 
 /* ── goals table ───────────────────────────────────── */
 /* patrimony and accounts below the goals: a clear break after each total */

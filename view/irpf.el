@@ -21,7 +21,7 @@
 (defun fin-dashboard--ir-tiles (pos)
   (let ((taxes (plist-get pos :taxes)))
     (concat
-     "<div class=\"kpis three\">"
+     "<div class=\"kpis\">"
      (fin-dashboard--kpi (format "revenue %d" (plist-get pos :year))
                          (fin-dashboard--ir-money (plist-get pos :revenue))
                          (mapconcat (lambda (tx) (format "%s %s" (car tx) (fin-dashboard--grouped (cdr tx))))
