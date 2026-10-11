@@ -25,20 +25,12 @@
           (push (cons k (list r)) out))))
     (nreverse out)))
 
-(defun fin-dashboard--tick (label value &optional n)
-  "One ticker item: LABEL, VALUE (HTML), and an up/down triangle when N is a
-signed number (drawn in CSS so it centers on the text)."
-  (format "<span class=\"tick\"><b>%s</b> %s%s</span>"
-          label
-          (cond ((not (numberp n)) "")
-                ((> n 0) "<span class=\"arrow up pos\" role=\"img\" aria-label=\"up\"></span> ")
-                ((< n 0) "<span class=\"arrow down neg\" role=\"img\" aria-label=\"down\"></span> ")
-                (t ""))
-          value))
-
-(defun fin-dashboard--records-items (recs nw)
-  "Ticker items for the headline RECS and net worth NW."
-  (let ((biggest    (plist-get recs :biggest))
+(defun fin-dashboard--records-rows (recs nw)
+  "(LABEL CELL) rows of the headline RECS and net worth NW."
+  (let ((signed (lambda (text n) (list :raw (if (and (numberp n) (/= n 0))
+                                                 (format "<span class=\"%s\">%s</span>" (if (> n 0) "pos" "neg") text)
+                                               text))))
+        (biggest    (plist-get recs :biggest))
         (biggest-in (plist-get recs :biggest-in))
         (best       (plist-get recs :best-mo))
         (worst      (plist-get recs :worst-mo))
@@ -47,34 +39,23 @@ signed number (drawn in CSS so it centers on the text)."
         (rec-share  (plist-get recs :rec-share))
         (first-e    (plist-get recs :first-entry))
         (months     (plist-get recs :months-tracked)))
-    (concat
-     (fin-dashboard--tick "net worth" (format "R$ %s" (fin-dashboard--money-str (round nw))) nw)
-     (when best       (fin-dashboard--tick "best month"
-                                           (format "%s R$ %s" (nth 0 best) (fin-dashboard--k-signed (nth 1 best)))
-                                           (nth 1 best)))
-     (when worst      (fin-dashboard--tick "worst month"
-                                           (format "%s R$ %s" (nth 0 worst) (fin-dashboard--k-signed (nth 1 worst)))
-                                           (nth 1 worst)))
-     (when biggest-in (fin-dashboard--tick "biggest income"
-                                           (format "%s R$ %s" (fin-dashboard--ym (nth 2 biggest-in))
-                                                   (fin-dashboard--k-signed (nth 1 biggest-in)))))
-     (when biggest    (fin-dashboard--tick "biggest purchase"
-                                           (format "%s R$ %s" (fin-dashboard--ym (nth 2 biggest))
-                                                   (fin-dashboard--k (nth 1 biggest)))))
-     (when best-save  (fin-dashboard--tick "best yearly save"
-                                           (format "%d %s" (nth 0 best-save)
-                                                   (fin-dashboard--pct-signed (or (nth 1 best-save) 0)))
-                                           (nth 1 best-save)))
-     (when avg-save   (fin-dashboard--tick "avg yearly save" (fin-dashboard--pct-signed avg-save) avg-save))
-     (when rec-share  (fin-dashboard--tick "recurring share" (format "%.1f%%" rec-share)))
-     (when first-e    (fin-dashboard--tick "since" (fin-dashboard--ym first-e)))
-     (when months     (fin-dashboard--tick "months" (format "%d" months))))))
-
-(defun fin-dashboard--records-ticker ()
-  "LED ticker tape of the records: the items twice, so the loop is seamless."
-  (let ((items (fin-dashboard--records-items (fin-report--records) (fin-report--patrimony-total))))
-    (concat "<div class=\"ticker\" role=\"marquee\" aria-label=\"Records\" title=\"Records: headline numbers across all tracked time\">"
-            "<div class=\"window\"><div class=\"tape\"><span>" items "</span><span aria-hidden=\"true\">" items "</span></div></div></div>")))
+    (delq nil
+          (list (list "net worth" (funcall signed (format "R$ %s" (fin-dashboard--money-str (round nw))) nw))
+                (when best (list "best month" (funcall signed (format "%s R$ %s" (nth 0 best) (fin-dashboard--k-signed (nth 1 best)))
+                                                       (nth 1 best))))
+                (when worst (list "worst month" (funcall signed (format "%s R$ %s" (nth 0 worst) (fin-dashboard--k-signed (nth 1 worst)))
+                                                         (nth 1 worst))))
+                (when biggest-in (list "biggest income" (format "%s R$ %s" (fin-dashboard--ym (nth 2 biggest-in))
+                                                                (fin-dashboard--k (nth 1 biggest-in)))))
+                (when biggest (list "biggest purchase" (format "%s R$ %s" (fin-dashboard--ym (nth 2 biggest))
+                                                               (fin-dashboard--k (nth 1 biggest)))))
+                (when best-save (list "best yearly save" (funcall signed (format "%d %s" (nth 0 best-save)
+                                                                                 (fin-dashboard--pct-signed (or (nth 1 best-save) 0)))
+                                                                  (nth 1 best-save))))
+                (when avg-save (list "avg yearly save" (funcall signed (fin-dashboard--pct-signed avg-save) avg-save)))
+                (when rec-share (list "recurring share" (format "%.1f%%" rec-share)))
+                (when first-e (list "since" (fin-dashboard--ym first-e)))
+                (when months (list "months" (format "%d" months)))))))
 
 (defun fin-dashboard--panel-stats ()
   (let* ((cats    (fin-report--cat-shares))
@@ -100,6 +81,9 @@ signed number (drawn in CSS so it centers on the text)."
                                                   (fin-dashboard--k-cell (nth 3 r)))) rec-cnt)))
     (fin-dashboard--panel
      "Stats" "stats" "Headline metrics across all tracked entries"
+     (fin-dashboard--block "Records" "Headline numbers across all tracked time; best/worst month excludes the current one"
+                           (fin-dashboard--table '("" "") (fin-dashboard--records-rows (fin-report--records)
+                                                                                       (fin-report--patrimony-total))))
      (fin-dashboard--block "All time flow"
                            "Per-month in (green up) and out (red down) from zero baseline. Future months dimmed."
                            (fin-dashboard--svg-flow (fin-report--monthly-flow))

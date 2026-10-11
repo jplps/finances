@@ -11,9 +11,7 @@
   (concat
    ":root{color-scheme:dark;" (fin-dashboard--css-tokens #'caddr)
    "--gap:1px;--pad:20px;--max:640px;--inline:max(var(--pad), calc((100% - var(--max)) / 2 + var(--pad)));--font:13px;--font-sm:12.5px;--font-xs:11.5px;--font-kpi:clamp(16px, 1.5vw, 22px);}"
-   ":root[data-theme=\"light\"]{color-scheme:light;" (fin-dashboard--css-tokens #'cadr) "}"
-   ;; The LED ticker is a physical sign: dark in either theme.
-   ".ticker{color-scheme:dark;" (fin-dashboard--css-tokens #'caddr) "}"))
+   ":root[data-theme=\"light\"]{color-scheme:light;" (fin-dashboard--css-tokens #'cadr) "}"))
 
 (defconst fin-dashboard--tabs
   '(("cockpit" . "cockpit") ("wealth" . "wealth") ("stats" . "stats") ("ir" . "ir"))
@@ -65,7 +63,7 @@ th { font-size: var(--font-xs); color: var(--muted); border-bottom: 1px solid va
 
 /* ── panes: one panel at a time, picked from the status bar ── */
 main { padding-bottom: 32px; }
-section { display: none; max-width: var(--max); margin: 0 auto; padding: var(--pad); overflow: auto; min-width: 0; scroll-margin-top: 100vh; }  /* :target never scrolls past the ticker */
+section { display: none; max-width: var(--max); margin: 0 auto; padding: var(--pad); overflow: auto; min-width: 0; scroll-margin-top: 100vh; }  /* :target never scrolls past the header */
 section:target { display: block; }
 " (fin-dashboard--tab-rules) "
 
@@ -190,36 +188,6 @@ table td > details > summary::before {
   width: 12px; height: 1em; margin-right: 4px; line-height: 1; color: var(--accent); transition: transform .15s;
 }
 table td > details[open] > summary::before { transform: rotate(90deg); color: var(--accent-2); }
-
-/* ── LED ticker tape (records) ─────────────────────── */
-/* full-width black strip; the tape window keeps the content column */
-.ticker {
-  position: relative; background: #050505; border-bottom: 1px solid var(--border);
-  padding: 6px 0; color: var(--accent-2);
-  font-size: 22px; line-height: 1.3; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em;
-  text-shadow: 0 0 6px currentColor;
-}
-/* dot-matrix mask: dark gaps between LED pixels */
-.ticker::after {
-  content: ''; position: absolute; inset: 0; pointer-events: none;
-  background: radial-gradient(circle, transparent 0 1.2px, rgb(5 5 5 / 0.85) 1.7px) 0 0 / 3px 3px;
-}
-.ticker .window { width: min(calc(100% - 2 * var(--pad)), calc(var(--max) - 2 * var(--pad))); margin: 0 auto; overflow: hidden; }
-.ticker .tape { display: flex; width: max-content; animation: tape 70s linear infinite; }
-.ticker .tape > span { display: flex; gap: 48px; padding-right: 48px; white-space: nowrap; }
-.ticker .tick b { font-weight: 700; color: var(--accent-2); margin-right: 6px; }
-.ticker .tick { color: var(--text); display: inline-flex; align-items: center; gap: 0.35em; }
-.ticker .tick b { margin-right: 0; }
-.ticker .arrow { width: 0; height: 0; border: 0.32em solid transparent; filter: drop-shadow(0 0 3px currentColor); }
-.ticker .arrow.up   { border-top: 0; border-bottom: 0.55em solid currentColor; }
-.ticker .arrow.down { border-bottom: 0; border-top: 0.55em solid currentColor; }
-.ticker:hover .tape { animation-play-state: paused; }
-@keyframes tape { to { transform: translateX(-50%); } }
-@media (prefers-reduced-motion: reduce) {
-  .ticker .window { overflow-x: auto; }
-  .ticker .tape { animation: none; }
-  .ticker .tape > span[aria-hidden] { display: none; }
-}
 
 /* ── small screens: compact header, wider labels, one-line bar ── */
 @media (max-width: 520px) {

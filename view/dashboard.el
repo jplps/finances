@@ -66,7 +66,6 @@
              (or entries 0)
              (fin-dashboard--relative-time ods-ts))
      "</header>"
-     (fin-dashboard--records-ticker)
      "<main>"
      (fin-dashboard--panel-cockpit)
      (fin-dashboard--panel-wealth)
