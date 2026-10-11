@@ -272,10 +272,8 @@ the bank's when it differs, and the bank revenue of the months after."
         (fin-dashboard--ir-group "revenue" (plist-get pos :revenue)
                                  (list (list "bank" (plist-get pos :revenue))
                                        (list "NFS-e" (plist-get pos :invoiced))))
-      (let ((after (- (plist-get pos :revenue) (plist-get pos :revenue-through)))
-            (span (if (string-suffix-p "-12" through) ""
-                    (format ", through %s" (fin-dashboard--month-name (string-to-number (substring through 5)))))))
-        (fin-dashboard--ir-group (concat "revenue" span) (plist-get pos :declared-revenue)
+      (let ((after (- (plist-get pos :revenue) (plist-get pos :revenue-through))))
+        (fin-dashboard--ir-group "revenue" (plist-get pos :declared-revenue)
                                  (delq nil (list (list "PGDAS-D" (plist-get pos :declared-revenue))
                                                  (list "NFS-e" (plist-get pos :invoiced-through))
                                                  (unless (eql (plist-get pos :revenue-through)
@@ -301,7 +299,7 @@ each group folded."
                                                   (list "profit" (plist-get pos :profit)))
                                                 (list "presumed profit" (plist-get pos :presumed))
                                                 (list "exempt" (plist-get pos :exempt)))))
-           (fin-dashboard--ir-group (if model (format "deductions, %s" model) "deductions")
+           (fin-dashboard--ir-group "deductions"
                                     (and model (plist-get pos (if (eq model 'complete) :complete :simplified)))
                                     (delq nil
                                           (list (list "health" (plist-get pos :health))
