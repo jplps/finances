@@ -77,6 +77,16 @@
                                    :into ("\\`Aplicação RDB") :out-of ()))))
       (should (equal '(("nu" 5000 nil "since 2023-04-13")) (fin-report--accounts-derived))))))
 
+(ert-deftest accounts/closed-account-shows-result ()
+  (fin-test-with-db
+    (fin-bankdb-ensure)
+    (fin-db-exec "INSERT INTO bank_txn (id, source, account, date, type, amount, description)
+                  VALUES ('a','t','account','2025-08-05','out',50000,'Compra de criptomoedas'),
+                         ('b','t','account','2026-01-17','in',45000,'Venda de criptomoedas')")
+    (let ((fin-accounts-derived '((:name "crypto" :sheet () :since "2020-01-01" :opening 0 :closed t
+                                   :into ("\\`Compra de cripto") :out-of ("\\`Venda de cripto")))))
+      (should (equal '(("crypto" 0 nil "closed, loss 50.00")) (fin-report--accounts-derived))))))
+
 (ert-deftest accounts/derived-spec-fails-loud ()
   (fin-test-with-db
     (let ((fin-accounts-derived '((:name "x" :sheet ("y")))))

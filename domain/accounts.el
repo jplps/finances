@@ -32,7 +32,9 @@ is a plist: :name, :sheet (sheet accounts it stands for, \"parent/child\" or
 a top-level name), and either :balance (a bank account kind whose latest
 LEDGERBAL is the balance) or :since (ISO date of a known balance), :opening
 (cents on that date), :into and :out-of (regexps of personal-account
-descriptions moving money into and out of it).  Yields never reach the
+descriptions moving money into and out of it).  :closed t marks an account
+emptied for good: its balance is 0 and the note gives the result (money
+taken out less money put in, a gain or a loss).  Yields never reach the
 statements, so a rebuilt balance trails the real one by them."
   :type '(repeat plist) :group 'fin)
 
@@ -68,6 +70,10 @@ statements, so a rebuilt balance trails the real one by them."
         (since (plist-get spec :since)))
     (cond (kind (let ((b (fin-bankdb-latest-balance kind)))
                   (and b (cons (cdr b) (car b)))))
+          ((plist-get spec :closed)
+           (let ((result (- (fin-report--bank-sum "in" (plist-get spec :out-of) since)
+                            (fin-report--bank-sum "out" (plist-get spec :into) since))))
+             (cons 0 (format "closed, %s %.2f" (if (< result 0) "loss" "gain") (/ (abs result) 100.0)))))
           (t (cl-assert (and (stringp since) (integerp (plist-get spec :opening))) nil
                         "fin-accounts: %S needs :since and :opening" (plist-get spec :name))
              (cons (+ (plist-get spec :opening)
