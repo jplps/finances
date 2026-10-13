@@ -27,6 +27,20 @@
     (should (null (plist-get res :bank-only)))
     (should (null (plist-get res :entry-only)))))
 
+(ert-deftest reconcile/closest-pairs-first ()
+  "An earlier bank row within the window must not take a later row's exact-date match."
+  (let ((res (fin-reconcile-match
+              (list (test-reconcile--bank "b0" "2026-09-30" "out" 800)
+                    (test-reconcile--bank "b1" "2026-10-03" "out" 800)
+                    (test-reconcile--bank "b2" "2026-10-04" "out" 800)
+                    (test-reconcile--bank "b3" "2026-10-05" "out" 800))
+              (list (test-reconcile--ledger 1 "2026-10-03" "out" 800)
+                    (test-reconcile--ledger 2 "2026-10-04" "out" 800)
+                    (test-reconcile--ledger 3 "2026-10-05" "out" 800))
+              3)))
+    (should (equal '("b1" "b2" "b3") (mapcar #'caar (plist-get res :matched))))
+    (should (equal '("b0") (mapcar #'car (plist-get res :bank-only))))))
+
 (ert-deftest reconcile/outside-window-is-unmatched ()
   (let ((res (fin-reconcile-match
               (list (test-reconcile--bank "b1" "2025-06-10" "out" 1000))

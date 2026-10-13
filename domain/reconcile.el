@@ -7,7 +7,7 @@
 ;;
 ;; A bank row matches a ledger row with the same type and amount whose date
 ;; lies within `fin-reconcile-window' days.  Each ledger row matches at most
-;; once; among candidates the closest date wins, ties by ledger order.
+;; once; closest pairs are taken first, ties by bank date then ledger order.
 ;;
 ;; Leftovers then pair as near matches: same type, within the window, amounts
 ;; differing by at most `fin-reconcile-near-ratio', and either a word shared
@@ -89,6 +89,16 @@ Mark paired ledger ids in USED.  Return (PAIRS . UNPAIRED-BANK)."
   "Closest date wins."
   dist)
 
+(defun fin-reconcile--pair-closest (bank idx keyfn used window)
+  "Exact pairs of BANK in IDX by rising day distance, 0 up to WINDOW, so an
+earlier bank row never takes the ledger row of a later, closer one.
+Return (PAIRS . UNPAIRED-BANK), pairs in BANK order."
+  (let ((pairs nil) (rest bank))
+    (dotimes (d (1+ window))
+      (let ((step (fin-reconcile--pair rest idx keyfn used d #'fin-reconcile--exact-score)))
+        (setq pairs (nconc pairs (car step)) rest (cdr step))))
+    (cons (sort pairs (lambda (x y) (string< (nth 1 (car x)) (nth 1 (car y))))) rest)))
+
 (defun fin-reconcile--words (s)
   "Words of S: lowercase, accents stripped, at least 3 chars."
   (when s
@@ -136,11 +146,11 @@ Every input row lands in exactly one bucket."
                "fin-reconcile: close ratio must be in [0, near ratio]")
     (let* ((sorted (sort (copy-sequence bank)
                          (lambda (x y) (string< (nth 1 x) (nth 1 y)))))
-           (exact  (fin-reconcile--pair
+           (exact  (fin-reconcile--pair-closest
                     sorted
                     (fin-reconcile--index ledger (lambda (r) (cons (nth 2 r) (nth 5 r))))
                     (lambda (b) (cons (nth 2 b) (nth 3 b)))
-                    used window #'fin-reconcile--exact-score))
+                    used window))
            (near   (fin-reconcile--pair
                     (cdr exact)
                     (fin-reconcile--index
