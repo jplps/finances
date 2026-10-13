@@ -302,8 +302,8 @@ each group folded."
            (fin-dashboard--ir-group "deductions"
                                     (and model (plist-get pos (if (eq model 'complete) :complete :simplified)))
                                     (delq nil
-                                          (list (list "health" (plist-get pos :health))
-                                                (list "health, unclassified" (plist-get pos :health-unknown))
+                                          (list (and (plist-get pos :health) (> (plist-get pos :health) 0)
+                                                     (list "health" (plist-get pos :health)))
                                                 (and (plist-get pos :pgbl) (> (plist-get pos :pgbl) 0)
                                                      (list "pgbl" (plist-get pos :pgbl))))))
            (fin-dashboard--ir-group "tax" (plist-get pos :tax) nil)))))
