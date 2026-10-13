@@ -306,7 +306,9 @@ each group folded."
                                     (mapcar (lambda (tx) (list (car tx) (cdr tx))) taxes))
            (fin-dashboard--ir-group "to cpf" (plist-get pos :drawn)
                                     (delq nil
-                                          (list (list "pró-labore" (plist-get pos :taxable))
+                                          (list (list "pró-labore" (plist-get pos :pro-labore-total))
+                                                (and (plist-get pos :other-taxable) (> (plist-get pos :other-taxable) 0)
+                                                     (list "other taxable" (plist-get pos :other-taxable)))
                                                 (list "inss on pró-labore" (plist-get pos :inss))
                                                 (unless (eql (plist-get pos :profit) (plist-get pos :exempt))
                                                   (list "profit" (plist-get pos :profit)))

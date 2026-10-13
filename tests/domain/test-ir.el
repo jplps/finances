@@ -170,6 +170,7 @@
           (should (equal '(1630000 135833 179300) (fin-ir--pro-labore 2024 12)))   ; payer file wins
           (should (equal '(600000 300000 66000) (fin-ir--pro-labore 2026 2)))
           (should-not (fin-ir--pro-labore 2025 12))
+          (should (equal '((2024 . 25000)) (fin-ir-other-payers)))
           (let ((fin-ir-pro-labore '((2026 :monthly 100000))))
             (should (equal 100000 (nth 1 (fin-ir--pro-labore 2026 2))))))
       (delete-directory dir t))))
@@ -183,6 +184,35 @@
                (should (equal '((2025 . "2026-10-07") (2023 . "2024-05-01"))
                               (fin-ir--filed))))
       (delete-directory dir t))))
+
+(defun test-ir--dec (exercise fields &optional len)
+  "A .DEC text: IR header of EXERCISE, totals record of LEN (744) with
+FIELDS, (START . CENTS) each, as 13-digit fields."
+  (let ((rec (make-string (or len 744) ?0)))
+    (aset rec 0 ?1) (aset rec 1 ?8)
+    (dolist (f fields)
+      (let ((d (format "%013d" (cdr f))))
+        (dotimes (i 13) (aset rec (+ (car f) i) (aref d i)))))
+    (concat "IR      " (number-to-string exercise) "2025xx\r\n" rec "\r\nT9\r\n")))
+
+(ert-deftest ir/dec-totals-read-the-filed-return ()
+  (let ((p (fin-ir-dec-totals (test-ir--dec 2026 '((456 . 1800000) (274 . 2864756) (287 . 7343061)
+                                                   (300 . 9540000) (326 . 241201))))))
+    (should (= 2026 (plist-get p :exercise)))
+    (should (= 9540000 (plist-get p :exempt)))
+    (should (= 241201 (plist-get p :exclusive)))
+    (should (= 7343061 (plist-get p :assets)))
+    (should (= 2864756 (plist-get p :assets-before)))
+    (should (= 1800000 (plist-get p :other-taxable))))
+  (should-error (fin-ir-dec-totals (test-ir--dec 2027 nil)))          ; unknown layout
+  (should-error (fin-ir-dec-totals (test-ir--dec 2026 nil 700))))     ; layout changed
+
+(ert-deftest ir/declared-field-falls-back-to-next-return-for-assets ()
+  (let ((ctx '(:dirpf ((2025 :assets 7343061 :assets-before 2864756 :exempt 9540000)))))
+    (should (= 2864756 (fin-ir--declared-field ctx 2024 :assets nil)))
+    (should (= 7343061 (fin-ir--declared-field ctx 2025 :assets nil)))
+    (should (= 1 (fin-ir--declared-field ctx 2025 :exempt '((2025 . 1)))))
+    (should-not (fin-ir--declared-field ctx 2024 :exempt nil))))
 
 (ert-deftest ir/duty-statuses ()
   (let ((fin-ir-filed '((2025 . "2026-10-07") (2024 . "2025-04-01"))))
