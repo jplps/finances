@@ -178,7 +178,7 @@ Four synced sheets (a fifth, =debt=, is free-form notes in reais and is not sync
 ** =accounts=
 =category | parent | balance | updated_at=
 
-- Kept in the ODS only; the dashboard reads no balance from it.  Balances come from the bank statements: =fin-accounts-derived= gives each account an opening balance on a date plus the personal-account rows moving money into and out of it, or a statement balance (=:balance "account"=).  With =:opening 0= and an early =:since=, an account is rebuilt over every statement and its note shows the first move.  =:yield= adds the earnings the bank app or yearly informe shows; =:closed t= marks an emptied account, left out of the table; =:reserve t= counts it toward runway (reserve / fix-monthly).  Net worth is their total; the savings tile, the total less the statement balances.
+- Kept in the ODS only; the dashboard reads no balance from it.  Balances come from the bank statements: =fin-accounts-derived= gives each account the personal-account rows moving money into and out of it (=:into=, =:out-of=), counted from zero over every statement or from =:opening= on =:since=, or a statement balance (=:balance "account"=); a rebuilt account's note shows its first move.  One dashboard render rebuilds them once (=fin-report--accounts-memo=).  =:yield= adds the earnings the bank app or yearly informe shows; =:closed t= marks an emptied account, left out of the table; =:reserve t= counts it toward runway (reserve / fix-monthly).  Net worth is their total; the savings tile, the total less the statement balances.
 
 * Liquid
 

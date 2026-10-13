@@ -46,7 +46,8 @@
                   (downcase (format-time-string "%H:%M %d-%b-%y")))))
 
 (defun fin-dashboard--render ()
-  (let* ((ods-ts  (file-attribute-modification-time
+  (let* ((fin-report--accounts-memo (list nil))   ; one bank rebuild per render
+         (ods-ts  (file-attribute-modification-time
                    (file-attributes (expand-file-name fin-ods-path))))
          (period  (fin-report--period))
          (first-d (nth 0 period))

@@ -79,5 +79,21 @@
       (should (= 6000 (fin-report--bank-saved "2024")))
       (should-error (fin-report--bank-saved "2026-1")))))
 
+(ert-deftest accounts/derived-defaults-and-memo ()
+  (fin-test-with-db
+    (fin-bankdb-ensure)
+    (fin-db-exec "INSERT INTO bank_txn (id, source, account, date, type, amount, description)
+                  VALUES ('a','t','account','2020-03-01','out',5000,'Aplicação RDB')")
+    (let ((fin-accounts-derived '((:name "nu" :into ("\\`Aplicação RDB") :out-of ()))))
+      (should (equal '(5000 "since 2020-03-01")
+                     (let ((a (car (fin-report--accounts-derived)))) (list (plist-get a :cents) (plist-get a :note)))))
+      (let ((fin-report--accounts-memo (list nil)) (calls 0))
+        (cl-letf* ((orig (symbol-function 'fin-report--accounts-compute))
+                   ((symbol-function 'fin-report--accounts-compute)
+                    (lambda () (cl-incf calls) (funcall orig))))
+          (fin-report--accounts-total)
+          (fin-report--accounts-total :reserve)
+          (should (= 1 calls)))))))
+
 (provide 'test-accounts)
 ;;; test-accounts.el ends here

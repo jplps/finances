@@ -8,14 +8,19 @@
   "Accounts rebuilt from the bank statements, the source of truth for
 balances.  Each is a plist: :name, :reserve t when it counts toward the
 emergency reserve (runway), and either :balance (a bank account kind whose
-latest LEDGERBAL is the balance) or :since (ISO date of a known balance),
-:opening (cents on that date), :into and :out-of (regexps of
-personal-account descriptions moving money into and out of it).  :closed t
+latest LEDGERBAL is the balance) or :into and :out-of (regexps of
+personal-account descriptions moving money into and out of it), counted
+after :since (ISO date of a known balance; default: every statement) on
+top of :opening (cents on that date; default 0).  :closed t
 marks an account emptied for good: its balance is 0 and the note gives the
 result (money taken out less money put in, a gain or a loss).  :yield
 \(cents) adds the earnings the statements never show, as the bank app or
 the yearly informe gives them."
   :type '(repeat plist) :group 'fin)
+
+(defvar fin-report--accounts-memo nil
+  "A cons whose car caches `fin-report--accounts-derived' while bound, as
+for one dashboard render; nil recomputes on every call.")
 
 (defun fin-report--bank-sum (type regexps since)
   "Cents of personal-account bank rows of TYPE after SINCE matching REGEXPS."
@@ -37,7 +42,8 @@ the yearly informe gives them."
 (defun fin-report--derived-balance (spec)
   "(CENTS . AS-OF) of derived account SPEC."
   (let ((kind (plist-get spec :balance))
-        (since (plist-get spec :since)))
+        (since (or (plist-get spec :since) ""))
+        (opening (or (plist-get spec :opening) 0)))
     (cond (kind (let ((b (fin-bankdb-latest-balance kind)))
                   (and b (cons (cdr b) (car b)))))
           ((plist-get spec :closed)
@@ -48,15 +54,16 @@ the yearly informe gives them."
            (let ((b (fin-report--derived-balance (cl-list* :yield nil spec))))
              (cons (+ (car b) (plist-get spec :yield))
                    (format "%s + yield %.2f" (cdr b) (/ (plist-get spec :yield) 100.0)))))
-          (t (cl-assert (and (stringp since) (integerp (plist-get spec :opening))) nil
-                        "fin-accounts: %S needs :since and :opening" (plist-get spec :name))
-             (cons (+ (plist-get spec :opening)
+          (t (cl-assert (and (plist-get spec :into) (stringp since) (integerp opening)) nil
+                        "fin-accounts: %S needs :balance or :into (and a valid :since, :opening)"
+                        (plist-get spec :name))
+             (cons (+ opening
                       (fin-report--bank-sum "out" (plist-get spec :into) since)
                       (- (fin-report--bank-sum "in" (plist-get spec :out-of) since)))
                    (format "since %s"
-                           (or (and (zerop (plist-get spec :opening))
+                           (or (and (zerop opening)
                                     (fin-report--first-flow (plist-get spec :into) since))
-                               since)))))))
+                               (if (string-empty-p since) "the first statement" since))))))))
 
 (defun fin-report--bank-saved (period)
   "Cents the personal account moved into the accounts of `fin-accounts-derived'
@@ -80,7 +87,15 @@ or before an account's :since are not its own."
 
 (defun fin-report--accounts-derived ()
   "Plist per `fin-accounts-derived': :name, :cents, :note (the basis),
-:cash (a bank account kind's balance), :reserve and :closed."
+:cash (a bank account kind's balance), :reserve and :closed.  Cached in
+`fin-report--accounts-memo' while it is bound."
+  (or (car fin-report--accounts-memo)
+      (let ((rows (fin-report--accounts-compute)))
+        (when fin-report--accounts-memo (setcar fin-report--accounts-memo rows))
+        rows)))
+
+(defun fin-report--accounts-compute ()
+  "Rows of `fin-report--accounts-derived', computed from the bank."
   (fin-bankdb-ensure)
   (mapcar (lambda (spec)
             (cl-assert (stringp (plist-get spec :name)) nil "fin-accounts: bad spec %S" spec)
