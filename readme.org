@@ -77,7 +77,7 @@ Schema is auto-created on first =M-x fin-db-rebuild= (or =finances fin-db-rebuil
 │   ├── parser.el        ; ODS XML reader (outbound port)
 │   ├── db.el            ; SQLite schema + helpers
 │   ├── bankdb.el        ; bank staging tables (survive rebuild)
-│   ├── odswrite.el      ; edit entries sheet in place, re-zip
+│   ├── odswrite.el      ; edit entries and patrimony sheets in place, re-zip
 │   ├── ofx.el           ; OFX statement parser
 │   ├── cardpdf.el       ; PDF card bill parser (rows from pdfrows.js)
 │   └── pdfrows.js       ; PDF → visual rows via macOS PDFKit

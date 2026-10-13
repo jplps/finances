@@ -103,5 +103,41 @@
             (should (equal "2026-10-02" (car (nth 1 (fin-ods-rows (fin-ods-sheet (fin-ods-parse ods) "entries"))))))))
       (delete-directory dir t))))
 
+(defun test-odsw--patrimony (&rest rows)
+  "content.xml with a patrimony sheet of ROWS (category item amount lifespan)."
+  (concat "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+          "<office:document-content xmlns:office=\"urn:oasis:names:tc:opendocument:xmlns:office:1.0\""
+          " xmlns:table=\"urn:oasis:names:tc:opendocument:xmlns:table:1.0\""
+          " xmlns:text=\"urn:oasis:names:tc:opendocument:xmlns:text:1.0\""
+          " xmlns:calcext=\"urn:org:documentfoundation:names:experimental:calc:xmlns:calcext:1.0\">"
+          "<office:body><office:spreadsheet>"
+          "<table:table table:name=\"patrimony\"><table:table-column/>"
+          "<table:table-row table:style-name=\"ro2\">"
+          (mapconcat #'fin-odsw--string-cell '("category" "item" "amount" "lifespan_months") "")
+          "</table:table-row>"
+          (mapconcat (lambda (r) (apply #'fin-odsw-patrimony-row-xml r)) rows "")
+          "</table:table>"
+          "</office:spreadsheet></office:body></office:document-content>"))
+
+(defun test-odsw--patrimony-rows (content)
+  (pcase-let* ((`(,s . ,e) (fin-odsw--sheet-bounds content "patrimony"))
+               (`(,_f ,_l ,rows) (fin-odsw--rows content s e)))
+    (mapcar (lambda (r) (fin-odsw--cells r 4)) (cdr rows))))
+
+(ert-deftest odsw/patrimony-add-edit-delete ()
+  (let* ((base (test-odsw--patrimony '("car" "tires" 120000 48) '("house" "sofa" 256000 120)
+                                     '("house" "fan" 25000 96)))
+         (out (fin-odsw-apply-patrimony
+               base '((:add ("car" "driving-school" 194473 120))
+                      (:add ("garden" "hose" 5000 60))
+                      (:edit ("house" "sofa") 300000)
+                      (:delete ("house" "fan"))))))
+    (should (equal '(("car" "tires" 120000 48) ("car" "driving-school" 194473 120)
+                     ("house" "sofa" 300000 120) ("garden" "hose" 5000 60))
+                   (test-odsw--patrimony-rows out)))
+    (with-temp-buffer (insert out) (should (libxml-parse-xml-region (point-min) (point-max))))
+    (should-error (fin-odsw-apply-patrimony base '((:add ("car" "tires" 1 1)))))
+    (should-error (fin-odsw-apply-patrimony base '((:edit ("car" "nope") 1))))))
+
 (provide 'test-odswrite)
 ;;; test-odswrite.el ends here
