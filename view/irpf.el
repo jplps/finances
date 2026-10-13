@@ -312,11 +312,13 @@ each group folded."
                                                 (list "exempt" (plist-get pos :exempt)))))
            (fin-dashboard--ir-group "deductions"
                                     (and model (plist-get pos (if (eq model 'complete) :complete :simplified)))
-                                    (delq nil
-                                          (list (and (plist-get pos :health) (> (plist-get pos :health) 0)
-                                                     (list "health" (plist-get pos :health)))
-                                                (and (plist-get pos :pgbl) (> (plist-get pos :pgbl) 0)
-                                                     (list "pgbl" (plist-get pos :pgbl))))))
+                                    ;; The simplified discount stands alone; the
+                                    ;; complete model is the sum of its rows.
+                                    (and (eq model 'complete)
+                                         (cl-remove-if-not (lambda (r) (and (cadr r) (> (cadr r) 0)))
+                                                           (list (list "inss" (plist-get pos :inss))
+                                                                 (list "health" (plist-get pos :health))
+                                                                 (list "pgbl" (plist-get pos :pgbl))))))
            (fin-dashboard--ir-group "tax" (plist-get pos :tax) nil)))))
 
 (defun fin-dashboard--ir-years-table (positions closed)
