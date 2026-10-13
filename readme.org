@@ -246,7 +246,7 @@ Imposto de renda inputs, each read from a document in =infra/inbox/=:
 | =fin-ir-assets-declared=     | override: year → bens e direitos on 31/12 | default: the returns' =.DEC= |
 | =fin-ir-payment-labels=      | date, cents, code of Receita payments no list shows (a code outside the table counts as a company tax) | the bank row |
 | =fin-ir-health-deductible=   | regexps of deductible health items      | Lei 9.250 art. 8 II a              |
-| =fin-ir-defis-exempt=        | year → exempt profit the DEFIS reports  | =ir/defis/=                        |
+| =fin-ir-defis-exempt=        | year → exempt profit the DEFIS reports (0 when absent and the DEFIS is filed) | =ir/defis/=                        |
 | =fin-ir-open-debts=          | due, code, cents, text; delete when paid | Painel de Conformidade, caixa postal |
 | =fin-ir-full-books=          | =verified= / =yes= (claimed) / =no= / nil | the balance sheet                |
 | =fin-ir-retirement-plan=     | =pgbl= / =vgbl= / =none= / nil          | the plan's statement               |

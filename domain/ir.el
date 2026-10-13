@@ -83,7 +83,8 @@ number and are the company's.")
 
 (defcustom fin-ir-defis-exempt nil
   "Exempt profit paid to the partner per DEFIS, by calendar year: list of
-(YEAR . CENTS)."
+(YEAR . CENTS).  A year with a defis/defis-cnpj-YEAR.pdf under
+`fin-ir-payments-dir' and no entry here reports 0."
   :type '(alist :key-type integer :value-type integer) :group 'fin)
 
 (defcustom fin-ir-declared-exempt nil
@@ -793,7 +794,7 @@ what went back) beyond the pró-labore net of its INSS."
            :profit profit :presumed presumed :excess excess
            :exempt (and profit (if books profit (min profit presumed)))
            :excess-tax (and pl (fin-ir--excess-tax year base excess inss health retirement))
-           :defis-exempt (cdr (assq year fin-ir-defis-exempt))
+           :defis-exempt (fin-ir--defis-exempt year)
            :declared-exempt (fin-ir--declared-field ctx year :exempt fin-ir-declared-exempt)
            :exclusive (fin-ir--declared-field ctx year :exclusive fin-ir-exclusive)
            :assets (fin-ir--declared-field ctx year :assets fin-ir-assets-declared)
@@ -801,6 +802,14 @@ what went back) beyond the pró-labore net of its INSS."
            :health health :retirement retirement
            :individuals individuals)
      (and taxable (fin-ir--deductions year taxable inss health retirement)))))
+
+(defun fin-ir--defis-exempt (year)
+  "YEAR's DEFIS exempt profit: `fin-ir-defis-exempt', else 0 when the DEFIS
+is in the defis/ folder of `fin-ir-payments-dir', else nil."
+  (or (cdr (assq year fin-ir-defis-exempt))
+      (and fin-ir-payments-dir
+           (file-exists-p (expand-file-name (format "defis/defis-cnpj-%d.pdf" year) fin-ir-payments-dir))
+           0)))
 
 (defun fin-ir--filed ()
   "Returns delivered: `fin-ir-filed', then one per receipt in the dirpf/

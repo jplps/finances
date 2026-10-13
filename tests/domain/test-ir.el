@@ -185,6 +185,16 @@
                               (fin-ir--filed))))
       (delete-directory dir t))))
 
+(ert-deftest ir/defis-exempt-defaults-to-zero-when-filed ()
+  (let* ((dir (make-temp-file "fin-ir-" t)) (fin-ir-payments-dir dir) (fin-ir-defis-exempt '((2022 . 500))))
+    (unwind-protect
+        (progn (make-directory (expand-file-name "defis" dir))
+               (write-region "" nil (expand-file-name "defis/defis-cnpj-2021.pdf" dir))
+               (should (equal 0 (fin-ir--defis-exempt 2021)))
+               (should (equal 500 (fin-ir--defis-exempt 2022)))
+               (should-not (fin-ir--defis-exempt 2023)))
+      (delete-directory dir t))))
+
 (defun test-ir--dec (exercise fields &optional len)
   "A .DEC text: IR header of EXERCISE, totals record of LEN (744) with
 FIELDS, (START . CENTS) each, as 13-digit fields."
