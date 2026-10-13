@@ -271,7 +271,7 @@ nil when every line is ok."
   (list label
         (list (if value (fin-dashboard--money-cell value) "?"))
         (and rows (fin-dashboard--table
-                   '("" "amount")
+                   '("" "")
                    (mapcar (lambda (r) (list (car r) (if (cadr r) (fin-dashboard--money-cell (cadr r)) "?")))
                            rows)))))
 
@@ -298,7 +298,7 @@ each group folded."
   (let ((taxes (plist-get pos :taxes))
         (model (plist-get pos :model)))
     (fin-dashboard--alist
-     '("" "amount")
+     '("" "")
      (list (fin-dashboard--ir-revenue pos)
            (fin-dashboard--ir-group "company taxes" (apply #'+ (mapcar #'cdr taxes))
                                     (mapcar (lambda (tx) (list (car tx) (cdr tx))) taxes))

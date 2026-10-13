@@ -23,14 +23,21 @@ grid-area mapping)."
           name
           body))
 
+(defun fin-dashboard--thead (header)
+  "<thead> of the column labels HEADER; none when every label is empty, as
+for a table nested under a row that already names its column."
+  (if (cl-every #'string-empty-p header) ""
+    (concat "<thead><tr>"
+            (mapconcat (lambda (h) (format "<th>%s</th>" (fin-dashboard--esc h))) header "")
+            "</tr></thead>")))
+
 (defun fin-dashboard--table (header rows &optional class row-class-fn)
   "Render <table> with thead + per-row <tr.row[ even][ EXTRA]> + zebra index."
   (let ((i 0))
     (concat
      (if class (format "<table class=\"%s\">" class) "<table>")
-     "<thead><tr>"
-     (mapconcat (lambda (h) (format "<th>%s</th>" (fin-dashboard--esc h))) header "")
-     "</tr></thead><tbody>"
+     (fin-dashboard--thead header)
+     "<tbody>"
      (mapconcat
       (lambda (r)
         (cl-incf i)
@@ -53,9 +60,7 @@ FOOT, when non-nil, is a (LABEL . CELLS) totals row in <tfoot>."
   (let ((ncols (length header))
         (i 0))
     (concat
-     "<table><thead><tr>"
-     (mapconcat (lambda (h) (format "<th>%s</th>" (fin-dashboard--esc h))) header "")
-     "</tr></thead><tbody>"
+     "<table>" (fin-dashboard--thead header) "<tbody>"
      (mapconcat
       (lambda (tup)
         (cl-incf i)
