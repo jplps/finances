@@ -83,10 +83,9 @@
                                         (:edit ("2026-01-01" "out" "food" "x" 100) 80)
                                         (:edit ("2026-01-01" "out" "food" "x" 100) 70))))))
 
-(ert-deftest odsw/save-rezips-reads-back-and-backs-up ()
+(ert-deftest odsw/save-rezips-and-reads-back ()
   (let* ((dir (make-temp-file "fin-odsw-" t))
-         (ods (expand-file-name "seeds.ods" dir))
-         (fin-ods-backup-dir "backup"))
+         (ods (expand-file-name "seeds.ods" dir)))
     (unwind-protect
         (let ((default-directory (file-name-as-directory dir)))
           (with-temp-file "mimetype" (insert "application/vnd.oasis.opendocument.spreadsheet"))
@@ -96,9 +95,10 @@
           (should (zerop (call-process "zip" nil nil nil "-q" "-X" "seeds.ods" "content.xml")))
           (let* ((new (fin-odsw-apply (fin-odsw-read ods)
                                       '((:add ("2026-10-02" "out" "free" "teste" 100 nil nil)))))
-                 (backup (fin-odsw-save ods new)))
-            (should (file-exists-p backup))
-            (should (string-prefix-p (expand-file-name "backup/" dir) backup))
+                 (written (fin-odsw-save ods new)))
+            (should (equal ods written))
+            (should (equal '("content.xml" "mimetype" "seeds.ods")
+                           (sort (directory-files dir nil "\\`[^.]") #'string<)))   ; no copy left
             (should (equal new (fin-odsw-read ods)))
             (should (equal "2026-10-02" (car (nth 1 (fin-ods-rows (fin-ods-sheet (fin-ods-parse ods) "entries"))))))))
       (delete-directory dir t))))

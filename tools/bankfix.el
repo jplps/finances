@@ -2,7 +2,7 @@
 
 ;; `fin-bank-fix' reconciles every bank row since `fin-bank-fix-from'
 ;; against the ledger, turns the differences into ledger changes per
-;; conventions.el, writes them to the ODS (with a backup) and shows what
+;; conventions.el, writes them to the ODS and shows what
 ;; it did.  It never touches the DB: run `fin' afterwards.  Running it
 ;; again changes nothing, since the fixed ledger then matches the bank.
 
@@ -302,15 +302,16 @@ K-1.  Nil when K is 1 or none is booked."
   (insert (format "\n* %s (%d)\n\n" title (length items)))
   (dolist (i items) (insert "  " (funcall fmt i) "\n")))
 
-(defun fin-bank-fix--report (actions notes backup)
-  "Show ACTIONS and NOTES; BACKUP is the saved copy or nil (dry run)."
+(defun fin-bank-fix--report (actions notes written)
+  "Show ACTIONS and NOTES; WRITTEN is the ODS path, or nil (dry run or
+nothing to change)."
   (let ((buf (get-buffer-create "*fin-bank-fix*")))
     (cl-flet ((of (kind) (cl-remove-if-not (lambda (a) (eq (car a) kind)) actions))
               (money (n) (fin-bank--cents n)))
       (with-current-buffer buf
         (let ((inhibit-read-only t))
           (erase-buffer)
-          (insert (if backup (format "ODS fixed; backup %s\nRun M-x fin to refresh.\n" backup)
+          (insert (if written (format "ODS fixed: %s\nRun M-x fin to refresh.\n" written)
                     "Dry run: nothing written.\n"))
           (fin-bank-fix--insert-section
            "Added" (of :add)
@@ -362,10 +363,10 @@ With prefix arg DRY-RUN, only report.  Run `fin' afterwards."
                           (plist-get r :pj)))
          (actions (fin-bank-fix--continue-series actions))
          (changes (fin-bank-fix--changes actions))
-         (backup (when (and changes (not dry-run))
+         (written (when (and changes (not dry-run))
                    (fin-odsw-save fin-ods-path (fin-odsw-apply (fin-odsw-read fin-ods-path) changes)))))
     (fin-bankdb-record-fix-run (length changes) dry-run (fin-bank-fix--flags actions))
-    (fin-bank-fix--report actions (plist-get r :notes) backup)
+    (fin-bank-fix--report actions (plist-get r :notes) written)
     (message "fin-bank: %d changes%s" (length changes)
              (cond (dry-run " (dry run)") (changes ", run M-x fin") (t "")))
     changes))

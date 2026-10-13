@@ -11,10 +11,6 @@
 (require 'xml)
 (require 'parser)
 
-(defcustom fin-ods-backup-dir "backup"
-  "Backup directory, relative to the ODS file's directory."
-  :type 'string :group 'fin)
-
 (defconst fin-odsw--sheet-open "<table:table table:name=\"entries\""
   "Start tag of the entries sheet.")
 
@@ -193,19 +189,9 @@ rows are interchangeable) and the deletes of a key hit exactly as many rows."
 
 ;;; ── Save ───────────────────────────────────────────────────
 
-(defun fin-odsw--backup (path)
-  "Copy PATH into `fin-ods-backup-dir' with a timestamp.  Return the copy."
-  (let* ((dir (expand-file-name fin-ods-backup-dir (file-name-directory path)))
-         (dst (expand-file-name (format "%s-%s.ods" (file-name-base path)
-                                        (format-time-string "%Y%m%dT%H%M%S"))
-                                dir)))
-    (make-directory dir t)
-    (copy-file path dst)
-    dst))
-
 (defun fin-odsw-save (path content)
-  "Replace content.xml of the ODS at PATH with CONTENT, keeping a backup.
-CONTENT must be well-formed; the result must read back.  Return the backup."
+  "Replace content.xml of the ODS at PATH with CONTENT; no copy is kept.
+CONTENT must be well-formed; the result must read back.  Return PATH."
   (let ((path (expand-file-name path)))
     (unless (executable-find "zip") (user-error "zip(1) not found"))
     (with-temp-buffer
@@ -223,8 +209,8 @@ CONTENT must be well-formed; the result must read back.  Return the backup."
                 (error "fin-odsw: zip failed")))
             (unless (fin-ods-sheet (fin-ods-parse new) "entries")
               (error "fin-odsw: rewritten ODS lost its entries sheet"))
-            (prog1 (fin-odsw--backup path)
-              (copy-file new path t)))
+            (copy-file new path t)
+            path)
         (delete-directory tmp t)))))
 
 (provide 'odswrite)

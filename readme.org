@@ -77,7 +77,7 @@ Schema is auto-created on first =M-x fin-db-rebuild= (or =finances fin-db-rebuil
 │   ├── parser.el        ; ODS XML reader (outbound port)
 │   ├── db.el            ; SQLite schema + helpers
 │   ├── bankdb.el        ; bank staging tables (survive rebuild)
-│   ├── odswrite.el      ; edit entries sheet in place, backup, re-zip
+│   ├── odswrite.el      ; edit entries sheet in place, re-zip
 │   ├── ofx.el           ; OFX statement parser
 │   ├── cardpdf.el       ; PDF card bill parser (rows from pdfrows.js)
 │   └── pdfrows.js       ; PDF → visual rows via macOS PDFKit
@@ -123,7 +123,6 @@ Schema is auto-created on first =M-x fin-db-rebuild= (or =finances fin-db-rebuil
     │   ├── nfse/        ; company invoices (NFS-e) + index csv
     │   ├── inss/        ; CNIS contribution statement
     │   └── docs/        ; company registration papers
-    ├── backup/          ; ODS copies taken before each fix (gitignored)
     ├── config.el        ; personal settings (gitignored, optional)
     └── seeds.ods        ; source of truth
 #+end_example
@@ -201,7 +200,7 @@ The ODS stays canonical; bank statements fix it.  =M-x fin-bank-fix= compares ev
 1. Export last month's account statement and the closed card bill; copy both into =infra/inbox/nubank/=.
 2. Close the ODS in LibreOffice: its next save would undo the fix (=fin-bank-fix= refuses while the lock file exists).
 3. =M-x fin-bank-import= — renames files to =nubank-<account|card>-<start>_<end>.ofx= from the statement period (PDF bills to =nubank-card-bill-<due>.pdf=), removes a re-export of a statement already there (a later export replaces it and drops rows it no longer lists; card bills span [start, end), account statements [start, end]), imports new rows into =bank_txn=.  Rows dedup by =FITID= plus date, amount and memo (Nubank reuses a =FITID= across installments and refunds).
-4. =M-x fin-bank-fix= — writes the fixes; backup in =infra/backup/=.  =C-u M-x fin-bank-fix= is a dry run.
+4. =M-x fin-bank-fix= — writes the fixes to the ODS (keep your own copy of it).  =C-u M-x fin-bank-fix= is a dry run.
 5. Read /Needs a look/ in the report (salary gaps, refunds with no purchase), fix those by hand if needed.
 6. =M-x fin=.
 
@@ -298,7 +297,7 @@ emacs -Q -batch \
 
 Coverage scope:
 - Pure formatters (=view/fmt.el=): every fn × edge (nil, 0, neg, k-suffix).
-- Bank: OFX parsing (closed and bare SGML, cents without floats, encoding detection, statement period), inbox naming and re-export removal, idempotent import, matching buckets (exact, near, shifted, net, ignored), conventions (refunds, IOF, discounts, Pix via card, combined rows, savings nets, salary reports), ODS writer (row identity, date order, fail-loud on ambiguity, re-zip round trip, backup), review buffer and TSV export.
+- Bank: OFX parsing (closed and bare SGML, cents without floats, encoding detection, statement period), inbox naming and re-export removal, idempotent import, matching buckets (exact, near, shifted, net, ignored), conventions (refunds, IOF, discounts, Pix via card, combined rows, savings nets, salary reports), ODS writer (row identity, date order, fail-loud on ambiguity, re-zip round trip), review buffer and TSV export.
 - ODS parser: cell-value precedence (=date-value= > =value= > text), =number-columns-repeated= / =number-rows-repeated= expansion + caps.
 - DB layer: schema rebuild idempotency, cents-as-integer storage, composite PK semantics.
 - Domain queries: each public fn against seeded fixtures, including =/0=, =NULL=, future-month, multi-year scenarios.
@@ -318,7 +317,7 @@ Fixtures live in =tests/helpers.el= (=fin-test-with-db= macro, seed inserters, =
 - *Static HTML dashboard*: no server, no JS, no port.  =M-x fin= opens the latest.
 - *BRL only*: no currency column; every amount is BRL cents.
 - =infra/finances.db= gitignored; ODS tables regeneratable from the ODS, bank tables from =infra/inbox/nubank/= (=fin-db-rebuild= leaves them alone).
-- *Bank fixes the ODS, the ODS stays canonical*: =fin-bank-fix= edits =content.xml= as text so untouched rows stay byte-identical, keeps a backup, never touches the DB; =fin= then mirrors the fixed ODS.  It re-zips with =zip(1)=, the counterpart of the =unzip(1)= the reader uses.
+- *Bank fixes the ODS, the ODS stays canonical*: =fin-bank-fix= edits =content.xml= as text so untouched rows stay byte-identical, never touches the DB; =fin= then mirrors the fixed ODS.  It keeps no copy of its own.  It re-zips with =zip(1)=, the counterpart of the =unzip(1)= the reader uses.
 - *Tests are stdlib*: ERT only, no =buttercup= / =undercover= / external runners.  Keeps the zero-deps invariant honest.
 
 * License
