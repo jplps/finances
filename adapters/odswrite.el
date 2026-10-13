@@ -65,9 +65,10 @@ Return (FIRST LAST ROWS): rows must be contiguous."
         (t "")))
 
 (defun fin-odsw--row-values (row)
-  "(date type category item amount installment installments) of ROW;
-\"\" for empty."
-  (fin-odsw--cells row 7))
+  "(date type category item amount installment installments via) of ROW;
+\"\" for empty.  VIA names how a row was paid when not through the bank
+statements (cash, bb)."
+  (fin-odsw--cells row 8))
 
 (defun fin-odsw--cells (row n)
   "The first N cell values of ROW, \"\" for empty."
@@ -98,9 +99,10 @@ Return (FIRST LAST ROWS): rows must be contiguous."
     (format "<table:table-cell office:value-type=\"float\" office:value=\"%d\" calcext:value-type=\"float\"><text:p>%d</text:p></table:table-cell>"
             n n)))
 
-(defun fin-odsw-row-xml (date type category item amount installment installments)
+(defun fin-odsw-row-xml (date type category item amount installment installments &optional via)
   "Entries row in the sheet's own cell format.  AMOUNT in cents;
-INSTALLMENT of INSTALLMENTS both nil or 1 <= INSTALLMENT <= INSTALLMENTS."
+INSTALLMENT of INSTALLMENTS both nil or 1 <= INSTALLMENT <= INSTALLMENTS;
+VIA nil, or how it was paid outside the bank statements."
   (cl-assert (string-match-p "\\`[0-9]\\{4\\}-[0-9]\\{2\\}-[0-9]\\{2\\}\\'" date))
   (cl-assert (and (integerp amount) (> amount 0)))
   (cl-assert (member type '("in" "out")))
@@ -114,7 +116,15 @@ INSTALLMENT of INSTALLMENTS both nil or 1 <= INSTALLMENT <= INSTALLMENTS."
           (fin-odsw--string-cell type) (fin-odsw--string-cell category) (fin-odsw--string-cell item)
           (fin-odsw--number-cell amount)
           (fin-odsw--number-cell installment) (fin-odsw--number-cell installments)
+          (if via (fin-odsw--string-cell via) "")
           "</table:table-row>"))
+
+(defun fin-odsw--rebuild-row (vals via)
+  "Entries row of row values VALS (`fin-odsw--row-values') with VIA set."
+  (pcase-let ((`(,date ,type ,cat ,item ,amount ,k ,n . ,_) vals))
+    (fin-odsw-row-xml date type cat item amount
+                      (and (integerp k) k) (and (integerp n) n)
+                      (and via (not (string-empty-p via)) via))))
 
 ;;; ── Apply ──────────────────────────────────────────────────
 
@@ -150,9 +160,11 @@ Within one date, existing rows come first."
   "CONTENT with CHANGES applied to the entries sheet.  Each change is
   (:edit (date type category item amount) NEW-AMOUNT)
   (:delete (date type category item amount))
-  (:add (date type category item amount installment installments))
-Item is \"\" when empty.  Signals unless every edit finds a row (identical
-rows are interchangeable) and the deletes of a key hit exactly as many rows."
+  (:add (date type category item amount installment installments [via]))
+  (:via (date type category item amount) VIA)
+Item is \"\" when empty; VIA \"\" clears it.  Signals unless every edit or
+via finds a row (identical rows are interchangeable) and the deletes of a
+key hit exactly as many rows."
   (pcase-let* ((`(,start . ,end) (fin-odsw--sheet-bounds content))
                (`(,first ,last ,rows) (fin-odsw--rows content start end))
                (rowv (vconcat rows))
@@ -177,6 +189,13 @@ rows are interchangeable) and the deletes of a key hit exactly as many rows."
            (puthash i t edited)
            (aset rowv i (fin-odsw--set-amount (aref rowv i) (nth 4 key) new))
            (setf (nth 4 (nth i keys)) new)))
+        (`(:via ,key ,via)
+         (let ((i (or (cl-loop for k in (cdr keys) for i from 1
+                               when (and (equal k key) (not (gethash i gone)) (not (gethash i edited)))
+                               return i)
+                      (error "fin-odsw: no row left matching %S" key))))
+           (puthash i t edited)
+           (aset rowv i (fin-odsw--rebuild-row (fin-odsw--row-values (aref rowv i)) via))))
         (`(:delete ,_) nil)
         (`(:add ,fields)
          (push (cons (car fields) (apply #'fin-odsw-row-xml fields)) adds))

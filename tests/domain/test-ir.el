@@ -152,6 +152,38 @@
       (should (= 0 (plist-get p :invoiced-through)))         ; the March invoice comes after
       (should (= 2600000 (plist-get p :presumed))))))       ; 32% × 100.000 − 6.000
 
+(ert-deftest ir/pro-labore-from-receita-files ()
+  (let* ((dir (make-temp-file "fin-ir-" t))
+         (fin-ir-payments-dir dir) (fin-ir-pro-labore nil))
+    (unwind-protect
+        (progn
+          (make-directory (expand-file-name "fontes-pagadoras" dir))
+          (with-temp-file (expand-file-name "fontes-pagadoras/fontes.csv" dir)
+            (insert "ano,fonte,rendimento_tributavel,prev_oficial,irrf,isento,processado\n"
+                    "2024,A,16300.00,1793.00,0.00,0.00,2025-02-24\n"
+                    "2024,B,250.00,0.00,0.00,0.00,2026-04-18\n"))
+          (with-temp-file (expand-file-name "dctfweb-x.csv" dir)
+            (insert "periodo;transmissao;categoria;origem;tipo;situacao;debito;saldo\n"
+                    "02/2026;x;Geral;eSocial;Original;Ativa;330.00;330.00\n"
+                    "01/2026;x;Geral;eSocial;Original;Ativa;330.00;330.00\n"
+                    "12/2024;x;Geral;eSocial;Original;Ativa;999.00;999.00\n"))
+          (should (equal '(1630000 135833 179300) (fin-ir--pro-labore 2024 12)))   ; payer file wins
+          (should (equal '(600000 300000 66000) (fin-ir--pro-labore 2026 2)))
+          (should-not (fin-ir--pro-labore 2025 12))
+          (let ((fin-ir-pro-labore '((2026 :monthly 100000))))
+            (should (equal 100000 (nth 1 (fin-ir--pro-labore 2026 2))))))
+      (delete-directory dir t))))
+
+(ert-deftest ir/filed-from-receipt-names ()
+  (let* ((dir (make-temp-file "fin-ir-" t)) (fin-ir-payments-dir dir) (fin-ir-filed '((2023 . "2024-05-01"))))
+    (unwind-protect
+        (progn (make-directory (expand-file-name "dirpf" dir))
+               (dolist (f '("dirpf-cpf-2025-recibo-2026-10-07.pdf" "dirpf-cpf-2025-declaracao.pdf"))
+                 (write-region "" nil (expand-file-name (concat "dirpf/" f) dir)))
+               (should (equal '((2025 . "2026-10-07") (2023 . "2024-05-01"))
+                              (fin-ir--filed))))
+      (delete-directory dir t))))
+
 (ert-deftest ir/duty-statuses ()
   (let ((fin-ir-filed '((2025 . "2026-10-07") (2024 . "2025-04-01"))))
     (should (eq 'missing (plist-get (fin-ir-duty '(:year 2022 :taxable 1439018 :exempt 6052500)) :status)))

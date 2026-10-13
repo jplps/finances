@@ -18,7 +18,6 @@
 (require 'test-sync)
 (require 'test-bankdb)
 (require 'test-ofx)
-(require 'test-cardpdf)
 (require 'test-odswrite)
 (require 'test-reconcile)
 (require 'test-conventions)

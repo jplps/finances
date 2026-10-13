@@ -45,6 +45,18 @@
       (fin-test-insert-entry "2026-10-05" "out" "food" 20000)
       (should (equal '(100000 120000) (fin-health-cash 2026 10))))))
 
+(ert-deftest health/months-leave-out-offbank-rows ()
+  (fin-test-with-db
+    (let* ((last (fin-health--month-start 1))
+           (day (concat (substring last 0 7) "-10"))
+           (fin-bank-own-regexps nil) (fin-conv-salary-regexps nil) (fin-pj-tax-items nil))
+      (fin-bankdb-insert (list (list "a" "nubank-ofx" "account" day "out" 10000 "Compra no débito - Padaria")))
+      (fin-test-insert-entry day "out" "food" 10000 "padaria")
+      (fin-test-insert-entry day "out" "free" 5000 "pintura")
+      (should (equal 15000 (nth 2 (car (last (fin-health-months 1))))))
+      (fin-db-exec "UPDATE entry SET via = 'cash' WHERE item = 'pintura'")
+      (should (equal 10000 (nth 2 (car (last (fin-health-months 1)))))))))
+
 (ert-deftest health/inbox-wants-last-month-covered ()
   (fin-test-with-db
     (let ((need (fin-health--last-month-end)))

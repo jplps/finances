@@ -29,7 +29,8 @@ Signals unless both are whole numbers with 1 <= K <= N."
       (when (car r)
         (push (append (list (nth 0 r) (nth 1 r) (nth 2 r) (nth 3 r)
                             (and (numberp (nth 4 r)) (round (nth 4 r))))
-                      (fin-sync--installment r))
+                      (fin-sync--installment r)
+                      (list (and (stringp (nth 7 r)) (not (string-empty-p (nth 7 r))) (nth 7 r))))
               out)))
     (nreverse out)))
 
@@ -54,7 +55,7 @@ Signals unless both are whole numbers with 1 <= K <= N."
     (nreverse out)))
 
 (defconst fin-sync--entry-cols
-  '("date" "type" "category" "item" "amount" "installment" "installments"))
+  '("date" "type" "category" "item" "amount" "installment" "installments" "via"))
 
 (defconst fin-sync--plan-cols
   '("category" "parent" "type" "amount" "share"))

@@ -42,7 +42,14 @@
        file_sha1   TEXT PRIMARY KEY,
        path        TEXT NOT NULL,
        rows_in     INTEGER NOT NULL,
-       imported_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S','now')))")
+       imported_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S','now')))"
+    "CREATE TABLE IF NOT EXISTS bank_fix_added (
+       bank_id     TEXT PRIMARY KEY,
+       date        TEXT NOT NULL,
+       type        TEXT NOT NULL,
+       category    TEXT NOT NULL,
+       item        TEXT NOT NULL,
+       amount      INTEGER NOT NULL)")
   "Bank staging schema.  Idempotent: safe to run on every open.")
 
 (defconst fin-bankdb--txn-cols
@@ -122,12 +129,6 @@ any write.  Return the number of rows actually inserted."
   (mapcar #'car (fin-db-query
                  "SELECT DISTINCT strftime('%Y-%m', date) FROM bank_txn WHERE account = 'card'")))
 
-(defun fin-bankdb-ofx-card-start ()
-  "Earliest date of card rows imported from OFX, or nil."
-  (fin-bankdb-ensure)
-  (caar (fin-db-query
-         "SELECT MIN(date) FROM bank_txn WHERE account = 'card' AND source = 'nubank-ofx'")))
-
 (defun fin-bankdb-record-balance (account date cents)
   "Store ACCOUNT's balance CENTS on ISO DATE; a later import of the same day wins."
   (unless (and (stringp account) (stringp date) (string-match-p fin-bankdb--date-re date) (integerp cents))
@@ -172,6 +173,29 @@ reported, replacing the previous run's."
       (dolist (f flags)
         (sqlite-execute db "INSERT OR REPLACE INTO bank_fix_flag (bank_id, date, amount, description, reason)
                             VALUES (?,?,?,?,?)" f)))))
+
+(defun fin-bankdb-record-fix-adds (adds)
+  "Remember ADDS, (bank-id date type category item amount) each: the ledger
+rows `fin-bank-fix' wrote and the bank row each came from."
+  (let ((db (fin-bankdb-ensure)))
+    (with-sqlite-transaction db
+      (dolist (a adds)
+        (cl-assert (and (stringp (car a)) (= (length a) 6)) nil "fin-bankdb: bad add %S" a)
+        (sqlite-execute db "INSERT OR REPLACE INTO bank_fix_added (bank_id, date, type, category, item, amount)
+                            VALUES (?,?,?,?,?,?)" a)))))
+
+(defun fin-bankdb-vanished-adds ()
+  "(bank-id date type category item amount) of ledger rows `fin-bank-fix'
+added from bank rows a later export no longer lists."
+  (fin-bankdb-ensure)
+  (fin-db-query "SELECT bank_id, date, type, category, item, amount FROM bank_fix_added
+                  WHERE bank_id NOT IN (SELECT id FROM bank_txn)"))
+
+(defun fin-bankdb-forget-adds (ids)
+  "Forget the remembered adds of bank row IDS."
+  (let ((db (fin-bankdb-ensure)))
+    (with-sqlite-transaction db
+      (dolist (id ids) (sqlite-execute db "DELETE FROM bank_fix_added WHERE bank_id = ?" (list id))))))
 
 (defun fin-bankdb-last-fix-run ()
   "(RUN-AT CHANGES DRY) of the latest `fin-bank-fix' run, or nil."

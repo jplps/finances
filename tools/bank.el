@@ -6,18 +6,16 @@
 ;;
 ;; Statements copied into `fin-bank-inbox' are imported with
 ;; `fin-bank-import': files are renamed to `nubank-<kind>-<start>_<end>.ofx'
-;; (kind account, card, pj or pj-card, see `fin-bank-pj-accounts')
-;; (PDF card bills to `nubank-card-bill-<due>.pdf') first, a re-export of a
-;; statement already there is removed, and each file is imported once,
-;; keyed by content hash.  PDF bills cover the years before card OFX
-;; exports: their rows stop where OFX card rows start.
+;; (kind account, card, pj or pj-card, see `fin-bank-pj-accounts') first,
+;; a re-export of a statement already there is removed, and each file is
+;; imported once, keyed by content hash.  Card rows from the PDF bills of
+;; 2020–2023 stay in the bank DB as imported then; their reader is gone.
 
 (require 'cl-lib)
 (require 'db)
 (require 'bankdb)
 (require 'reconcile)
 (require 'ofx)
-(require 'cardpdf)
 
 (defcustom fin-bank-inbox
   (expand-file-name "../infra/inbox/nubank/"
@@ -107,48 +105,19 @@ SEEN counts ids within one file; repeats get an ordinal suffix."
                 rows))))
     (cons (nreverse rows) dropped)))
 
-(defun fin-bank--pdf-rows (text since)
-  "Bank rows from card bill rows TEXT and the count of rows skipped:
-bill financing, zero amounts, and days on or after SINCE (ISO, or nil),
-where OFX card statements take over."
-  (let* ((parsed  (fin-cardpdf-parse text))
-         (seen    (make-hash-table :test #'equal))
-         (skipped (length (plist-get parsed :financing)))
-         rows)
-    (dolist (tx (plist-get parsed :txns))
-      (pcase-let ((`(,date ,cents ,memo) tx))
-        (if (or (zerop cents) (and since (not (string< date since))))
-            (setq skipped (1+ skipped))
-          (push (list (fin-bank--txn-id "pdf" date cents memo seen)
-                      "nubank-pdf" "card" date
-                      (if (< cents 0) "out" "in") (abs cents) memo)
-                rows))))
-    (cons (nreverse rows) skipped)))
-
-(defun fin-bank--file-sha1 (path)
-  "SHA1 of the bytes of PATH."
-  (with-temp-buffer
-    (set-buffer-multibyte nil)
-    (insert-file-contents-literally path)
-    (secure-hash 'sha1 (current-buffer))))
-
 ;;;###autoload
 (defun fin-bank-import-file (path)
-  "Import the OFX statement or PDF card bill at PATH.  Return rows
-inserted, or nil if the file was already imported."
-  (interactive "fStatement file (.ofx, .pdf): ")
-  (let* ((ext  (downcase (or (file-name-extension path) "")))
-         (pdf  (equal ext "pdf"))
-         (_    (unless (member ext '("ofx" "pdf"))
-                 (user-error "fin-bank: only .ofx and .pdf are supported: %s" path)))
-         (text (unless pdf (fin-ofx-read-file path)))
-         (sha1 (if pdf (fin-bank--file-sha1 path) (secure-hash 'sha1 text))))
+  "Import the OFX statement at PATH.  Return rows inserted, or nil if the
+file was already imported."
+  (interactive "fStatement file (.ofx): ")
+  (let* ((_    (unless (equal (downcase (or (file-name-extension path) "")) "ofx")
+                 (user-error "fin-bank: only .ofx is supported: %s" path)))
+         (text (fin-ofx-read-file path))
+         (sha1 (secure-hash 'sha1 text)))
     (if (fin-bankdb-file-imported-p sha1)
         (progn (message "fin-bank: already imported %s" path) nil)
       (pcase-let* ((`(,rows . ,skipped)
-                    (if pdf
-                        (fin-bank--pdf-rows (fin-cardpdf-rows path) (fin-bankdb-ofx-card-start))
-                      (fin-bank--ofx-rows text)))
+                    (fin-bank--ofx-rows text))
                    (n (fin-bankdb-insert rows)))
         (fin-bankdb-record-import sha1 (expand-file-name path) n)
         (message "fin-bank: %s — %d txns, %d new, %d skipped"
@@ -208,44 +177,20 @@ Return the resulting path or nil."
                      (t (user-error "fin-bank: %s and %s cover the same period but differ"
                                     (file-name-nondirectory path) (file-name-nondirectory dst)))))))))
 
-(defconst fin-bank--pdf-name-re
-  "\\`nubank-card-bill-[0-9]\\{4\\}-[0-9]\\{2\\}-[0-9]\\{2\\}\\.pdf\\'"
-  "Canonical inbox name of a PDF card bill.")
-
-(defun fin-bank--normalize-pdf (path)
-  "Rename card bill PATH to `nubank-card-bill-<due>.pdf'; like
-`fin-bank--normalize-file', identical bytes count as the same bill.
-Files already so named are not opened."
-  (if (string-match-p fin-bank--pdf-name-re (file-name-nondirectory path))
-      path
-    (let* ((due (plist-get (fin-cardpdf-parse (fin-cardpdf-rows path)) :due))
-           (dst (expand-file-name (format "%s-card-bill-%s.pdf" fin-bank-name due) fin-bank-inbox)))
-      (cond ((not (file-exists-p dst)) (rename-file path dst) dst)
-            ((equal (fin-bank--file-sha1 path) (fin-bank--file-sha1 dst))
-             (delete-file path)
-             (message "fin-bank: removed copy %s" (file-name-nondirectory path))
-             nil)
-            (t (user-error "fin-bank: %s and %s are both the bill due %s but differ"
-                           (file-name-nondirectory path) (file-name-nondirectory dst) due))))))
-
 ;;;###autoload
 (defun fin-bank-import ()
-  "Name, then import, every .ofx and .pdf file in `fin-bank-inbox' not
-imported yet."
+  "Name, then import, every .ofx file in `fin-bank-inbox' not imported
+yet.  Other files there (old PDF card bills) are kept as documents."
   (interactive)
   (unless (file-directory-p fin-bank-inbox)
     (user-error "fin-bank: inbox missing: %s" fin-bank-inbox))
   (dolist (f (directory-files fin-bank-inbox t "\\.[oO][fF][xX]\\'"))
     (fin-bank--normalize-file f))
-  (dolist (f (directory-files fin-bank-inbox t "\\.[pP][dD][fF]\\'"))
-    (fin-bank--normalize-pdf f))
   ;; Balances of every statement, imported or not: idempotent.
   (dolist (f (directory-files fin-bank-inbox t "\\.[oO][fF][xX]\\'"))
     (let* ((text (fin-ofx-read-file f)) (bal (fin-ofx-balance text)))
       (when bal (fin-bankdb-record-balance (fin-bank--kind text) (car bal) (cdr bal)))))
-  ;; OFX first: PDF rows stop where OFX card rows start.
-  (let ((files (append (directory-files fin-bank-inbox t "\\.[oO][fF][xX]\\'")
-                       (directory-files fin-bank-inbox t "\\.[pP][dD][fF]\\'")))
+  (let ((files (directory-files fin-bank-inbox t "\\.[oO][fF][xX]\\'"))
         (new 0))
     (dolist (f files)
       (setq new (+ new (or (fin-bank-import-file f) 0))))

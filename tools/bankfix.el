@@ -1,10 +1,13 @@
 ;;; bankfix.el --- Fix the ODS ledger from imported bank rows  -*- lexical-binding: t; -*-
 
-;; `fin-bank-fix' reconciles every bank row since `fin-bank-fix-from'
-;; against the ledger, turns the differences into ledger changes per
-;; conventions.el, writes them to the ODS and shows what
-;; it did.  It never touches the DB: run `fin' afterwards.  Running it
-;; again changes nothing, since the fixed ledger then matches the bank.
+;; `fin-bank-fix' reconciles every bank row since `fin-bank-fix--from'
+;; (by default the first day of last month: the month in progress and the
+;; one before, whose card bill may still post) against the ledger, turns
+;; the differences into ledger changes per conventions.el, writes them to
+;; the ODS and shows what it did.  A ledger row it added goes again when a
+;; later export of the statement no longer lists its bank row (a dropped
+;; card authorization).  It never touches the ledger DB: run `fin'
+;; afterwards.  Running it again changes nothing.
 
 (require 'cl-lib)
 (require 'db)
@@ -17,15 +20,37 @@
 
 (defvar fin-ods-path)
 
-(defcustom fin-bank-fix-from "2024-01-01"
-  "First date fixed from the bank: account and card statements both cover
-it, and the ledger lists single purchases from there on."
-  :type 'string :group 'fin)
+(defcustom fin-bank-fix-from nil
+  "First date fixed from the bank, ISO; nil for the first day of last
+month, so older, settled history is never touched.  Set a date only to
+re-fix older months once."
+  :type '(choice (const nil) string) :group 'fin)
 
-(defcustom fin-bank-fix-itemized-from "2022-07-01"
-  "First date the ledger books single purchases; before it, monthly lumps
-per category and income by payer, so bank rows are reported, not added."
-  :type 'string :group 'fin)
+(defun fin-bank-fix--from ()
+  "`fin-bank-fix-from', or the first day of last month."
+  (or fin-bank-fix-from
+      (pcase-let ((`(,_ ,_ ,_ ,_ ,m ,y . ,_) (decode-time)))
+        (if (= m 1) (format "%04d-12-01" (1- y)) (format "%04d-%02d-01" y (1- m))))))
+
+(defun fin-bank-fix--vanished ()
+  "(BANK-IDS . ACTIONS): adds whose bank row a later export dropped, and a
+delete for each whose ledger row is still there unchanged."
+  (let (ids acts)
+    (dolist (v (fin-bankdb-vanished-adds) (cons ids (nreverse acts)))
+      (push (car v) ids)
+      (let ((l (car (fin-db-query "SELECT id, date, type, category, item, amount FROM entry
+                                    WHERE date = ? AND type = ? AND category = ?
+                                      AND COALESCE(item, '') = ? AND amount = ? LIMIT 1"
+                                  (cdr v)))))
+        (when l (push (list :delete l "the bank no longer lists it") acts))))))
+
+(defun fin-bank-fix--added (actions)
+  "(bank-id date type category item amount) of the adds in ACTIONS that
+carry a bank id."
+  (cl-loop for a in actions
+           when (and (eq (car a) :add) (stringp (nth 3 a)))
+           collect (pcase-let ((`(,date ,type ,cat ,item ,amount . ,_) (cadr a)))
+                     (list (nth 3 a) date type cat (or item "") amount))))
 
 (defcustom fin-bank-fix-unspent-categories '("investments" "retirement" "reserve" "cnpj")
   "Ledger categories that are not Nubank spending: savings goals, withheld
@@ -137,16 +162,6 @@ dropped (a partial month cannot be judged)."
           :months (fin-bank-fix--months bank (plist-get norm :rows) from)
           :history hist :pj (plist-get split :pj))))
 
-(defun fin-bank-fix--lumped (actions itemized-from)
-  "ACTIONS with adds dated before ITEMIZED-FROM turned into reports."
-  (mapcar (lambda (a)
-            (if (and (eq (car a) :add) (string< (car (cadr a)) itemized-from))
-                (pcase-let ((`(,date ,type ,_c ,_i ,amount . ,_) (cadr a)))
-                  (list :report (list (cadddr a) date type amount (caddr a))
-                        (format "before %s the ledger books monthly lumps" itemized-from)))
-              a))
-          actions))
-
 (defcustom fin-bank-fix-flag-days 90
   "Bank rows a run only reports are flagged in the cockpit for this many days."
   :type 'integer :group 'fin)
@@ -171,62 +186,6 @@ only report: the ones a person must classify."
                        (not (cl-some (lambda (re) (string-match-p re (nth 4 r)))
                                      fin-bank-fix-flag-ignore-regexps)))
              collect (list (car r) (nth 1 r) (nth 3 r) (nth 4 r) (caddr a)))))
-
-(defun fin-bank-fix--lump-card-p (b itemized-from)
-  "Non-nil if bank row B comes from a PDF card bill dated before ITEMIZED-FROM."
-  (and (string-prefix-p "nu:pdf:" (car b)) (string< (nth 1 b) itemized-from)))
-
-(defun fin-bank-fix--remainders (to)
-  "Ledger `other' remainder rows dated before TO, oldest first."
-  (fin-db-query
-   "SELECT id, date, type, category, item, amount, NULL FROM entry
-     WHERE item = 'other' AND type = 'out' AND date < ? ORDER BY date, id"
-   (list to)))
-
-(defun fin-bank-fix--next-month (ym)
-  "YYYY-MM after YM."
-  (pcase-let ((`(,y ,m) (mapcar #'string-to-number (split-string ym "-"))))
-    (if (= m 12) (format "%04d-01" (1+ y)) (format "%04d-%02d" y (1+ m)))))
-
-(defun fin-bank-fix--carve-pool (b cat pool)
-  "Remainders of POOL that card row B may draw from, in draw order: its
-month, then the next (a bill was often booked when paid), category CAT
-first.  Each remainder is a cons (LEDGER-ROW . LEFT)."
-  (let ((ym (substring (nth 1 b) 0 7)))
-    (cl-loop for m in (list ym (fin-bank-fix--next-month ym))
-             append (let ((rs (cl-remove-if-not (lambda (r) (equal (substring (nth 1 (car r)) 0 7) m)) pool)))
-                      (append (cl-remove-if-not (lambda (r) (equal (nth 3 (car r)) cat)) rs)
-                              (cl-remove-if (lambda (r) (equal (nth 3 (car r)) cat)) rs))))))
-
-(defun fin-bank-fix--carve (rows history itemized-from)
-  "Actions for card ROWS of lump months, before ITEMIZED-FROM.
-There the ledger holds card spending as month-end `other' remainders, so
-a charge becomes a ledger row (`fin-conv--add-action' over HISTORY)
-only when remainders of its month and the next cover it, and takes that
-money from them: totals never grow.  Charges left uncovered and card
-credits are reported."
-  (let ((pool (mapcar (lambda (r) (cons r (nth 5 r))) (fin-bank-fix--remainders itemized-from)))
-        out)
-    (dolist (b (sort (copy-sequence rows) (lambda (x y) (string< (nth 1 x) (nth 1 y)))))
-      (if (not (equal (nth 2 b) "out"))
-          (push (list :report b "card credit in a lump month") out)
-        (let* ((add (fin-conv--add-action b history))
-               (from (fin-bank-fix--carve-pool b (nth 2 (cadr add)) pool)))
-          (if (< (apply #'+ (mapcar #'cdr from)) (nth 3 b))
-              (push (list :report b "card charge beyond the month's remainders") out)
-            (let ((need (nth 3 b)))
-              (dolist (r from)
-                (let ((take (min need (cdr r))))
-                  (setcdr r (- (cdr r) take))
-                  (setq need (- need take))))
-              (cl-assert (zerop need)))
-            (push add out)))))
-    (dolist (r pool)
-      (let ((l (car r)))
-        (cond ((= (cdr r) (nth 5 l)) nil)
-              ((zerop (cdr r)) (push (list :delete l "card rows itemize the remainder") out))
-              (t (push (list :edit l (cdr r) "card rows itemize the remainder") out)))))
-    (nreverse out)))
 
 (defun fin-bank-fix--merchant-installment-p (date amount k n desc)
   "Non-nil if the bank holds installment K of N of DESC's merchant, of
@@ -302,9 +261,9 @@ K-1.  Nil when K is 1 or none is booked."
   (insert (format "\n* %s (%d)\n\n" title (length items)))
   (dolist (i items) (insert "  " (funcall fmt i) "\n")))
 
-(defun fin-bank-fix--report (actions notes written)
+(defun fin-bank-fix--report (actions notes written &optional quiet)
   "Show ACTIONS and NOTES; WRITTEN is the ODS path, or nil (dry run or
-nothing to change)."
+nothing to change).  QUIET fills the buffer without showing it."
   (let ((buf (get-buffer-create "*fin-bank-fix*")))
     (cl-flet ((of (kind) (cl-remove-if-not (lambda (a) (eq (car a) kind)) actions))
               (money (n) (fin-bank--cents n)))
@@ -341,32 +300,33 @@ nothing to change)."
             (maphash (lambda (k v) (insert (format "  %4d  %s\n" v k))) why)))
         (goto-char (point-min))
         (special-mode)))
-    (pop-to-buffer buf)))
+    (unless quiet (pop-to-buffer buf))))
 
 ;;;###autoload
-(defun fin-bank-fix (&optional dry-run)
-  "Fix the ODS ledger from bank rows since `fin-bank-fix-from', then report.
-With prefix arg DRY-RUN, only report.  Run `fin' afterwards."
+(defun fin-bank-fix (&optional dry-run quiet)
+  "Fix the ODS ledger from bank rows since `fin-bank-fix--from', then report.
+With prefix arg DRY-RUN, only report.  QUIET shows the report only when
+something changed.  Run `fin' afterwards (or let `fin' run this)."
   (interactive "P")
   (fin-bank-fix--check-closed fin-ods-path)
-  (let* ((r (fin-bank-fix--reconcile fin-bank-fix-from))
-         (lump-p (lambda (b) (fin-bank-fix--lump-card-p b fin-bank-fix-itemized-from)))
+  (let* ((r (fin-bank-fix--reconcile (fin-bank-fix--from)))
+         (gone (fin-bank-fix--vanished))
          (actions (fin-conv-plan :matched (plist-get r :matched) :near (plist-get r :near)
                                  :shifted (plist-get r :shifted)
-                                 :bank-only (cl-remove-if lump-p (plist-get r :bank-only))
+                                 :bank-only (plist-get r :bank-only)
                                  :entry-only (plist-get r :entry-only)
                                  :history (plist-get r :history)
                                  :months (plist-get r :months)))
-         (actions (append (fin-bank-fix--lumped actions fin-bank-fix-itemized-from)
-                          (fin-bank-fix--carve (cl-remove-if-not lump-p (plist-get r :bank-only))
-                                               (plist-get r :history) fin-bank-fix-itemized-from)
-                          (plist-get r :pj)))
+         (actions (append actions (plist-get r :pj) (cdr gone)))
          (actions (fin-bank-fix--continue-series actions))
          (changes (fin-bank-fix--changes actions))
          (written (when (and changes (not dry-run))
                    (fin-odsw-save fin-ods-path (fin-odsw-apply (fin-odsw-read fin-ods-path) changes)))))
     (fin-bankdb-record-fix-run (length changes) dry-run (fin-bank-fix--flags actions))
-    (fin-bank-fix--report actions (plist-get r :notes) written)
+    (unless dry-run
+      (fin-bankdb-forget-adds (car gone))
+      (when written (fin-bankdb-record-fix-adds (fin-bank-fix--added actions))))
+    (fin-bank-fix--report actions (plist-get r :notes) written (and quiet (null changes)))
     (message "fin-bank: %d changes%s" (length changes)
              (cond (dry-run " (dry run)") (changes ", run M-x fin") (t "")))
     changes))

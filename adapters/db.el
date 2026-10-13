@@ -28,6 +28,7 @@
        amount     INTEGER NOT NULL,
        installment  INTEGER,
        installments INTEGER,
+       via        TEXT,
        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S','now')),
        CHECK ((installment IS NULL AND installments IS NULL)
               OR (installment IS NOT NULL AND installments IS NOT NULL
@@ -61,7 +62,7 @@
   "Full schema as a list of standalone SQL statements.")
 
 (defconst fin-db--tables
-  '("entry" "budget" "patrimony" "account" "refresh_log")  ; account: legacy, dropped on rebuild
+  '("entry" "budget" "patrimony" "refresh_log")
   "Logical tables — order irrelevant for DROP IF EXISTS.")
 
 (defun fin-db-available-p ()

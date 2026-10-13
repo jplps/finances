@@ -34,13 +34,13 @@ Cells must be strings; numerics expressed as <table-cell value=\"X\">."
                  ("2025-01-31" "in" "salary" nil 5000.51 nil nil)
                  ("2025-02-02" "out" "car" "seguro" 14023 3 10))))
          (out (car (fin-sync--entries dom))))
-    (should (equal '("2025-02-02" "out" "car" "seguro" 14023 3 10) (cadr (fin-sync--entries dom))))
+    (should (equal '("2025-02-02" "out" "car" "seguro" 14023 3 10 nil) (cadr (fin-sync--entries dom))))
     (should (equal "2025-01-31" (nth 0 out)))
     (should (equal "in"         (nth 1 out)))
     (should (equal "salary"     (nth 2 out)))
     (should (null              (nth 3 out)))
     (should (= 5001            (nth 4 out)))   ; rounded
-    (should (equal '(nil nil)   (nthcdr 5 out)))))
+    (should (equal '(nil nil nil) (nthcdr 5 out)))))
 
 (ert-deftest sync/entries-builder-rejects-bad-installments ()
   (dolist (kn '((3 nil) (nil 10) (11 10) (0 10) (1.5 10)))

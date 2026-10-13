@@ -8,10 +8,12 @@
 (require 'ir)
 
 (defun fin-dashboard--ir-years ()
-  "Years up to now with rules in `fin-ir-rules' and a `fin-ir-pro-labore'."
+  "Years up to now with rules in `fin-ir-rules' and a known pró-labore
+\(`fin-ir-pro-labore' or `fin-ir-pro-labore-files')."
   (let ((now (fin-report--year-now)))
     (sort (cl-remove-if-not (lambda (y) (and (<= y now) (assq y fin-ir-rules)))
-                            (mapcar #'car fin-ir-pro-labore))
+                            (delete-dups (append (mapcar #'car fin-ir-pro-labore)
+                                                 (mapcar #'car (fin-ir-pro-labore-files)))))
           #'<)))
 
 (defun fin-dashboard--ir-money (cents)
@@ -94,7 +96,7 @@
                                           (fin-dashboard--ir-money (plist-get d :exempt-total))
                                           (fin-dashboard--ir-money (fin-ir-rule y :filing-exempt))))))
                       ('late (list t (format "DIRPF %d filed late on %s" (1+ y) (fin-dashboard--ir-date (plist-get d :filed)))))
-                      ('unknown (list nil (format "ano %d: set <b>fin-ir-pro-labore</b>" y))))))
+                      ('unknown (list nil (format "ano %d: add its payer-income or DCTFWeb file to the ir inbox" y))))))
                 closed)))
 
 (defun fin-dashboard--ir-exempt-gap (p)

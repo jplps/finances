@@ -13,7 +13,8 @@
 ;;   than `fin-health-gap-share', counted as `fin-bank-fix' counts room:
 ;;   bank rows normalized (refunds, fees, Pix no Crédito), ignored rows,
 ;;   savings moves and the PJ account's tax payments left out; ledger
-;;   savings, tax and company rows left out.
+;;   savings, tax and company rows, and rows paid outside the bank
+;;   (their `via' column set: cash, bb), left out.
 ;; - Cash: this month and the last, ledger income less spending less what
 ;;   the bank moved into savings against the cash all bank accounts gained,
 ;;   card bill payments left out; flagged past `fin-health-cash-slack'.
@@ -36,6 +37,14 @@
 (defcustom fin-health-gap-share 0.10
   "Share of a month's bank spending past which the ledger gap is flagged."
   :type 'number :group 'fin)
+
+(defun fin-health--offbank-out ()
+  "Alist YYYY-MM -> cents of ledger outflows paid outside the bank
+statements: rows whose `via' column says how (cash, bb)."
+  (mapcar (lambda (r) (cons (car r) (cadr r)))
+          (fin-db-query "SELECT strftime('%Y-%m', date), SUM(amount) FROM entry
+                          WHERE type = 'out' AND via IS NOT NULL AND via <> ''
+                          GROUP BY 1")))
 
 (defcustom fin-health-cash-slack 10000
   "Cents a month's cash check may be off before it is flagged."
@@ -105,6 +114,7 @@ ids of the company account's rows, whose tax payments are not spending."
          (to (fin-health--month-start 0))
          (bank (make-hash-table :test #'equal))
          (ledger (fin-bank-fix--ledger-out from))
+         (offbank (fin-health--offbank-out))
          (pj (fin-health--pj-ids)))
     (dolist (b (plist-get (fin-conv-normalize (fin-bankdb-since from)) :rows))
       (when (and (string< (nth 1 b) to) (fin-health--bank-spent-p b pj))
@@ -112,7 +122,8 @@ ids of the company account's rows, whose tax payments are not spending."
           (puthash ym (+ (gethash ym bank 0) (nth 3 b)) bank))))
     (cl-loop for k from n downto 1
              for ym = (substring (fin-health--month-start k) 0 7)
-             collect (list ym (gethash ym bank 0) (or (cdr (assoc ym ledger)) 0)))))
+             collect (list ym (gethash ym bank 0)
+                           (- (or (cdr (assoc ym ledger)) 0) (or (cdr (assoc ym offbank)) 0))))))
 
 (defun fin-health-gaps (n)
   "Months of `fin-health-months' N whose gap passes `fin-health-gap-share'."

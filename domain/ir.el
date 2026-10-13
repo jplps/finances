@@ -11,7 +11,8 @@
 ;;   taxable, plus distributed profit, exempt up to the presumed profit (LC
 ;;   123 art. 14 §1: the Lei 9.249 art. 15 rate times revenue, minus the
 ;;   Simples tax) unless full books show more (`fin-ir-full-books').  The
-;;   split is not in any statement: `fin-ir-pro-labore'.
+;;   split is not in any statement: `fin-ir-pro-labore-files' (Receita
+;;   files), overridable by `fin-ir-pro-labore'.
 ;; - PGDAS-D and NFS-e lists give revenue declared and invoiced per month.
 ;; - Deductions: INSS on pró-labore, health (`health' entries matching
 ;;   `fin-ir-health-deductible'), PGBL up to 12% (`retirement', when
@@ -29,13 +30,15 @@
 (defvar fin-bank-own-regexps)
 
 (defcustom fin-ir-pro-labore nil
-  "Pró-labore per calendar year: list of (YEAR . CENTS) for the year's total,
+  "Pró-labore per calendar year overriding the Receita files (see
+`fin-ir-pro-labore-files'): list of (YEAR . CENTS) for the year's total,
 or (YEAR :monthly CENTS) for a fixed monthly amount, counted from January
 through the last completed month (all 12 for a past year)."
   :type '(alist :key-type integer :value-type sexp) :group 'fin)
 
 (defcustom fin-ir-filed nil
-  "Income tax returns delivered, by calendar year: list of (YEAR . ISO-DATE)."
+  "Income tax returns delivered, by calendar year: list of (YEAR . ISO-DATE),
+added to those `fin-ir--filed' reads from the receipts' file names."
   :type '(alist :key-type integer :value-type string) :group 'fin)
 
 (defcustom fin-ir-payments-dir
@@ -598,13 +601,55 @@ January through the last completed month for the current one."
           ((= year now) (1- (string-to-number (substring today 5 7))))
           (t 0))))
 
+(defun fin-ir--fontes-row (line file)
+  "(YEAR TOTAL INSS) of a payer-income CSV LINE from FILE (ano, fonte,
+rendimento_tributavel, prev_oficial, …) when it withheld INSS, as only
+the company's pró-labore does; nil otherwise."
+  (pcase (split-string line ",")
+    ((and `(,year ,_payer ,taxable ,inss . ,_)
+          (guard (and (string-match-p "\\`[0-9]\\{4\\}\\'" year)
+                      (string-match-p fin-ir--amount-re taxable) (string-match-p fin-ir--amount-re inss))))
+     (and (> (fin-ir--cents inss) 0)
+          (list (string-to-number year) (fin-ir--cents taxable) (fin-ir--cents inss))))
+    (_ (error "fin-ir: bad payer-income line in %s: %S" file line))))
+
+(defun fin-ir--dctfweb-row (line file)
+  "(YEAR TOTAL INSS) of a DCTFWeb CSV LINE from FILE (periodo MM/YYYY; …;
+debito): the month's INSS on pró-labore, and the pró-labore it implies."
+  (pcase (split-string line ";")
+    ((and `(,period ,_ ,_ ,_ ,_ ,_ ,debit . ,_)
+          (guard (and (string-match "\\`[0-9]\\{2\\}/\\([0-9]\\{4\\}\\)\\'" period)
+                      (string-match-p fin-ir--amount-re debit))))
+     (let ((inss (fin-ir--cents debit)))
+       (list (string-to-number (substring period 3)) (round inss fin-ir-inss-rate) inss)))
+    (_ (error "fin-ir: bad DCTFWeb line in %s: %S" file line))))
+
+(defun fin-ir-pro-labore-files ()
+  "Pró-labore per year from the Receita files in `fin-ir-payments-dir':
+alist YEAR -> (TOTAL INSS MONTHS).  A year the payer-income files
+\(fontes-pagadoras/*.csv, what the company reported) cover comes from them,
+12 months; any other from its DCTFWeb months (dctfweb-*.csv)."
+  (let* ((fontes (delq nil (fin-ir--csv (and fin-ir-payments-dir
+                                              (expand-file-name "fontes-pagadoras" fin-ir-payments-dir))
+                                         "\\.csv\\'" #'fin-ir--fontes-row)))
+         (out (mapcar (lambda (r) (list (nth 0 r) (nth 1 r) (nth 2 r) 12)) fontes)))
+    (dolist (r (fin-ir--csv fin-ir-payments-dir "\\`dctfweb-.*\\.csv\\'" #'fin-ir--dctfweb-row))
+      (unless (assq (car r) fontes)
+        (let ((cell (assq (car r) out)))
+          (if cell
+              (setcdr cell (list (+ (nth 1 cell) (nth 1 r)) (+ (nth 2 cell) (nth 2 r)) (1+ (nth 3 cell))))
+            (push (list (car r) (nth 1 r) (nth 2 r) 1) out)))))
+    out))
+
 (defun fin-ir--pro-labore (year months)
-  "(TOTAL MONTHLY INSS) of YEAR's pró-labore over MONTHS, or nil if unknown.
-A yearly total caps INSS at 12 monthly caps: exact for an even pró-labore,
+  "(TOTAL MONTHLY INSS) of YEAR's pró-labore over MONTHS, or nil if unknown:
+`fin-ir-pro-labore' when it has YEAR, else `fin-ir-pro-labore-files'.  A
+yearly total caps INSS at 12 monthly caps: exact for an even pró-labore,
 low when one month went past the cap."
   (let ((cap (fin-ir-rule year :inss-cap)))
     (pcase (cdr (assq year fin-ir-pro-labore))
-      ('nil nil)
+      ('nil (let ((f (cdr (assq year (fin-ir-pro-labore-files)))))
+              (and f (list (nth 0 f) (round (nth 0 f) (nth 2 f)) (nth 1 f)))))
       ((and (pred integerp) total)
        (list total (round total 12) (round (* fin-ir-inss-rate (min total (* 12 cap))))))
       (`(:monthly ,m)
@@ -686,6 +731,17 @@ what went back) beyond the pró-labore net of its INSS."
            :individuals individuals)
      (and taxable (fin-ir--deductions year taxable inss health retirement)))))
 
+(defun fin-ir--filed ()
+  "Returns delivered: `fin-ir-filed', then one per receipt in the dirpf/
+folder of `fin-ir-payments-dir', named dirpf-cpf-YEAR-recibo-FILED-ISO.pdf
+\(YEAR the ano-calendário)."
+  (let ((out (copy-sequence fin-ir-filed))
+        (dir (and fin-ir-payments-dir (expand-file-name "dirpf" fin-ir-payments-dir))))
+    (dolist (f (and dir (file-directory-p dir) (directory-files dir nil "-recibo-")) out)
+      (when (string-match "\\`dirpf-cpf-\\([0-9]\\{4\\}\\)-recibo-\\([0-9]\\{4\\}-[0-9]\\{2\\}-[0-9]\\{2\\}\\)" f)
+        (let ((y (string-to-number (match-string 1 f))))
+          (unless (assq y out) (push (cons y (match-string 2 f)) out)))))))
+
 (defun fin-ir-duty (pos)
   "Filing duty of closed-year position POS: plist :required (t, nil, or
 unknown), :filed (ISO date or nil), :status (on-time late missing
@@ -703,7 +759,7 @@ exclusive-taxation and exempt individual income)."
                               (> exempt (fin-ir-rule y :filing-exempt))
                               (and assets (> assets (fin-ir-rule y :filing-assets))))
                           t)))
-         (filed (cdr (assq y fin-ir-filed))))
+         (filed (cdr (assq y (fin-ir--filed)))))
     (cl-assert deadline nil "fin-ir: %d is not a closed year" y)
     (list :required required :filed filed :deadline deadline :exempt-total exempt
           :status (cond (filed (if (string< deadline filed) 'late 'on-time))

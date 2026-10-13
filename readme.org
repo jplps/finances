@@ -46,19 +46,19 @@ Schema is auto-created on first =M-x fin-db-rebuild= (or =finances fin-db-rebuil
 1. Open =~/Projects/finances/infra/seeds.ods= in LibreOffice.
 2. Add or edit rows (entries / plan / patrimony / accounts).
 3. Save.
-4. =M-x fin= — refreshes the DB and opens the dashboard in your browser.
+4. =M-x fin= — imports new statements from the inbox, fixes the ODS from them, refreshes the DB and opens the dashboard in your browser.
 
 * M-x commands
 
 | Command                 | Action                                         |
 |-------------------------+------------------------------------------------|
-| =fin=                   | Reload sources, refresh DB, open dashboard.    |
+| =fin=                   | Import, fix, refresh DB, open dashboard.       |
 | =fin-reload=            | Reload every project source file (no restart). |
 | =fin-sync-refresh=      | ODS → DB only.                                 |
 | =fin-dashboard=         | Regenerate HTML, open in browser.              |
 | =fin-open-ods=          | Open the source ODS in LibreOffice.            |
 | =fin-db-rebuild=        | Drop + recreate SQLite tables.                 |
-| =fin-bank-import=       | Import new OFX and PDF bills from the inbox.   |
+| =fin-bank-import=       | Import new OFX statements from the inbox.      |
 | =fin-bank-reconcile=    | Bank vs ledger review buffer for a year.       |
 | =fin-bank-copy-missing= | Copy a year's bank-only rows as TSV.           |
 | =fin-bank-fix=          | Fix the ODS from bank rows (=C-u=: dry run).   |
@@ -78,9 +78,7 @@ Schema is auto-created on first =M-x fin-db-rebuild= (or =finances fin-db-rebuil
 │   ├── db.el            ; SQLite schema + helpers
 │   ├── bankdb.el        ; bank staging tables (survive rebuild)
 │   ├── odswrite.el      ; edit entries and patrimony sheets in place, re-zip
-│   ├── ofx.el           ; OFX statement parser
-│   ├── cardpdf.el       ; PDF card bill parser (rows from pdfrows.js)
-│   └── pdfrows.js       ; PDF → visual rows via macOS PDFKit
+│   └── ofx.el           ; OFX statement parser
 ├── tools/
 │   ├── sync.el          ; use case: ODS → DB
 │   ├── bank.el          ; use case: inbox → bank tables, reconcile review
@@ -111,14 +109,14 @@ Schema is auto-created on first =M-x fin-db-rebuild= (or =finances fin-db-rebuil
 ├── tests/               ; ERT suite mirroring source layout
 │   ├── helpers.el       ; temp-db fixture + seed inserters
 │   ├── all-tests.el     ; entrypoint
-│   ├── adapters/{test-db,test-parser,test-bankdb,test-ofx,test-cardpdf,test-odswrite}.el
+│   ├── adapters/{test-db,test-parser,test-bankdb,test-ofx,test-odswrite}.el
 │   ├── domain/{test-budget,test-stats,test-patrimony,test-accounts,test-cashflow,test-reconcile,test-conventions,test-goals,test-pj,test-ir}.el
 │   ├── tools/{test-sync,test-bank,test-bankfix,test-health}.el
 │   └── view/{test-fmt,test-charts,test-dashboard}.el
 └── infra/
     ├── finances.db      ; SQLite mirror + bank tables (gitignored)
     ├── inbox/           ; source documents (gitignored), see * Inbox
-    │   ├── nubank/      ; OFX statements and PDF card bills, imported by fin-bank-import
+    │   ├── nubank/      ; OFX statements imported by fin-bank-import (old PDF card bills kept)
     │   ├── ir/          ; Receita Federal: dirpf/ defis/ pgdasd/ caixa-postal/ teves/, payments
     │   ├── nfse/        ; company invoices (NFS-e) + index csv
     │   ├── inss/        ; CNIS contribution statement
@@ -133,7 +131,7 @@ Schema is auto-created on first =M-x fin-db-rebuild= (or =finances fin-db-rebuil
 
 | Folder | What | Where from | When |
 |--------+------+------------+------|
-| =nubank/= | account, card, PJ OFX; PDF card bills | Nubank app | monthly |
+| =nubank/= | account, card, PJ OFX; PDF card bills 2020–2023 (archive) | Nubank app | monthly |
 | =ir/pgdasd/= | PGDAS-D declaration, receipt, DAS statement per month | e-CAC → PGDAS-D → Consultar Declarações | monthly |
 | =ir/= | payments (=pagamentos-<cpf/cnpj>-*=), DCTFWeb list, guides | Meu Pagamentos, DCTFWeb | monthly |
 | =ir/defis/= | DEFIS | e-CAC → DEFIS → Imprimir | yearly (March) |
@@ -186,23 +184,25 @@ CNPJ tax (a =type=out= row under =category=cnpj=) is subtracted from gross incom
 
 * Bank reconciliation
 
-The ODS stays canonical; bank statements fix it.  =M-x fin-bank-fix= compares every bank row since =fin-bank-fix-from= (2024-01-01) with the ledger, writes the fixes into the ODS and shows what it did.  Running it again changes nothing.
+The ODS stays canonical; bank statements fix it.  =M-x fin-bank-fix= compares every bank row since =fin-bank-fix-from= (default: the first day of last month, so settled history is never touched; a ledger row it added goes again when a later export drops its bank row) with the ledger, writes the fixes into the ODS and shows what it did.  Running it again changes nothing.
 
 ** Sources (Nubank, free)
 
 - *Account*: app → Extrato → Exportar extrato → OFX.  Any date range.
 - *Card*: app → Cartão de crédito → Resumo de faturas → closed bill → Enviar fatura por e-mail → OFX.  One bill per file, sent as an email attachment.
-- *Card, before OFX (until 2023-12)*: the same bills as PDF.  =adapters/pdfrows.js= (macOS PDFKit through =osascript=, nothing to install) rebuilds the transaction table from text positions, since some bills store it column by column; =adapters/cardpdf.el= reads it.  Rows dated from the first OFX card row on are left to the OFX.  Company accounts (=fin-bank-pj-accounts=, by ACCTID) import as =pj= (checking) and =pj-card= (card), named =nubank-pj-…= and =nubank-pj-card-…=; =domain/pj.el= reconciles PJ client payments with item-less income rows (from the first full month on or after =fin-bank-fix-from=, a payment pairing first with a row of its own month) and replaces =cnpj= estimates with the real tax payments (=fin-pj-tax-items= match case-sensitively: "das" is also a Portuguese word).  Payments are skipped, =Estorno de= / =Crédito de= / =Desconto Antecipação= are credits, =- k/n= becomes =- Parcela k/n=, and bill financing (=Parcelamento de Fatura=, =Crédito de parcelamento=) is reported, not imported.  Each bill must balance against its /Total de compras/ (purchases, less credits, phone top-ups and IOF, which the bill totals apart), or the import stops.
+- *Card, before OFX (until 2023-12)*: imported once from the PDF bills; those rows stay in =bank_txn= and the bills in the inbox, but the PDF reader is gone, so they cannot be re-imported.
 - History older than the app allows: LGPD request to Nubank's DPO (=dponubank.zendesk.com=).
 
 ** Monthly flow
 
-1. Export last month's account statement and the closed card bill; copy both into =infra/inbox/nubank/=.
+1. Export the OFX statements (account, card, pj, pj-card) whenever you like and copy them into =infra/inbox/nubank/=; the month in progress is just updated by each new export.
 2. Close the ODS in LibreOffice: its next save would undo the fix (=fin-bank-fix= refuses while the lock file exists).
-3. =M-x fin-bank-import= — renames files to =nubank-<account|card>-<start>_<end>.ofx= from the statement period (PDF bills to =nubank-card-bill-<due>.pdf=), removes a re-export of a statement already there (a later export replaces it and drops rows it no longer lists; card bills span [start, end), account statements [start, end]), imports new rows into =bank_txn=.  Rows dedup by =FITID= plus date, amount and memo (Nubank reuses a =FITID= across installments and refunds).
-4. =M-x fin-bank-fix= — writes the fixes to the ODS (keep your own copy of it).  =C-u M-x fin-bank-fix= is a dry run.
-5. Read /Needs a look/ in the report (salary gaps, refunds with no purchase), fix those by hand if needed.
-6. =M-x fin=.
+3. =M-x fin= — runs the steps below and opens the dashboard; the fix report shows only when it changed something.
+   - =fin-bank-import= renames files to =nubank-<kind>-<start>_<end>.ofx= from the statement period, removes a re-export of a statement already there (a later export replaces it and drops rows it no longer lists; card bills span [start, end), account statements [start, end]), imports new rows into =bank_txn=.  Rows dedup by =FITID= plus date, amount and memo (Nubank reuses a =FITID= across installments and refunds).
+   - =fin-bank-fix= writes the fixes to the ODS (keep your own copy of it); alone, =C-u M-x fin-bank-fix= is a dry run.
+   - =fin-sync-refresh= mirrors the ODS into the DB.
+4. Read /Needs a look/ in the report when it shows (salary gaps, refunds with no purchase), fix those by hand if needed.
+5. Spending paid outside Nubank (cash someone gave, BB): add the row by hand with =via= set (=cash=, =bb=).
 
 =M-x fin-bank-reconcile= (one year's review buffer) and =M-x fin-bank-copy-missing= (bank-only rows as TSV) remain for reading without writing.
 
@@ -261,7 +261,7 @@ Nubank card bills declare =CHARSET:1252= but are UTF-8.  The parser ignores the 
 =M-x fin-dashboard= writes =view/dashboard.html= and opens it.  Static, no JS.  Plain terminal look (monospace, lowercase labels, =$= prompt, aqua accent; no panel headings, the status bar names the current one).  One panel at a time, at most 640px wide and centered, picked from a tmux-like status bar at the bottom (=1:cockpit 2:wealth 3:stats 4:ir=, current marked =*=); each is a =#id= anchor shown with CSS =:target= (objectives when none), so the URL keeps the view and each number is also its =accesskey=; dark by default, light with =data-theme="light"= on =<html>=: every color is a theme role in =fin-dashboard--palette= (light and dark value), emitted as CSS custom properties and referenced as =var(--role)= in markup and SVG.  Values follow a validated data-viz palette with the financial convention: green for in / positive / on target, red for out / negative / off target (direction and position also encode it: above vs below the baseline, signed gaps), a neutral graphite accent, a fixed categorical order for shares without green or red (past six slices a neutral "other").  Hover text comes from SVG =<title>=.
 
 Four panels:
-- *Cockpit*: tiles (this month: the bank balance, personal account + PJ, from the latest statements' =LEDGERBAL=, recorded at each import, with in / out / saved — saved is what the personal account moved into the =fin-accounts-derived= savings (caixinhas, treasury, ETF, crypto) net of withdrawals, as the bank shows it; red when ledger in − out − saved is negative; savings, the accounts total; runway), the fixed and variable goal rows (=domain/goals.el=, below), and /to do/ (=tools/health.el=), a to-do list that reads ✓ in sync or ⚠ N to do: statements to export (an account whose latest statement ends before last month's end; open card bills count as current), =fin-bank-fix= to run (bank rows imported after its last run, or a dry run with changes pending; every run records itself in =bank_fix_run=), large recent bank rows it could only report (≥ =fin-bank-fix-flag-min= in the last =fin-bank-fix-flag-days=, stored in =bank_fix_flag=; mute rows the ledger books elsewhere with =fin-bank-fix-flag-ignore-regexps=), complete months whose ledger spending is off the bank's by more than =fin-health-gap-share= (10%), counted as =fin-bank-fix= counts (normalized), and this month or the last when ledger in − out − saved is off the cash all bank accounts gained (card bill payments left out) by more than =fin-health-cash-slack= (R$ 100): a flow the ledger misses or books twice.  The same list, titled /To do/, also carries every open IR risk; documents =fin-health-expected-docs= expects in =infra/inbox/= and key files (=fin-health-key-file-regexp=) that must leave it; and open items kept by hand in =fin-health-todo=.  Only lines that need doing are listed (the title reads ✓ all clear otherwise); the IR panel's /risks/ and /watch/ likewise list open lines only and disappear when none are open.
+- *Cockpit*: tiles (this month: the bank balance, personal account + PJ, from the latest statements' =LEDGERBAL=, recorded at each import, with in / out / saved — saved is what the personal account moved into the =fin-accounts-derived= savings (caixinhas, treasury, ETF, crypto) net of withdrawals, as the bank shows it; red when ledger in − out − saved is negative; savings, the accounts total; runway), the fixed and variable goal rows (=domain/goals.el=, below), and /to do/ (=tools/health.el=), a to-do list that reads ✓ in sync or ⚠ N to do: statements to export (an account whose latest statement ends before last month's end; open card bills count as current), =fin-bank-fix= to run (bank rows imported after its last run, or a dry run with changes pending; every run records itself in =bank_fix_run=), large recent bank rows it could only report (≥ =fin-bank-fix-flag-min= in the last =fin-bank-fix-flag-days=, stored in =bank_fix_flag=; mute rows the ledger books elsewhere with =fin-bank-fix-flag-ignore-regexps=), complete months whose ledger spending is off the bank's by more than =fin-health-gap-share= (10%), counted as =fin-bank-fix= counts (normalized), rows paid outside the bank (the entries' =via= column: =cash= someone gave, =bb=) left out, and this month or the last when ledger in − out − saved is off the cash all bank accounts gained (card bill payments left out) by more than =fin-health-cash-slack= (R$ 100): a flow the ledger misses or books twice.  The same list, titled /To do/, also carries every open IR risk; documents =fin-health-expected-docs= expects in =infra/inbox/= and key files (=fin-health-key-file-regexp=) that must leave it; and open items kept by hand in =fin-health-todo=.  Only lines that need doing are listed (the title reads ✓ all clear otherwise); the IR panel's /risks/ and /watch/ likewise list open lines only and disappear when none are open.
 - *Wealth*: accounts (rebuilt from the bank, see =accounts=; basis in the hover; total), patrimony (register, total), then the yearly drilldown (the current year counts actual months; the plan forecast of the months left shows apart, dimmed, beside its liquid; /saved/, per year and month, is what the bank moved into the =fin-accounts-derived= savings net of withdrawals, flows on or before an account's =:since= left out): year → month → category → leaf (=item= · =date= · =amount=), years folded.
 - *Stats*: the records table (net worth, best/worst month (the current month excluded), biggest income/purchase, best/avg yearly save (income-weighted), recurring share, since, months), the all-time flow bar chart and, stacked, the line trends (net worth, rolling save %, income-vs-expense MA, Pareto, yearly save %, spend heatmap), the share donuts (category, income) and the recurring tables (by months, all time).
 - *IR* (=domain/ir.el=, =view/irpf.el=): imposto de renda for every year from =fin-ir-pro-labore= that has rules in =fin-ir-rules= (2020 on, each value with its IN RFB or table source).  its risks (listed in the cockpit's /to do/, not on the tab): debts Receita notified (=fin-ir-open-debts=), returns due but missing or late (=fin-ir-filed=, fine at least R$ 165,74), exempt profit per DEFIS (=fin-ir-defis-exempt=), DIRPF (=fin-ir-declared-exempt=) and bank side by side, profit over the presumed one (=fin-ir-presumption= × PGDAS-D revenue − DAS; the excess is taxable unless =fin-ir-full-books= is =verified=, with the extra tax shown), PGDAS-D months off the NFS-e (split: rectify the PGDAS-D when it is also off the bank's received revenue, =fin-ir-bank-revenue=; fix the NFS-e when the PGDAS-D matches the bank) and months whose DAS rate strays from the year's median, Receita payments matching no record, taxes paid from the wrong account (bank tax rows are named by the Receita payment they match: 3333/0055 das, 1410/4444 inss, 0211/5320 the partner's IRPF); /years/: one row per year, newest first, with taxable and exempt income, the filing duty (taxable or exempt income over the exercício's limits) and the return delivered; a year expands into folded groups — revenue (PGDAS-D and NFS-e over the months PGDAS-D declares, the bank's only when it differs, then the bank revenue not declared yet), company taxes, to cpf (pró-labore, presumed, exempt, and profit when the exempt part is less), deductions of the model used (the simplified discount alone, or the complete model's INSS, health and PGBL that sum to it) — and the tax; /watch/: this year's Lei 15.270/2025 limits and income from individuals (=fin-ir-individual-categories=, carnê-leão when =fin-ir-individual-income= is =taxable=); the groups hold each year's revenue, company taxes, deposits to the CPF (=fin-conv-salary-regexps=), pró-labore (annual cents or =(:monthly CENTS)= over the completed months, 11% INSS), profit (deposits beyond the net pró-labore, less transfers back, plus the partner's taxes the company paid), deductions against the simplified discount and the lower tax, before IRRF withheld.  Source documents (DIRPF, DEFIS, PGDAS-D, payments, caixa postal) are kept in =infra/inbox/ir/=.

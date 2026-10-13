@@ -24,7 +24,7 @@
 (defun test-odsw--keys (content)
   (pcase-let* ((`(,s . ,e) (fin-odsw--sheet-bounds content))
                (`(,_f ,_l ,rows) (fin-odsw--rows content s e)))
-    (mapcar #'fin-odsw--row-values (cdr rows))))
+    (mapcar (lambda (r) (seq-take (fin-odsw--row-values r) 7)) (cdr rows))))
 
 (defconst test-odsw--base
   (test-odsw--content '("2026-09-04" "out" "cnpj" "" 166400 nil nil)
@@ -38,6 +38,24 @@
                    ("2026-06-01" "out" "patrimony" "escova" 6500 "" "")
                    ("2026-05-02" "out" "car" "seguro" 15353 4 12))
                  (test-odsw--keys test-odsw--base))))
+
+(ert-deftest odsw/via-marks-a-row-paid-outside-the-bank ()
+  (let* ((out (fin-odsw-apply test-odsw--base
+                              '((:via ("2026-07-13" "out" "food" "komprão" 42644) "cash")
+                                (:add ("2026-08-01" "out" "free" "feira" 2000 nil nil "bb")))))
+         (vias (mapcar (lambda (r) (list (nth 3 r) (nth 7 r)))
+                       (pcase-let* ((`(,s . ,e) (fin-odsw--sheet-bounds out))
+                                    (`(,_f ,_l ,rows) (fin-odsw--rows out s e)))
+                         (mapcar #'fin-odsw--row-values (cdr rows))))))
+    (should (equal "cash" (cadr (assoc "komprão" vias))))
+    (should (equal "bb" (cadr (assoc "feira" vias))))
+    (should (equal "" (cadr (assoc "seguro" vias))))
+    (should (equal "" (cadr (assoc "komprão"
+                                  (mapcar (lambda (r) (list (nth 3 r) (nth 7 r)))
+                                          (pcase-let* ((c (fin-odsw-apply out '((:via ("2026-07-13" "out" "food" "komprão" 42644) ""))))
+                                                       (`(,s . ,e) (fin-odsw--sheet-bounds c))
+                                                       (`(,_f ,_l ,rows) (fin-odsw--rows c s e)))
+                                            (mapcar #'fin-odsw--row-values (cdr rows))))))))))
 
 (ert-deftest odsw/row-xml-rejects-bad-installment ()
   (should-error (fin-odsw-row-xml "2026-01-01" "out" "car" "x" 100 3 nil))

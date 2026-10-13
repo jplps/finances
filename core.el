@@ -45,10 +45,14 @@ edits without restart."
 
 ;;;###autoload
 (defun fin (&optional no-reload)
-  "Reload sources, refresh DB from ODS, then regenerate + open the dashboard.
+  "The whole routine: reload sources, import new bank statements from the
+inbox, fix the ODS ledger from them (its report shows only when something
+changed), refresh the DB from the ODS, regenerate and open the dashboard.
 With prefix arg NO-RELOAD, skip the reload (use the already-loaded code)."
   (interactive "P")
   (unless no-reload (fin-reload))
+  (fin-bank-import)
+  (fin-bank-fix nil t)
   (fin-sync-refresh)
   (fin-dashboard))
 
