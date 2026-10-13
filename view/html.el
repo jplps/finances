@@ -13,10 +13,6 @@ No visible heading: the status bar names the current panel."
           (apply #'concat body)
           "</section>"))
 
-(defun fin-dashboard--kv (dt dd)
-  "Format `<dt>DT</dt><dd>DD</dd>'.  Both pre-formatted HTML."
-  (format "<dt>%s</dt><dd>%s</dd>" dt dd))
-
 (defun fin-dashboard--block (name title body &optional cls)
   "Stat-block <div> with H3 NAME (HTML-allowed, callers must pre-escape user
 data).  TITLE → hover tooltip.  Optional CLS appended to class list (for
@@ -26,9 +22,6 @@ grid-area mapping)."
           (fin-dashboard--esc title)
           name
           body))
-
-(defun fin-dashboard--pair (&rest items)
-  (concat "<div class=\"stat-pair\">" (apply #'concat items) "</div>"))
 
 (defun fin-dashboard--table (header rows &optional class row-class-fn)
   "Render <table> with thead + per-row <tr.row[ even][ EXTRA]> + zebra index."

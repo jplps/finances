@@ -122,10 +122,8 @@ table.goals td.cat label:has(input:checked)::before { transform: rotate(90deg); 
 .health table th:not(:first-child) { width: 96px; }
 
 /* ── stats sub-layout ──────────────────────────────── */
-.stat-pair  { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
 .stats-body { display: flex; flex-direction: column; gap: 20px; margin-top: 20px; }
 .stats-col  { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
-@media (max-width: 700px) { .stat-pair { grid-template-columns: 1fr; } }
 
 /* ── signed values ─────────────────────────────────── */
 .neg { color: var(--bad-text); }
@@ -138,16 +136,6 @@ table.goals td.cat label:has(input:checked)::before { transform: rotate(90deg); 
 .chart.bars  { height: 10rem; }
 .chart.pie   { max-width: 420px; margin-inline: auto; }
 .chart text  { fill: var(--text-2); font-family: inherit; }
-
-/* ── definition lists (records, runway) ────────────── */
-dl.kv {
-  display: grid; grid-template-columns: max-content 1fr;
-  column-gap: 12px; row-gap: 3px; margin: 4px 0;
-}
-dl.kv dt { color: var(--accent); }
-dl.kv dd { margin: 0; }
-dl.kv.runway    { font-size: var(--font-xs); column-gap: 8px; row-gap: 2px; margin: 8px 0 12px; }
-dl.kv.runway dt { color: var(--muted); }
 
 /* ── tables (accordion) ────────────────────────────── */
 table { width: 100%; border-collapse: collapse; font-size: var(--font-sm); margin: 4px 0; }

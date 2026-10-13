@@ -153,17 +153,28 @@ tax the excess adds over the closed years when full books are not verified."
   "YYYY-MM MONTH as mm/yyyy."
   (format "%s/%s" (substring month 5 7) (substring month 0 4)))
 
-(defun fin-dashboard--ir-revenue-line (ctx)
-  "One line for the months whose PGDAS-D revenue is off the NFS-e."
-  (let ((gaps (fin-ir-revenue-gaps (plist-get ctx :simples) (plist-get ctx :invoices)
-                                   (format-time-string "%F"))))
-    (when gaps
-      (list nil (fin-dashboard--ir-detail-span
-                 (format "rectify PGDAS-D %s: revenue off the NFS-e"
-                         (mapconcat (lambda (g) (fin-dashboard--ir-month (car g))) gaps ", "))
-                 (mapconcat (lambda (g) (format "%s: declared %s, invoiced %s" (fin-dashboard--ir-month (car g))
-                                                (fin-dashboard--ir-money (nth 1 g)) (fin-dashboard--ir-money (nth 2 g))))
-                            gaps "; "))))))
+(defun fin-dashboard--ir-gap-line (text gaps)
+  "One line TEXT for revenue GAPS (`fin-ir-revenue-gaps'), nil when none."
+  (when gaps
+    (list nil (fin-dashboard--ir-detail-span
+               (format text (mapconcat (lambda (g) (fin-dashboard--ir-month (car g))) gaps ", "))
+               (mapconcat (lambda (g) (format "%s: declared %s, invoiced %s, received %s"
+                                              (fin-dashboard--ir-month (car g))
+                                              (fin-dashboard--ir-money (nth 1 g)) (fin-dashboard--ir-money (nth 2 g))
+                                              (if (nth 3 g) (fin-dashboard--ir-money (nth 3 g)) "?")))
+                          gaps "; ")))))
+
+(defun fin-dashboard--ir-revenue-lines (ctx)
+  "Lines for the months whose PGDAS-D revenue is off the NFS-e: the NFS-e
+to fix when the PGDAS-D matches what the bank received, else the PGDAS-D."
+  (let* ((gaps (fin-ir-revenue-gaps (plist-get ctx :simples) (plist-get ctx :invoices)
+                                    (format-time-string "%F") (fin-ir-bank-revenue)))
+         (invoice-side (cl-remove-if-not (lambda (g) (and (nth 3 g) (<= (abs (- (nth 1 g) (nth 3 g))) 100)))
+                                         gaps)))
+    (delq nil (list (fin-dashboard--ir-gap-line "rectify PGDAS-D %s: revenue off the NFS-e and the bank"
+                                                (cl-set-difference gaps invoice-side))
+                    (fin-dashboard--ir-gap-line "fix the NFS-e %s: the PGDAS-D matches the bank"
+                                                invoice-side)))))
 
 (defun fin-dashboard--ir-rate-line (ctx)
   "One line for the PGDAS-D months whose DAS rate is off the year's."
@@ -328,9 +339,9 @@ year expands into its detail."
   (delq nil (append (list (fin-dashboard--ir-debts-line))
                     (fin-dashboard--ir-return-risks closed)
                     (list (fin-dashboard--ir-exempt-line positions)
-                          (fin-dashboard--ir-profit-line positions)
-                          (and ctx (fin-dashboard--ir-revenue-line ctx))
-                          (and ctx (fin-dashboard--ir-rate-line ctx))
+                          (fin-dashboard--ir-profit-line positions))
+                    (and ctx (fin-dashboard--ir-revenue-lines ctx))
+                    (list (and ctx (fin-dashboard--ir-rate-line ctx))
                           (and ctx (fin-dashboard--ir-unmatched-line ctx))
                           (and ctx (fin-dashboard--ir-wrong-account-line ctx))))))
 

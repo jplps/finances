@@ -4,13 +4,6 @@
 (require 'helpers)
 (require 'cashflow)
 
-(ert-deftest cashflow/years-distinct-desc ()
-  (fin-test-with-db
-    (fin-test-insert-entry "2023-06-30" "in" "salary" 100 nil)
-    (fin-test-insert-entry "2024-06-30" "in" "salary" 100 nil)
-    (fin-test-insert-entry "2023-12-31" "in" "salary" 100 nil)
-    (should (equal '(2024 2023) (fin-report--years)))))
-
 (ert-deftest cashflow/year-months-pads-missing-with-12-rows ()
   (fin-test-with-db
     (fin-test-insert-entry "2025-06-30" "in" "salary" 100000 nil)

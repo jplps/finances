@@ -53,16 +53,6 @@ Signals unless both are whole numbers with 1 <= K <= N."
               out)))
     (nreverse out)))
 
-(defun fin-sync--accounts (dom)
-  (let (out)
-    (dolist (r (fin-sync--sheet-rows dom "accounts"))
-      (when (car r)
-        (push (list (nth 0 r) (nth 1 r)
-                    (or (and (numberp (nth 2 r)) (round (nth 2 r))) 0)
-                    (nth 3 r))
-              out)))
-    (nreverse out)))
-
 (defconst fin-sync--entry-cols
   '("date" "type" "category" "item" "amount" "installment" "installments"))
 
@@ -72,23 +62,18 @@ Signals unless both are whole numbers with 1 <= K <= N."
 (defconst fin-sync--patrimony-cols
   '("category" "item" "amount" "lifespan_months"))
 
-(defconst fin-sync--account-cols
-  '("category" "parent" "balance" "updated_at"))
-
 (defun fin-sync-refresh ()
   "Mirror `fin-ods-path' into SQLite. Wipes derived tables and re-inserts."
   (interactive)
   (let* ((dom     (fin-ods-parse fin-ods-path))
          (entries (fin-sync--entries dom))
          (plan    (fin-sync--plan dom))
-         (patri   (fin-sync--patrimony dom))
-         (accts   (fin-sync--accounts dom)))
-    (dolist (tbl '("entry" "budget" "patrimony" "account"))
+         (patri   (fin-sync--patrimony dom)))
+    (dolist (tbl '("entry" "budget" "patrimony"))
       (fin-db-truncate tbl))
     (fin-db-bulk-insert "entry"     fin-sync--entry-cols     entries)
     (fin-db-bulk-insert "budget"    fin-sync--plan-cols      plan)
     (fin-db-bulk-insert "patrimony" fin-sync--patrimony-cols patri)
-    (fin-db-bulk-insert "account"   fin-sync--account-cols   accts)
     (fin-db-exec
      "INSERT INTO refresh_log (ran_at, ods_mtime, entries_in, notes) VALUES (?,?,?,?)"
      (list (format-time-string "%Y-%m-%dT%H:%M:%S")
@@ -96,10 +81,10 @@ Signals unless both are whole numbers with 1 <= K <= N."
                                (file-attribute-modification-time
                                 (file-attributes (expand-file-name fin-ods-path))))
            (length entries)
-           (format "refresh: entries=%d plan=%d patri=%d accts=%d"
-                   (length entries) (length plan) (length patri) (length accts))))
-    (message "fin-sync: entries=%d plan=%d patri=%d accts=%d"
-             (length entries) (length plan) (length patri) (length accts))
+           (format "refresh: entries=%d plan=%d patri=%d"
+                   (length entries) (length plan) (length patri))))
+    (message "fin-sync: entries=%d plan=%d patri=%d"
+             (length entries) (length plan) (length patri))
     (length entries)))
 
 (provide 'sync)

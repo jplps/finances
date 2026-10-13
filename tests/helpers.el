@@ -66,20 +66,14 @@ and no Receita payment lists.  Closes connection and deletes the file after."
    "INSERT INTO patrimony(category,item,amount,lifespan_months) VALUES(?,?,?,?)"
    (list cat item amount lifespan)))
 
-(defun fin-test-insert-account (cat parent balance &optional updated)
-  (fin-db-exec
-   "INSERT INTO account(category,parent,balance,updated_at) VALUES(?,?,?,?)"
-   (list cat parent balance updated)))
-
 ;;; ── Seed presets ────────────────────────────────────────────
 
 (defun fin-test-seed-minimal ()
-  "Tiny coherent dataset: 1 income, 1 outflow, 1 budget, 1 patrimony, 1 account."
+  "Tiny coherent dataset: 1 income, 1 outflow, 1 budget, 1 patrimony."
   (fin-test-insert-entry "2025-01-31" "in"  "salary" 500000 nil)
   (fin-test-insert-entry "2025-01-31" "out" "food"   100000 nil)
   (fin-test-insert-budget "food" nil "fix" 100000 nil)
-  (fin-test-insert-patrimony "car" "wheels" 1000000 60)
-  (fin-test-insert-account "main" nil 200000 "2025-01-31T12:00:00"))
+  (fin-test-insert-patrimony "car" "wheels" 1000000 60))
 
 (defun fin-test-seed-multi-year ()
   "Multi-year history including a future-month placeholder."

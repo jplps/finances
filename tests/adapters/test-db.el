@@ -15,7 +15,7 @@
       (should (member "entry"     tables))
       (should (member "budget"    tables))
       (should (member "patrimony" tables))
-      (should (member "account"   tables))
+      (should-not (member "account" tables))
       (should (member "refresh_log" tables)))))
 
 (ert-deftest db/rebuild-is-idempotent ()

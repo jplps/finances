@@ -128,8 +128,8 @@ list of (YEAR . CENTS), e.g. work for individuals the return declares."
     "hospital" "cl[ií]nic")
   "Regexps of `health' items that are deductible, ignoring case (Lei 9.250
 art. 8 II a: doctors, dentists, psychologists, physiotherapists, labs,
-hospitals, clinics).  Other `health' entries, item-less ones too, are
-unclassified and not deducted."
+hospitals, clinics).  Other `health' entries, item-less ones too, are not
+deducted."
   :type '(repeat regexp) :group 'fin)
 
 (defcustom fin-ir-individual-categories '("extras")
@@ -491,14 +491,12 @@ in-rows from own accounts (`fin-bank-own-regexps') that are not revenue."
                 (append (list type) (fin-ir--year-arg year) categories)))
 
 (defun fin-ir-health (year)
-  "(DEDUCTIBLE . UNCLASSIFIED) cents of YEAR's `health' entries: those whose
-item matches `fin-ir-health-deductible', and the rest."
-  (let ((case-fold-search t) (ok 0) (unknown 0))
-    (dolist (e (fin-ir--entries year "out" '("health")))
-      (if (and (car e) (cl-some (lambda (re) (string-match-p re (car e))) fin-ir-health-deductible))
-          (cl-incf ok (nth 1 e))
-        (cl-incf unknown (nth 1 e))))
-    (cons ok unknown)))
+  "Deductible cents of YEAR's `health' entries: those whose item matches
+`fin-ir-health-deductible'."
+  (let ((case-fold-search t) (ok 0))
+    (dolist (e (fin-ir--entries year "out" '("health")) ok)
+      (when (and (car e) (cl-some (lambda (re) (string-match-p re (car e))) fin-ir-health-deductible))
+        (cl-incf ok (nth 1 e))))))
 
 (defun fin-ir--sum (rows)
   (apply #'+ (mapcar #'cadr rows)))
@@ -530,11 +528,22 @@ item matches `fin-ir-health-deductible', and the rest."
     (string< (if (= m 12) (format "%04d-01-20" (1+ y)) (format "%04d-%02d-20" y (1+ m)))
              today)))
 
-(defun fin-ir-revenue-gaps (simples invoices today)
-  "(MONTH DECLARED INVOICED) cents for each month whose PGDAS-D revenue in
-SIMPLES (`fin-ir-simples') is more than a real off the NFS-e in INVOICES
-(`fin-ir-invoices'), from the first period declared through the last one
-declared or due by TODAY (ISO date)."
+(defun fin-ir-bank-revenue ()
+  "(MONTH . CENTS) of client payments the company account received, oldest
+first (`fin-pj-income-payers')."
+  (let (out)
+    (dolist (b (fin-db-query "SELECT id, date, type, amount, description FROM bank_txn
+                               WHERE account = 'pj' ORDER BY date")
+               out)
+      (when (fin-pj-income-category b)
+        (setq out (fin-ir--bump out (substring (nth 1 b) 0 7) (nth 3 b)))))))
+
+(defun fin-ir-revenue-gaps (simples invoices today &optional bank)
+  "(MONTH DECLARED INVOICED BANKED) cents for each month whose PGDAS-D
+revenue in SIMPLES (`fin-ir-simples') is more than a real off the NFS-e in
+INVOICES (`fin-ir-invoices'), from the first period declared through the
+last one declared or due by TODAY (ISO date).  BANKED is the month's
+revenue in BANK (`fin-ir-bank-revenue'), nil when BANK lacks the month."
   (when simples
     (let ((first (caar simples)) out)
       (dolist (m (delete-dups (sort (append (mapcar #'car simples) (mapcar #'car invoices)) #'string<)))
@@ -542,7 +551,7 @@ declared or due by TODAY (ISO date)."
           (let ((declared (or (cadr (assoc m simples)) 0))
                 (invoiced (or (cdr (assoc m invoices)) 0)))
             (when (> (abs (- declared invoiced)) 100)
-              (push (list m declared invoiced) out)))))
+              (push (list m declared invoiced (cdr (assoc m bank))) out)))))
       (nreverse out))))
 
 (defun fin-ir--median (xs)
@@ -667,15 +676,15 @@ what went back) beyond the pró-labore net of its INSS."
            :pro-labore (nth 1 pl) :taxable taxable :inss inss
            :profit profit :presumed presumed :excess excess
            :exempt (and profit (if books profit (min profit presumed)))
-           :excess-tax (and pl (fin-ir--excess-tax year base excess inss (car health) retirement))
+           :excess-tax (and pl (fin-ir--excess-tax year base excess inss health retirement))
            :defis-exempt (cdr (assq year fin-ir-defis-exempt))
            :declared-exempt (cdr (assq year fin-ir-declared-exempt))
            :exclusive (cdr (assq year fin-ir-exclusive))
            :assets (cdr (assq year fin-ir-assets-declared))
            :individuals-exempt (if (eq fin-ir-individual-income 'exempt) from-individuals 0)
-           :health (car health) :health-unknown (cdr health) :retirement retirement
+           :health health :retirement retirement
            :individuals individuals)
-     (and taxable (fin-ir--deductions year taxable inss (car health) retirement)))))
+     (and taxable (fin-ir--deductions year taxable inss health retirement)))))
 
 (defun fin-ir-duty (pos)
   "Filing duty of closed-year position POS: plist :required (t, nil, or

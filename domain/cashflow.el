@@ -48,13 +48,6 @@ into savings.  SQL is a SELECT, or `, NAME AS (...) SELECT' for more CTEs."
 (defun fin-report--month-now ()
   (string-to-number (format-time-string "%m")))
 
-(defun fin-report--years ()
-  "Distinct years in entry, descending."
-  (mapcar #'car
-          (fin-db-query
-           "SELECT DISTINCT CAST(strftime('%Y', date) AS INTEGER) AS y
-              FROM entry WHERE date IS NOT NULL ORDER BY y DESC")))
-
 (defun fin-report--year-months (year)
   "Per-month (m, in, out, liquid) for YEAR  12 rows.
 In is income and out spending, transfers to and from savings excluded (see

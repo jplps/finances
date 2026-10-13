@@ -75,7 +75,6 @@
     (should (= 1252000 (plist-get p :taxable)))   ; 12.000 + the excess
     (should (= 132000 (plist-get p :inss)))
     (should (= 20000 (plist-get p :health)))
-    (should (= 35000 (plist-get p :health-unknown)))
     (should (= 100000 (plist-get p :pgbl)))
     (should (equal '(("2025-03" . 40000)) (plist-get p :individuals)))
     (should (= 0 (plist-get p :tax)))))
@@ -227,12 +226,23 @@
   (should-error (fin-ir--invoice-row "municipal,1,2023-06-30,2023-06,1,A,9613.45,paga,a.pdf" "f.csv"))
   (should-error (fin-ir--invoice-row "municipal,1,2023-06-30,2023-06,1,A, B,9613.45,ativa,a.pdf" "f.csv")))
 
+(ert-deftest ir/bank-revenue-by-month ()
+  (fin-test-with-db
+    (fin-bankdb-ensure)
+    (test-ir--bank "a" "pj" "2026-01-05" "in" 1015500 "Pix - BP Educacao")
+    (test-ir--bank "b" "pj" "2026-01-20" "in" 4000 "Pix - BP Educacao")
+    (test-ir--bank "c" "pj" "2026-02-05" "in" 1015500 "Pix - BP Educacao")
+    (test-ir--bank "d" "pj" "2026-02-06" "in" 500 "Pix - someone else")
+    (test-ir--bank "e" "account" "2026-02-07" "in" 900 "Pix - BP Educacao")
+    (let ((fin-pj-income-payers '(("BP Educacao" . "bp"))))
+      (should (equal '(("2026-01" . 1019500) ("2026-02" . 1015500)) (fin-ir-bank-revenue))))))
+
 (ert-deftest ir/revenue-gaps-by-month ()
   (let ((simples '(("2024-01" 750000 45000) ("2024-02" 750000 45000) ("2026-08" 1015500 60931)))
         (invoices '(("2023-12" . 1) ("2024-01" . 750000) ("2024-02" . 1931270) ("2026-09" . 1584500))))
-    (should (equal '(("2024-02" 750000 1931270) ("2026-08" 1015500 0))
-                   (fin-ir-revenue-gaps simples invoices "2026-10-11")))
-    (should (equal '(("2024-02" 750000 1931270) ("2026-08" 1015500 0) ("2026-09" 0 1584500))
+    (should (equal '(("2024-02" 750000 1931270 nil) ("2026-08" 1015500 0 1015500))
+                   (fin-ir-revenue-gaps simples invoices "2026-10-11" '(("2026-08" . 1015500)))))
+    (should (equal '(("2024-02" 750000 1931270 nil) ("2026-08" 1015500 0 nil) ("2026-09" 0 1584500 nil))
                    (fin-ir-revenue-gaps simples invoices "2026-10-21")))
     (should-not (fin-ir-revenue-gaps nil invoices "2026-10-11"))))
 

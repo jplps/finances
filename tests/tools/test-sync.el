@@ -72,7 +72,7 @@ Cells must be strings; numerics expressed as <table-cell value=\"X\">."
     (should (= 200000 (nth 3 (car rows))))
     (should (equal 0.25 (nth 4 (cadr rows))))))
 
-;;; ── --patrimony / --accounts row builders ──────────────────
+;;; ── --patrimony row builder ──────────────────
 
 (ert-deftest sync/patrimony-builder-rounds-amount ()
   (let* ((dom (fin-test--sheet-dom
@@ -82,14 +82,6 @@ Cells must be strings; numerics expressed as <table-cell value=\"X\">."
          (row (car (fin-sync--patrimony dom))))
     (should (= 1235 (nth 2 row)))
     (should (= 60   (nth 3 row)))))
-
-(ert-deftest sync/accounts-builder-defaults-balance-to-zero ()
-  (let* ((dom (fin-test--sheet-dom
-               "accounts"
-               '(("category" "parent" "balance" "updated_at")
-                 ("main" nil nil "2025-01-31"))))
-         (row (car (fin-sync--accounts dom))))
-    (should (= 0 (nth 2 row)))))
 
 ;;; ── full refresh: row-builder + bulk-insert + truncate path ─
 

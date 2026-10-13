@@ -52,13 +52,6 @@
        lifespan_months INTEGER)"
     "CREATE INDEX patrimony_cat ON patrimony(category)"
 
-    "CREATE TABLE account (
-       category    TEXT NOT NULL,
-       parent      TEXT,
-       balance     INTEGER NOT NULL,
-       updated_at  TEXT,
-       PRIMARY KEY (category, parent))"
-
     "CREATE TABLE refresh_log (
        id         INTEGER PRIMARY KEY,
        ran_at     TEXT NOT NULL,
@@ -68,7 +61,7 @@
   "Full schema as a list of standalone SQL statements.")
 
 (defconst fin-db--tables
-  '("entry" "budget" "patrimony" "account" "refresh_log")
+  '("entry" "budget" "patrimony" "account" "refresh_log")  ; account: legacy, dropped on rebuild
   "Logical tables — order irrelevant for DROP IF EXISTS.")
 
 (defun fin-db-available-p ()

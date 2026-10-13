@@ -120,14 +120,6 @@ Negatives in .neg."
         (format "<span class=\"pos\">%s</span>" s)
       s)))
 
-(defun fin-dashboard--pct-signed-cell (v)
-  "Cell for a signed percentage V: wraps neg in `.neg', pos in `.pos'."
-  (cond ((null v) "")
-        ((not (numberp v)) (list :raw (fin-dashboard--esc v)))
-        ((zerop v) (list :raw (format "%.1f" v)))
-        ((< v 0) (list :raw (format "<span class=\"neg\">%.1f</span>" v)))
-        (t        (list :raw (format "<span class=\"pos\">%.1f</span>" v)))))
-
 (defun fin-dashboard--ym (date)
   "Strip day from ISO date (`YYYY-MM-DD' → `YYYY-MM').  Pass-through if shorter."
   (if (and (stringp date) (>= (length date) 7)) (substring date 0 7) (or date "")))
