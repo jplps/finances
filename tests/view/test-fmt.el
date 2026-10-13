@@ -38,29 +38,21 @@
   (should (equal (fin-dashboard--k nil) ""))
   (should (equal (fin-dashboard--k 0)   "")))
 
-(ert-deftest fmt/grouped-rounds-to-whole-reais ()
-  (should (equal "0" (fin-dashboard--grouped 0)))
-  (should (equal "2,552" (fin-dashboard--grouped 255172)))
-  (should (equal "-1,000" (fin-dashboard--grouped -100000))))
-
-(ert-deftest fmt/k-under-1k-uses-money-str ()
-  (should (equal (fin-dashboard--k 99999) "999.99")))
-
-(ert-deftest fmt/k-1k-and-above-uses-k-suffix ()
-  (should (equal (fin-dashboard--k 100000)  "1.0k"))
-  (should (equal (fin-dashboard--k 1234500) "12.3k")))
+(ert-deftest fmt/k-uses-money-str ()
+  (should (equal (fin-dashboard--k 99999) "999.99"))
+  (should (equal (fin-dashboard--k 1234500) "12,345.00")))
 
 (ert-deftest fmt/k-negative-wraps-in-neg-span ()
   (let ((out (fin-dashboard--k -100000)))
     (should (string-match-p "class=\"neg\"" out))
-    (should (string-match-p "-1.0k" out))))
+    (should (string-match-p "-1,000.00" out))))
 
 ;;; ── --k-signed (positives marked .pos) ─────────────────────
 
 (ert-deftest fmt/k-signed-positive-wraps-in-pos-span ()
   (let ((out (fin-dashboard--k-signed 100000)))
     (should (string-match-p "class=\"pos\"" out))
-    (should (string-match-p "1.0k" out))))
+    (should (string-match-p "1,000.00" out))))
 
 (ert-deftest fmt/k-signed-negative-wraps-in-neg-span ()
   (let ((out (fin-dashboard--k-signed -100000)))

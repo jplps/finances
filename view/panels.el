@@ -160,29 +160,24 @@
               (fin-dashboard--esc cat) (fin-dashboard--esc cat))
     (fin-dashboard--esc cat)))
 
-(defun fin-dashboard--goal-amounts (mtd target)
-  "(MTD TARGET) as strings in whole reais, or with cents when rounding would
-show two different amounts as equal."
-  (let ((m (round mtd)) (tg (round target)))
-    (if (and (/= m tg) (equal (fin-dashboard--grouped m) (fin-dashboard--grouped tg)))
-        (list (fin-dashboard--money-str m) (fin-dashboard--money-str tg))
-      (list (fin-dashboard--grouped m) (fin-dashboard--grouped tg)))))
-
 (defun fin-dashboard--goal-row (r parents)
   "Goal row R.  PARENTS maps category to parent: rows other rows hang under
 fold them, and each row names its ancestors so folding one hides it."
   (let* ((cat (plist-get r :category)) (target (plist-get r :target)) (mtd (plist-get r :mtd))
          (anc (fin-dashboard--goal-ancestors r parents))
          (toggle (cl-some (lambda (p) (equal p cat)) (hash-table-values parents)))
-         (shown (fin-dashboard--goal-amounts mtd target))
-         (over (and (not (eq (plist-get r :direction) 'save)) (> mtd target))))
-    (format "<tr class=\"goal%s\"%s><td class=\"cat\">%s</td><td class=\"num%s\">%s</td><td class=\"num dim\">%s</td></tr>"
+         (over (and (not (eq (plist-get r :direction) 'save)) (> mtd target)))
+         ;; Plan minus month: room left to spend, or what is still to save.
+         (diff (- (round target) (round mtd))))
+    (format "<tr class=\"goal%s\"%s><td class=\"cat\">%s</td><td class=\"num%s\">%s</td><td class=\"num dim\">%s</td><td class=\"num %s\">%s</td></tr>"
             (pcase (plist-get r :depth) (1 " child") (2 " child deep") (_ ""))
             (if anc (format " data-anc=\"%s\"" (fin-dashboard--esc (string-join anc " "))) "")
             (fin-dashboard--goal-cat cat toggle)
             (if over " neg" "")
-            (nth 0 shown)
-            (nth 1 shown))))
+            (fin-dashboard--money-str (round mtd))
+            (fin-dashboard--money-str (round target))
+            (cond ((> diff 0) "pos") ((< diff 0) "neg") (t ""))
+            (fin-dashboard--money-str diff))))
 
 (defun fin-dashboard--goals-fold-css (parents)
   "Rules hiding the rows under each folded (unchecked) parent of PARENTS."
@@ -200,7 +195,7 @@ fold them, and each row names its ancestors so folding one hides it."
       (when (plist-get r :parent) (puthash (plist-get r :category) (plist-get r :parent) parents)))
     (concat (fin-dashboard--goals-fold-css parents)
             "<table class=\"goals\"><thead><tr><th>category</th>"
-            "<th class=\"num\">month</th><th class=\"num\">plan</th></tr></thead><tbody>"
+            "<th class=\"num\">month</th><th class=\"num\">plan</th><th class=\"num\">left</th></tr></thead><tbody>"
             (mapconcat (lambda (r) (fin-dashboard--goal-row r parents)) rows "")
             "</tbody></table>")))
 
@@ -278,8 +273,8 @@ fold them, and each row names its ancestors so folding one hides it."
       (list nil (fin-dashboard--health-line
                  nil (format "book the missing flows: %s"
                              (mapconcat (lambda (g) (format "%s ledger left %s, bank cash %s" (nth 0 g)
-                                                            (fin-dashboard--grouped (nth 1 g))
-                                                            (fin-dashboard--grouped (nth 2 g))))
+                                                            (fin-dashboard--money-str (nth 1 g))
+                                                            (fin-dashboard--money-str (nth 2 g))))
                                         gaps " · ")))))))
 
 (declare-function fin-dashboard--ir-todo "irpf" ())
@@ -474,12 +469,12 @@ Future months of the current year use the objectives forecast
          (bal (+ (or (cdr pf) 0) (or (cdr pj) 0)))
          (saved (- (fin-report--accounts-total) (fin-report--accounts-total :cash)))
          (left (car (fin-health-cash now-y now-m)))
-         (money (lambda (c) (concat "R$ " (fin-dashboard--grouped c)))))
+         (money (lambda (c) (concat "R$ " (fin-dashboard--money-str c)))))
     (concat
      (fin-dashboard--kpi (fin-dashboard--month-name now-m) (if (or pf pj) (funcall money bal) "—")
                          (format "in %s · out %s · saved %s"
-                                 (fin-dashboard--grouped (nth 1 m)) (fin-dashboard--grouped (nth 2 m))
-                                 (fin-dashboard--grouped (fin-report--bank-saved (format "%04d-%02d" now-y now-m))))
+                                 (fin-dashboard--money-str (nth 1 m)) (fin-dashboard--money-str (nth 2 m))
+                                 (fin-dashboard--money-str (fin-report--bank-saved (format "%04d-%02d" now-y now-m))))
                          (if (< left 0) "bad" "good"))
      (fin-dashboard--kpi "savings" (funcall money saved) "accounts"))))
 
@@ -488,7 +483,7 @@ Future months of the current year use the objectives forecast
   (if (null ahead) (fin-dashboard--money-signed-cell liq)
     (list :raw (format "%s <span class=\"dim\" title=\"plan forecast for the months left\">%s%s</span>"
                        (cadr (fin-dashboard--money-signed-cell liq))
-                       (if (< ahead 0) "−" "+") (fin-dashboard--grouped (abs ahead))))))
+                       (if (< ahead 0) "−" "+") (fin-dashboard--money-str (abs ahead))))))
 
 (defun fin-dashboard--panel-wealth ()
   (let* ((now-y (fin-report--year-now))

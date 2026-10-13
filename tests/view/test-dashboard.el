@@ -55,10 +55,14 @@
 
 ;;; ── panels ─────────────────────────────────────────────────
 
-(ert-deftest dashboard/goal-amounts-show-cents-only-when-rounding-hides-gap ()
-  (should (equal '("139.00" "139.46") (fin-dashboard--goal-amounts 13900 13946)))
-  (should (equal '("139" "200") (fin-dashboard--goal-amounts 13900 20000)))
-  (should (equal '("139" "139") (fin-dashboard--goal-amounts 13900 13900))))
+(ert-deftest dashboard/goal-row-shows-cents-and-signed-left ()
+  (let ((none (make-hash-table :test #'equal)))
+    (let ((row (fin-dashboard--goal-row '(:category "food" :target 300000 :mtd 160300) none)))
+      (should (string-search ">1,603.00<" row))
+      (should (string-search ">3,000.00<" row))
+      (should (string-search "num pos\">1,397.00<" row)))
+    (should (string-search "num neg\">-0.14<"
+                           (fin-dashboard--goal-row '(:category "wear" :target 16186 :mtd 16200) none)))))
 
 (ert-deftest dashboard/cockpit-tiles-month-savings-runway ()
   (fin-test-with-db

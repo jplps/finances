@@ -93,21 +93,15 @@ fold into one neutral `other' slice, never a cycled hue.")
           (format "<span class=\"neg\">%s</span>" s)
         s))))
 
-(defun fin-dashboard--grouped (cents)
-  "Whole BRL from CENTS with thousands grouped: 255172 → \"2,552\"."
-  (concat (if (< cents 0) "-" "") (fin-dashboard--group (round (abs cents) 100))))
 
 (defun fin-dashboard--k (cents)
-  "Format CENTS as `X.Yk' for |cents| ≥ R$ 1.000, else full BRL.
-Negatives in .neg."
+  "Format CENTS as full BRL, empty for nil or zero.  Negatives in .neg."
   (cond ((null cents) "")
         ((not (numberp cents)) (fin-dashboard--esc cents))
         ((zerop cents) "")
         (t (let* ((neg (< cents 0))
                   (a   (abs cents))
-                  (s   (if (>= a 100000)
-                           (format "%.1fk" (/ a 100000.0))
-                         (fin-dashboard--money-str a)))
+                  (s   (fin-dashboard--money-str a))
                   (txt (if neg (concat "-" s) s)))
              (if neg (format "<span class=\"neg\">%s</span>" txt) txt)))))
 

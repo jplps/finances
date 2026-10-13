@@ -17,8 +17,8 @@
           #'<)))
 
 (defun fin-dashboard--ir-money (cents)
-  "R$ CENTS grouped, or ? when unknown."
-  (if cents (concat "R$ " (fin-dashboard--grouped cents)) "?"))
+  "R$ CENTS, or ? when unknown."
+  (if cents (concat "R$ " (fin-dashboard--money-str cents)) "?"))
 
 (defun fin-dashboard--ir-tiles (pos)
   (let ((taxes (plist-get pos :taxes)))
@@ -26,12 +26,12 @@
      "<div class=\"kpis\">"
      (fin-dashboard--kpi (format "revenue %d" (plist-get pos :year))
                          (fin-dashboard--ir-money (plist-get pos :revenue))
-                         (mapconcat (lambda (tx) (format "%s %s" (car tx) (fin-dashboard--grouped (cdr tx))))
+                         (mapconcat (lambda (tx) (format "%s %s" (car tx) (fin-dashboard--money-str (cdr tx))))
                                     taxes " · "))
      (fin-dashboard--kpi "to cpf" (fin-dashboard--ir-money (plist-get pos :drawn))
                          (if (plist-get pos :pro-labore)
-                             (format "pró-labore %s/mo · profit %s" (fin-dashboard--grouped (plist-get pos :pro-labore))
-                                     (fin-dashboard--grouped (plist-get pos :profit)))
+                             (format "pró-labore %s/mo · profit %s" (fin-dashboard--money-str (plist-get pos :pro-labore))
+                                     (fin-dashboard--money-str (plist-get pos :profit)))
                            "pró-labore unknown"))
      (fin-dashboard--kpi "income tax" (fin-dashboard--ir-money (plist-get pos :tax))
                          (if (plist-get pos :model)
@@ -243,7 +243,7 @@ to fix when the PGDAS-D matches what the bank received, else the PGDAS-D."
           ('exempt (list t (format "%s from individuals: exempt" (fin-dashboard--ir-money sum))))
           ('taxable (list nil (format "carnê-leão (DARF 0190) due the month after each of %s: %s"
                                       (fin-dashboard--count (length months) "month")
-                                      (mapconcat (lambda (m) (format "%s %s" (car m) (fin-dashboard--grouped (cdr m))))
+                                      (mapconcat (lambda (m) (format "%s %s" (car m) (fin-dashboard--money-str (cdr m))))
                                                  months ", "))))
           (_ (list nil (format "%s from individuals in %s: set <b>fin-ir-individual-income</b> (work or rent = carnê-leão)"
                                (fin-dashboard--ir-money sum) (fin-dashboard--count (length months) "month")))))))))
