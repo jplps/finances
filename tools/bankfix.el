@@ -34,15 +34,20 @@ re-fix older months once."
 
 (defun fin-bank-fix--vanished ()
   "(BANK-IDS . ACTIONS): adds whose bank row a later export dropped, and a
-delete for each whose ledger row is still there unchanged."
-  (let (ids acts)
+delete for each whose ledger row is still there unchanged.  Identical
+adds take distinct ledger rows."
+  (let (ids acts taken)
     (dolist (v (fin-bankdb-vanished-adds) (cons ids (nreverse acts)))
       (push (car v) ids)
-      (let ((l (car (fin-db-query "SELECT id, date, type, category, item, amount FROM entry
-                                    WHERE date = ? AND type = ? AND category = ?
-                                      AND COALESCE(item, '') = ? AND amount = ? LIMIT 1"
-                                  (cdr v)))))
-        (when l (push (list :delete l "the bank no longer lists it") acts))))))
+      (let ((l (cl-find-if-not (lambda (r) (memq (car r) taken))
+                               (fin-db-query "SELECT id, date, type, category, item, amount FROM entry
+                                               WHERE date = ? AND type = ? AND category = ?
+                                                 AND COALESCE(item, '') = ? AND amount = ?
+                                               ORDER BY id"
+                                             (cdr v)))))
+        (when l
+          (push (car l) taken)
+          (push (list :delete l "the bank no longer lists it") acts))))))
 
 (defun fin-bank-fix--added (actions)
   "(bank-id date type category item amount) of the adds in ACTIONS that
@@ -237,10 +242,11 @@ K-1.  Nil when K is 1 or none is booked."
   (list (nth 1 l) (nth 2 l) (nth 3 l) (or (nth 4 l) "") (nth 5 l)))
 
 (defun fin-bank-fix--changes (actions)
-  "ODS changes for ACTIONS.  A deleted row takes no edit; a row takes one edit."
+  "ODS changes for ACTIONS.  A deleted row takes no edit; a row takes one
+edit and one delete.  Deletes of distinct identical rows all stay."
   (let ((deleted (mapcar (lambda (a) (fin-bank-fix--key (cadr a)))
                          (cl-remove-if-not (lambda (a) (eq (car a) :delete)) actions)))
-        (edited nil) (out nil))
+        (edited nil) (deleted-ids nil) (out nil))
     (dolist (a actions)
       (pcase a
         (`(:add ,fields . ,_)
@@ -250,12 +256,14 @@ K-1.  Nil when K is 1 or none is booked."
          (let ((k (fin-bank-fix--key l)))
            (unless (or (member k deleted) (member k edited) (= new (nth 4 k)))
              (push k edited) (push (list :edit k new) out))))
-        (`(:delete ,l ,_) (push (list :delete (fin-bank-fix--key l)) out))
+        (`(:delete ,l ,_)
+         (unless (memql (car l) deleted-ids)
+           (push (car l) deleted-ids)
+           (push (list :delete (fin-bank-fix--key l)) out)))
         (`(,(or :report :skip) . ,_) nil)
         (_ (error "fin-bank: bad action %S" a))))
-    ;; Two identical adds are two charges; only edits and deletes repeat.
-    (cl-delete-duplicates (nreverse out) :from-end t
-                          :test (lambda (a b) (and (not (eq (car a) :add)) (equal a b))))))
+    ;; Adds and deletes are already one per charge and per ledger row.
+    (nreverse out)))
 
 (defun fin-bank-fix--insert-section (title items fmt)
   (insert (format "\n* %s (%d)\n\n" title (length items)))

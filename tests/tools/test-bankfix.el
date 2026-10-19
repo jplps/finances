@@ -96,6 +96,19 @@
                       (:add ("2026-10-06" "out" "food" "y" 400 nil nil) "Y")
                       (:report ("nu:b") "z")))))))
 
+(ert-deftest bankfix/identical-vanished-adds-delete-both-rows ()
+  (fin-test-with-db
+    (fin-bankdb-ensure)
+    (fin-test-insert-entry "2026-10-03" "out" "food" 1250 "padaria")
+    (fin-test-insert-entry "2026-10-03" "out" "food" 1250 "padaria")
+    (fin-bankdb-record-fix-adds '(("nu:g1" "2026-10-03" "out" "food" "padaria" 1250)
+                                  ("nu:g2" "2026-10-03" "out" "food" "padaria" 1250)))
+    (let ((g (fin-bank-fix--vanished)))
+      (should (= 2 (length (delete-dups (mapcar (lambda (a) (car (cadr a))) (cdr g))))))
+      (should (equal '((:delete ("2026-10-03" "out" "food" "padaria" 1250))
+                       (:delete ("2026-10-03" "out" "food" "padaria" 1250)))
+                     (fin-bank-fix--changes (cdr g)))))))
+
 (ert-deftest bankfix/installment-continues-its-series ()
   (fin-test-with-db
     (fin-test-insert-entry "2026-09-06" "out" "car" 5090 "bateria" 6 10)
