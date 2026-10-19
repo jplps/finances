@@ -94,6 +94,11 @@ UTF-8.  Invalid UTF-8 decodes to eight-bit raw bytes, which flags it."
         (cl-assert (> end pos))
         (push (fin-ofx--txn body) txns)
         (setq pos end)))
+    (let ((opened (cl-loop with i = 0 while (setq i (string-search "<STMTTRN>" text i))
+                           count (setq i (1+ i)))))
+      (unless (= opened (length txns))
+        (error "fin-ofx: %d <STMTTRN> tags but %d parsed: unterminated transaction"
+               opened (length txns))))
     (list :kind kind :txns (nreverse txns))))
 
 (provide 'ofx)

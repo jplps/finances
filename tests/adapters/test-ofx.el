@@ -87,6 +87,12 @@ ENCODING:UTF-8
   (should-error
    (fin-ofx-parse "<BANKACCTFROM><BANKTRANLIST><STMTTRN><DTPOSTED>20250101<TRNAMT>1</STMTTRN>")))
 
+(ert-deftest ofx/parse-rejects-unterminated-last-transaction ()
+  (should-error
+   (fin-ofx-parse (concat "<BANKACCTFROM><BANKTRANLIST>"
+                          "<STMTTRN><DTPOSTED>20250101<TRNAMT>1<FITID>A1</STMTTRN>"
+                          "<STMTTRN><DTPOSTED>20250102<TRNAMT>2<FITID>A2<MEMO>z"))))
+
 (ert-deftest ofx/parse-rejects-unknown-statement ()
   (should-error (fin-ofx-parse "<OFX></OFX>")))
 
