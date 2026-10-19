@@ -60,6 +60,16 @@
       (should (equal "coffee" (nth 0 (car rows))))
       (should (= 5 (nth 1 (car rows)))))))
 
+(ert-deftest stats/top-items-skip-savings-and-future-rows ()
+  (fin-test-with-db
+    (dotimes (i 6)
+      (fin-test-insert-entry (format "2025-%02d-01" (1+ i)) "out" "investments" 50000 "crypto")
+      (fin-test-insert-entry (format "2025-%02d-02" (1+ i)) "out" "food" 1000 "coffee"))
+    (fin-test-insert-entry "2099-01-01" "out" "food" 1000 "future")
+    (should (equal '("coffee") (mapcar #'car (fin-report--top-recurring 10 6))))
+    (should (equal '("coffee") (mapcar #'car (fin-report--top-by-count 10 1))))
+    (should (equal '(("food" 6000)) (fin-report--cat-shares)))))
+
 ;;; ── --cumulative-networth (running sum) ───────────────────
 
 (ert-deftest stats/cumulative-networth-runs-monotonically ()
