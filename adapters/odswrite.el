@@ -137,6 +137,7 @@ VIA nil, or how it was paid outside the bank statements."
     hits))
 
 (defun fin-odsw--set-amount (row old new)
+  (cl-assert (and (integerp new) (> new 0)) nil "fin-odsw: bad amount %S" new)
   (let ((pat (format "office:value=\"%d\" calcext:value-type=\"float\"><text:p>%d</text:p>" old old)))
     (let ((n 0) (pos 0))
       (while (setq pos (string-search pat row pos))
@@ -290,7 +291,11 @@ CONTENT must be well-formed; the result must read back.  Return PATH."
                 (error "fin-odsw: zip failed")))
             (unless (fin-ods-sheet (fin-ods-parse new) "entries")
               (error "fin-odsw: rewritten ODS lost its entries sheet"))
-            (copy-file new path t)
+            ;; Copy next to PATH, then rename over it: a failed copy leaves
+            ;; PATH whole.
+            (let ((staged (concat path ".fin-new")))
+              (copy-file new staged t)
+              (rename-file staged path t))
             path)
         (delete-directory tmp t)))))
 

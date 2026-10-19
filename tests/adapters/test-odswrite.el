@@ -84,7 +84,9 @@
   (let ((dup (test-odsw--content '("2026-01-01" "out" "food" "x" 100 nil nil)
                                  '("2026-01-01" "out" "food" "x" 100 nil nil))))
     (should-error (fin-odsw-apply dup '((:delete ("2026-01-01" "out" "food" "x" 100))))))
-  (should-error (fin-odsw-apply test-odsw--base '((:add ("2026-01-01" "out" "food" "x" -5 nil nil))))))
+  (should-error (fin-odsw-apply test-odsw--base '((:add ("2026-01-01" "out" "food" "x" -5 nil nil)))))
+  (should-error (fin-odsw-apply test-odsw--base '((:edit ("2026-09-04" "out" "cnpj" "" 166400) 1234.5))))
+  (should-error (fin-odsw-apply test-odsw--base '((:edit ("2026-09-04" "out" "cnpj" "" 166400) 0)))))
 
 (ert-deftest odsw/apply-deletes-every-identical-row-together ()
   (let* ((dup (test-odsw--content '("2026-01-01" "out" "food" "x" 100 2 4)
