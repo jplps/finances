@@ -175,6 +175,24 @@
             (should (equal 100000 (nth 1 (fin-ir--pro-labore 2026 2))))))
       (delete-directory dir t))))
 
+(ert-deftest ir/dctfweb-month-at-inss-cap-leaves-pro-labore-unknown ()
+  (let* ((dir (make-temp-file "fin-ir-" t))
+         (fin-ir-payments-dir dir) (fin-ir-pro-labore nil))
+    (unwind-protect
+        (progn
+          (with-temp-file (expand-file-name "dctfweb-x.csv" dir)
+            (insert "periodo;transmissao;categoria;origem;tipo;situacao;debito;saldo\n"
+                    "02/2025;x;Geral;eSocial;Original;Ativa;897.32;897.32\n"
+                    "01/2025;x;Geral;eSocial;Original;Ativa;330.00;330.00\n"))
+          (should-not (fin-ir--pro-labore 2025 2))
+          (should (equal '(2025 nil 122732 2) (assq 2025 (fin-ir-pro-labore-files)))))
+      (delete-directory dir t))))
+
+(ert-deftest ir/yearly-pro-labore-prorated-to-months-so-far ()
+  (let ((fin-ir-pro-labore '((2025 . 1200000))))
+    (should (equal '(1200000 100000 132000) (fin-ir--pro-labore 2025 12)))
+    (should (equal '(900000 100000 99000) (fin-ir--pro-labore 2025 9)))))
+
 (ert-deftest ir/filed-from-receipt-names ()
   (let* ((dir (make-temp-file "fin-ir-" t)) (fin-ir-payments-dir dir) (fin-ir-filed '((2023 . "2024-05-01"))))
     (unwind-protect

@@ -672,13 +672,16 @@ the company's pró-labore; any other is other taxable income."
 
 (defun fin-ir--dctfweb-row (line file)
   "(YEAR TOTAL INSS) of a DCTFWeb CSV LINE from FILE (periodo MM/YYYY; …;
-debito): the month's INSS on pró-labore, and the pró-labore it implies."
+debito): the month's INSS on pró-labore, and the pró-labore it implies.
+TOTAL is nil when INSS is at the cap: the pró-labore may be any amount above it."
   (pcase (split-string line ";")
     ((and `(,period ,_ ,_ ,_ ,_ ,_ ,debit . ,_)
           (guard (and (string-match "\\`[0-9]\\{2\\}/\\([0-9]\\{4\\}\\)\\'" period)
                       (string-match-p fin-ir--amount-re debit))))
-     (let ((inss (fin-ir--cents debit)))
-       (list (string-to-number (substring period 3)) (round inss fin-ir-inss-rate) inss)))
+     (let* ((inss (fin-ir--cents debit))
+            (year (string-to-number (substring period 3)))
+            (capped (>= inss (round (* fin-ir-inss-rate (fin-ir-rule year :inss-cap))))))
+       (list year (unless capped (round inss fin-ir-inss-rate)) inss)))
     (_ (error "fin-ir: bad DCTFWeb line in %s: %S" file line))))
 
 (defun fin-ir--fontes ()
@@ -698,14 +701,16 @@ other than the pró-labore the company reported to the Receita."
   "Pró-labore per year from the Receita files in `fin-ir-payments-dir':
 alist YEAR -> (TOTAL INSS MONTHS).  A year the payer-income files
 \(fontes-pagadoras/*.csv, what the company reported) cover comes from them,
-12 months; any other from its DCTFWeb months (dctfweb-*.csv)."
+12 months; any other from its DCTFWeb months (dctfweb-*.csv), TOTAL nil
+when a month's INSS is at the cap."
   (let* ((fontes (cl-remove-if-not (lambda (r) (> (nth 2 r) 0)) (fin-ir--fontes)))
          (out (mapcar (lambda (r) (list (nth 0 r) (nth 1 r) (nth 2 r) 12)) fontes)))
     (dolist (r (fin-ir--csv fin-ir-payments-dir "\\`dctfweb-.*\\.csv\\'" #'fin-ir--dctfweb-row))
       (unless (assq (car r) fontes)
         (let ((cell (assq (car r) out)))
           (if cell
-              (setcdr cell (list (+ (nth 1 cell) (nth 1 r)) (+ (nth 2 cell) (nth 2 r)) (1+ (nth 3 cell))))
+              (setcdr cell (list (and (nth 1 cell) (nth 1 r) (+ (nth 1 cell) (nth 1 r)))
+                                 (+ (nth 2 cell) (nth 2 r)) (1+ (nth 3 cell))))
             (push (list (car r) (nth 1 r) (nth 2 r) 1) out)))))
     out))
 
@@ -717,9 +722,11 @@ low when one month went past the cap."
   (let ((cap (fin-ir-rule year :inss-cap)))
     (pcase (cdr (assq year fin-ir-pro-labore))
       ('nil (let ((f (cdr (assq year (fin-ir-pro-labore-files)))))
-              (and f (list (nth 0 f) (round (nth 0 f) (nth 2 f)) (nth 1 f)))))
+              (and f (nth 0 f) (list (nth 0 f) (round (nth 0 f) (nth 2 f)) (nth 1 f)))))
       ((and (pred integerp) total)
-       (list total (round total 12) (round (* fin-ir-inss-rate (min total (* 12 cap))))))
+       ;; A yearly total, prorated to the MONTHS so far.
+       (let ((part (round (* total months) 12)))
+         (list part (round total 12) (round (* fin-ir-inss-rate (min part (* months cap)))))))
       (`(:monthly ,m)
        (cl-assert (integerp m))
        (list (* m months) m (round (* months fin-ir-inss-rate (min m cap)))))
