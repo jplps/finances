@@ -38,6 +38,7 @@
   "Reload every project source file and infra/config.el so `fin' picks up
 edits without restart."
   (interactive)
+  (load (expand-file-name "core.el" fin--root) nil t)
   (dolist (sub '("adapters" "tools" "domain" "view"))
     (dolist (f (directory-files (expand-file-name sub fin--root) t "\\.el\\'"))
       (load f nil t)))
