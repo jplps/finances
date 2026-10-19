@@ -147,6 +147,7 @@ table th:last-child, table td:last-child   { padding-right: 8px; }
 table th:not(:first-child),
 table td:not(:first-child) { text-align: right; white-space: nowrap; }
 table.goals th:first-child, table.goals td:first-child { width: auto; }
+table.rules td > span { cursor: help; }
 
 table > tbody > tr.row:hover > td,
 table > tbody > tr.goal:hover > td,

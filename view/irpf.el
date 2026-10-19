@@ -87,16 +87,16 @@
                     (pcase (plist-get d :status)
                       ('missing
                        (list nil (fin-dashboard--ir-detail-span
-                                  (format "file DIRPF %d (ano %d), overdue since %s · fine ≥ %s"
-                                          (1+ y) y (fin-dashboard--ir-date (plist-get d :deadline))
+                                  (format "file the %d return, overdue since %s · fine ≥ %s"
+                                          y (fin-dashboard--ir-date (plist-get d :deadline))
                                           (fin-dashboard--ir-money fin-ir-late-fine-min))
                                   (format "taxable %s (limit %s), exempt %s (limit %s)"
                                           (fin-dashboard--ir-money (plist-get p :taxable))
                                           (fin-dashboard--ir-money (fin-ir-rule y :filing-taxable))
                                           (fin-dashboard--ir-money (plist-get d :exempt-total))
                                           (fin-dashboard--ir-money (fin-ir-rule y :filing-exempt))))))
-                      ('late (list t (format "DIRPF %d filed late on %s" (1+ y) (fin-dashboard--ir-date (plist-get d :filed)))))
-                      ('unknown (list nil (format "ano %d: add its payer-income or DCTFWeb file to the ir inbox" y))))))
+                      ('late (list t (format "%d return filed late on %s" y (fin-dashboard--ir-date (plist-get d :filed)))))
+                      ('unknown (list nil (format "%d: add its payer-income or DCTFWeb file to the ir inbox" y))))))
                 closed)))
 
 (defun fin-dashboard--ir-exempt-gap (p)
@@ -122,7 +122,7 @@ more than R$ 1.000 off the bank's, else nil; also the declarations off."
          (by (lambda (doc) (mapcar #'car (cl-remove-if-not (lambda (g) (member doc (cadr g))) gaps)))))
     (when gaps
       (list nil (fin-dashboard--ir-detail-span
-                 (format "rectify exempt profit, off the bank: %s"
+                 (format "rectify exempt profit: %s"
                          (mapconcat (lambda (doc) (format "%s %s" doc (fin-dashboard--ir-span (funcall by doc))))
                                     (cl-remove-if-not by '("DEFIS" "DIRPF")) " · "))
                  (mapconcat #'cddr gaps "; "))))))
@@ -140,9 +140,9 @@ tax the excess adds over the closed years when full books are not verified."
              (format "profit over the presumed %s: %s"
                      (fin-dashboard--ir-span (mapcar (lambda (p) (plist-get p :year)) over))
                      (pcase fin-ir-full-books
-                       ('verified "exempt, balance sheet on file")
-                       ('yes (format "full books claimed, not verified: keep the balance sheet (else %s more tax)" extra))
-                       (_ (format "taxable without full books: %s more tax" extra))))
+                       ('verified "covered by the balance sheet")
+                       ('yes (format "balance sheet missing, else %s more tax" extra))
+                       (_ (format "%s more tax" extra))))
              (mapconcat (lambda (p) (format "%d: %s over %s%s" (plist-get p :year)
                                             (fin-dashboard--ir-money (plist-get p :profit))
                                             (fin-dashboard--ir-money (plist-get p :presumed))
@@ -173,9 +173,9 @@ to fix when the PGDAS-D matches what the bank received, else the PGDAS-D."
                                     (format-time-string "%F") (fin-ir-bank-revenue)))
          (invoice-side (cl-remove-if-not (lambda (g) (and (nth 3 g) (<= (abs (- (nth 1 g) (nth 3 g))) 100)))
                                          gaps)))
-    (delq nil (list (fin-dashboard--ir-gap-line "rectify PGDAS-D %s: revenue off the NFS-e and the bank"
+    (delq nil (list (fin-dashboard--ir-gap-line "rectify PGDAS-D %s: off the NFS-e and the bank"
                                                 (cl-set-difference gaps invoice-side))
-                    (fin-dashboard--ir-gap-line "fix the NFS-e %s: the PGDAS-D matches the bank"
+                    (fin-dashboard--ir-gap-line "fix NFS-e %s: PGDAS-D matches the bank"
                                                 invoice-side)))))
 
 (defun fin-dashboard--ir-rate-line (ctx)
@@ -183,7 +183,7 @@ to fix when the PGDAS-D matches what the bank received, else the PGDAS-D."
   (let ((odd (fin-ir-rate-outliers (plist-get ctx :simples))))
     (when odd
       (list nil (fin-dashboard--ir-detail-span
-                 (format "check PGDAS-D %s: DAS rate off the year's"
+                 (format "check PGDAS-D %s: rate off the year's"
                          (mapconcat (lambda (o) (fin-dashboard--ir-month (car o))) odd ", "))
                  (mapconcat (lambda (o) (format "%s: %.2f%% (%s on %s), year median %.2f%%"
                                                 (fin-dashboard--ir-month (car o)) (* 100 (nth 1 o))
@@ -196,9 +196,8 @@ to fix when the PGDAS-D matches what the bank received, else the PGDAS-D."
   (let ((rows (fin-ir-unmatched (plist-get ctx :receita))))
     (when rows
       (list nil (fin-dashboard--ir-detail-span
-                 (format "%s in the bank %s no Receita record"
-                         (fin-dashboard--count (length rows) "Receita payment")
-                         (if (cdr rows) "match" "matches"))
+                 (format "%s with no Receita record"
+                         (fin-dashboard--count (length rows) "payment"))
                  (mapconcat (lambda (r) (format "%s %s" (fin-dashboard--ir-date (nth 1 r)) (fin-dashboard--ir-money (nth 3 r))))
                             rows "; "))))))
 
@@ -207,7 +206,7 @@ to fix when the PGDAS-D matches what the bank received, else the PGDAS-D."
   (let ((wrong (fin-ir-wrong-account (plist-get ctx :receita))))
     (when wrong
       (list nil (fin-dashboard--ir-detail-span
-                 (format "taxes paid from the wrong account: %s in %s"
+                 (format "taxes from the wrong account: %s in %s"
                          (fin-dashboard--ir-money (apply #'+ (mapcar (lambda (m) (nth 3 (car m))) wrong)))
                          (fin-dashboard--count (length wrong) "payment"))
                  (mapconcat (lambda (m) (format "%s %s %s from the %s" (fin-dashboard--ir-date (nth 1 (car m)))
@@ -223,16 +222,15 @@ to fix when the PGDAS-D matches what the bank received, else the PGDAS-D."
     (delq nil
           (list
            (list (<= peak fin-ir-dividend-month-limit)
-                 (format "largest month to cpf %s, 10%% withheld past %s"
+                 (format "peak month %s, limit %s"
                          (fin-dashboard--ir-money peak) (fin-dashboard--ir-money fin-ir-dividend-month-limit)))
            (list (<= total fin-ir-minimum-tax-floor)
-                 (format "income so far %s, minimum tax past %s a year"
+                 (format "income %s, limit %s"
                          (fin-dashboard--ir-money total) (fin-dashboard--ir-money fin-ir-minimum-tax-floor)))
            (and monthly
-                (list t (format "pró-labore %s/mo %s %s: %s" (fin-dashboard--ir-money monthly)
-                                (if (<= monthly fin-ir-monthly-exempt) "≤" "&gt;")
-                                (fin-dashboard--ir-money fin-ir-monthly-exempt)
-                                (if (<= monthly fin-ir-monthly-exempt) "no monthly tax" "partly taxed"))))))))
+                (list (<= monthly fin-ir-monthly-exempt)
+                      (format "pró-labore %s/mo, limit %s" (fin-dashboard--ir-money monthly)
+                              (fin-dashboard--ir-money fin-ir-monthly-exempt))))))))
 
 (defun fin-dashboard--ir-individual-line (positions)
   "Income from individuals across POSITIONS: (OK HTML), nil when none."
@@ -241,7 +239,7 @@ to fix when the PGDAS-D matches what the bank received, else the PGDAS-D."
       (let ((sum (apply #'+ (mapcar #'cdr months))))
         (pcase fin-ir-individual-income
           ('exempt (list t (format "%s from individuals: exempt" (fin-dashboard--ir-money sum))))
-          ('taxable (list nil (format "carnê-leão (DARF 0190) due the month after each of %s: %s"
+          ('taxable (list nil (format "carnê-leão (DARF 0190) due for %s: %s"
                                       (fin-dashboard--count (length months) "month")
                                       (mapconcat (lambda (m) (format "%s %s" (car m) (fin-dashboard--money-str (cdr m))))
                                                  months ", "))))
@@ -351,6 +349,77 @@ year expands into its detail."
                           (and ctx (fin-dashboard--ir-unmatched-line ctx))
                           (and ctx (fin-dashboard--ir-wrong-account-line ctx))))))
 
+(defun fin-dashboard--ir-rule-row (rule source lines ok)
+  "Row RULE, SOURCE its tooltip, and its status from LINES, (OK HTML)
+each: ⚠ when a line is not ok, its text as the tooltip, else ✓ with the
+lines' text, OK when there are none."
+  (let* ((open (cl-remove-if #'car lines))
+         (text (if open (mapconcat #'cadr open "; ")
+                 (if lines (mapconcat #'cadr lines " · ") ok))))
+    (list (list :raw (fin-dashboard--ir-detail-span (fin-dashboard--esc rule) source))
+          (list :raw (format "<span title=\"%s\">%s</span>"
+                             (fin-dashboard--esc (fin-dashboard--ir-plain text))
+                             (fin-dashboard--health-mark (null open)))))))
+
+(defun fin-dashboard--ir-plain (html)
+  "HTML as plain text: tags dropped, entities decoded."
+  (let ((s (replace-regexp-in-string "<[^>]*>" "" html)))
+    (dolist (e '(("&gt;" . ">") ("&lt;" . "<") ("&quot;" . "\"") ("&amp;" . "&")) s)
+      (setq s (string-replace (car e) (cdr e) s)))))
+
+(defun fin-dashboard--ir-inss-line (pos)
+  "INSS withheld on POS's pró-labore: (OK HTML), nil when no pró-labore."
+  (when (plist-get pos :pro-labore-total)
+    (list (> (or (plist-get pos :inss) 0) 0)
+          (format "%s withheld on %s" (fin-dashboard--ir-money (plist-get pos :inss))
+                  (fin-dashboard--ir-money (plist-get pos :pro-labore-total))))))
+
+(defun fin-dashboard--ir-rules (positions closed ctx)
+  "Every rule the owner must comply with, its official source and status,
+the current year's from 2026 on (Lei 15.270)."
+  (let* ((current (car (last positions)))
+         (watch (and (>= (plist-get current :year) 2026) (fin-dashboard--ir-watch-lines current))))
+    (fin-dashboard--table
+     '("rule" "status")
+     (append
+      (list (fin-dashboard--ir-rule-row "file DIRPF when required, by the deadline" "IN RFB of each exercício"
+                                        (fin-dashboard--ir-return-risks closed) "every return due is filed")
+            (fin-dashboard--ir-rule-row "pay what Receita notified" "Receita notices"
+                                        (delq nil (list (fin-dashboard--ir-debts-line))) "no open debt")
+            (fin-dashboard--ir-rule-row "exempt profit up to the presumed one, unless full books show more"
+                                        "LC 123 art. 14 §1–2"
+                                        (delq nil (list (fin-dashboard--ir-profit-line positions)))
+                                        "profit within the presumed")
+            (fin-dashboard--ir-rule-row "DEFIS and DIRPF declare the profit paid" "LC 123 art. 14, 25 and 38"
+                                        (delq nil (list (fin-dashboard--ir-exempt-line positions)))
+                                        "declarations match the bank")
+            (fin-dashboard--ir-rule-row "PGDAS-D revenue equals the NFS-e issued" "LC 123 art. 38-A"
+                                        (and ctx (fin-dashboard--ir-revenue-lines ctx)) "every month matches")
+            (fin-dashboard--ir-rule-row "DAS at the Anexo III rate" "LC 123 Anexo III"
+                                        (delq nil (list (and ctx (fin-dashboard--ir-rate-line ctx))))
+                                        "every month at the year's rate")
+            (fin-dashboard--ir-rule-row "every tax paid has its Receita record" "Receita payments"
+                                        (delq nil (list (and ctx (fin-dashboard--ir-unmatched-line ctx))))
+                                        "all matched")
+            (fin-dashboard--ir-rule-row "company taxes from the company account" "Receita payments"
+                                        (delq nil (list (and ctx (fin-dashboard--ir-wrong-account-line ctx))))
+                                        "all from the right account")
+            (fin-dashboard--ir-rule-row "11% INSS withheld on pró-labore" "Lei 8.212 art. 21, 30 §4; Lei 10.666 art. 4"
+                                        (delq nil (list (fin-dashboard--ir-inss-line current)))
+                                        "no pró-labore")
+            (fin-dashboard--ir-rule-row "income from individuals: carnê-leão monthly" "Lei 7.713 art. 8"
+                                        (delq nil (list (fin-dashboard--ir-individual-line (list current))))
+                                        "none"))
+      (and watch
+           (list (fin-dashboard--ir-rule-row "profit to one person ≤ R$ 50,000 a month, else 10% withheld"
+                                             "Lei 15.270 (Lei 9.250 art. 6-A)" (list (nth 0 watch)) nil)
+                 (fin-dashboard--ir-rule-row "income ≤ R$ 600,000 a year, else minimum tax"
+                                             "Lei 15.270 (Lei 9.250 art. 16-A)" (list (nth 1 watch)) nil)
+                 (fin-dashboard--ir-rule-row "taxable ≤ R$ 5,000 a month pays no tax"
+                                             "Lei 15.270 (Lei 9.250 art. 3-A)"
+                                             (or (cddr watch) (list (list nil "pró-labore unknown"))) nil))))
+     "rules")))
+
 (defun fin-dashboard--ir-todo ()
   "The open IR risks as cockpit lines, (nil HTML) each."
   (let ((years (fin-dashboard--ir-years)))
@@ -371,14 +440,12 @@ year expands into its detail."
      "IR" "ir"
      "Imposto de renda per year: taxable and exempt income, filing duty and return, revenue, company taxes, money to the CPF, deductions and tax; risks are in the cockpit's to do"
      (when current (fin-dashboard--ir-tiles current))
-     (when (and current (>= (plist-get current :year) 2026))
-       (fin-dashboard--ir-lines
-        "Watch" "This year's Lei 15.270/2025 limits, income from individuals, inputs missing"
-        (delq nil (append (fin-dashboard--ir-watch-lines current)
-                          (list (fin-dashboard--ir-individual-line (list current)))
-                          (fin-dashboard--ir-input-lines)))))
+     (when current
+       (fin-dashboard--block "Rules" "Hover a status for its detail"
+                             (fin-dashboard--ir-rules positions closed ctx)))
+     (fin-dashboard--ir-lines "Inputs" "Inputs the estimate still needs" (fin-dashboard--ir-input-lines))
      (when positions
-       (fin-dashboard--block "Years" "Filing duty per year (each exercício's IN RFB), the return delivered; expand a year for its detail"
+       (fin-dashboard--block "Years" "Filing duty and return per year"
                              (fin-dashboard--ir-years-table positions closed))))))
 
 (provide 'irpf)

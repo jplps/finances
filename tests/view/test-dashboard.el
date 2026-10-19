@@ -77,5 +77,14 @@
     (fin-test-insert-patrimony "car" "wheels" 1200000 60)
     (should (string-search "<th>items</th><th>monthly</th>" (fin-dashboard--block-patrimony)))))
 
+(ert-deftest dashboard/ir-rule-row-status ()
+  (let ((status (lambda (lines ok) (cadr (nth 1 (fin-dashboard--ir-rule-row "r" "s" lines ok))))))
+    (should (equal "<span title=\"none\"><span class=\"pos\">✓</span></span>" (funcall status nil "none")))
+    (should (string-search "title=\"a · b\"><span class=\"pos\">" (funcall status '((t "a") (t "b")) "none")))
+    (should (string-search "title=\"b; 1 &gt; 0\"><span class=\"neg\">"
+                           (funcall status '((t "a") (nil "<b>b</b>") (nil "1 &gt; 0")) "none"))))
+  (should (equal "<span title=\"s\">a &amp; b</span>"
+                 (cadr (car (fin-dashboard--ir-rule-row "a & b" "s" nil "none"))))))
+
 (provide 'test-dashboard)
 ;;; test-dashboard.el ends here

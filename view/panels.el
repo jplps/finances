@@ -81,27 +81,27 @@
                                                   (fin-dashboard--k-cell (nth 3 r)))) rec-cnt)))
     (fin-dashboard--panel
      "Stats" "stats" "Headline metrics across all tracked entries"
-     (fin-dashboard--block "Records" "Headline numbers across all tracked time; best/worst month excludes the current one"
+     (fin-dashboard--block "Records" "Best and worst month exclude the current one"
                            (fin-dashboard--table '("" "") (fin-dashboard--records-rows (fin-report--records)
                                                                                        (fin-report--patrimony-total))))
      (fin-dashboard--block "All time flow"
-                           "Per-month in (green up) and out (red down) from zero baseline. Future months dimmed."
+                           "In and out per month; future months dimmed"
                            (fin-dashboard--svg-flow (fin-report--monthly-flow))
                            "flow")
      "<div class=\"stats-body\">"
      "<div class=\"stats-col\">"
      (fin-dashboard--block "Net worth"
-                           "Cumulative liquid (Σ in − Σ out, savings moves excluded) per month — cash-only net worth proxy."
+                           "Cumulative in − out per month, savings moves excluded"
                            (fin-dashboard--svg-line netw (fin-dashboard--c 'pos))
                            "networth")
      (fin-dashboard--block "Rolling save %"
-                           "Trailing 12-month save rate per month — smooths year boundaries."
+                           "Trailing 12-month save rate"
                            (fin-dashboard--svg-line
                             (mapcar (lambda (r) (list (nth 0 r) (or (nth 1 r) 0))) rsave)
                             (fin-dashboard--c 'line-2))
                            "rsave")
-     (fin-dashboard--block "Income vs expense (12mo MA)"
-                           "12-month moving average of in (green) and out (red) — reveals lifestyle creep."
+     (fin-dashboard--block "Income vs expense"
+                           "12-month moving average of in and out"
                            (fin-dashboard--svg-multiline
                             (list (list "in"  (fin-dashboard--c 'pos)
                                         (mapcar (lambda (r) (list (nth 0 r) (or (nth 1 r) 0))) rflow))
@@ -109,35 +109,35 @@
                                         (mapcar (lambda (r) (list (nth 0 r) (or (nth 2 r) 0))) rflow))))
                            "rflow")
      (fin-dashboard--block "Pareto"
-                           "Top 20 items by spend with cumulative % of total out."
+                           "Top 20 items by spend, cumulative share"
                            (fin-dashboard--svg-pareto pareto)
                            "pareto")
      (fin-dashboard--block "Yearly save %"
-                           "Per-year save rate: (in - out) / in × 100, savings moves excluded. Green = positive, red = negative."
+                           "(in − out) / in per year, savings moves excluded"
                            (if save-rows (fin-dashboard--svg-bars save-rows) "")
                            "yearly")
      (fin-dashboard--block "Spend heatmap"
-                           "Year × month spending intensity — reveals seasonality."
+                           "Spending per year and month"
                            (fin-dashboard--svg-heatmap heat)
                            "heatmap")
      "</div>"
      "<div class=\"stats-col\">"
      (fin-dashboard--block "Category share"
-                           "All-time spending share by category (savings contributions excluded)"
+                           "Spending by category, savings excluded"
                            (fin-dashboard--svg-donut cat-slices)
                            "cat")
      (fin-dashboard--block "Income share"
-                           "All-time income share by source, savings withdrawals excluded (CNPJ tax stored as negative shows net of taxes)"
+                           "Income by source, savings withdrawals excluded, CNPJ net of taxes"
                            (fin-dashboard--svg-donut inc-slices)
                            "inc")
      "</div>"
      "<div class=\"stats-col\">"
      (fin-dashboard--block "Recurring by months"
-                           "Recurring items ranked by distinct months active (persistence)"
+                           "Recurring items by months active"
                            (fin-dashboard--table '("item" "months" "total" "avg") rec-rows)
                            "recurring")
      (fin-dashboard--block "Recurring all time"
-                           "Items by raw entry count — most-frequent purchases."
+                           "Items by entry count"
                            (fin-dashboard--table '("item" "count" "total" "avg") rec-cnt-rows)
                            "recurring-count")
      "</div>"
@@ -220,7 +220,7 @@ fold them, and each row names its ancestors so folding one hides it."
     (if (null late)
         (list t (fin-dashboard--health-line t "statements reach last month's end"))
       (list nil (mapconcat (lambda (r) (fin-dashboard--health-line
-                                        nil (format "export <b>%s</b> (have to %s)" (car r) (fin-dashboard--dm (cadr r)))))
+                                        nil (format "export <b>%s</b>, up to %s" (car r) (fin-dashboard--dm (cadr r)))))
                            late "")))))
 
 (defun fin-dashboard--health-fix ()
@@ -345,7 +345,7 @@ against the bank, taxes, the accounts sheet, the inbox, open items."
          (total (apply #'+ (mapcar (lambda (a) (plist-get a :cents)) accts))))
     (fin-dashboard--block
      "Accounts"
-     "Balances rebuilt from the bank statements plus known yields; hover for the basis"
+     "Bank statements plus known yields"
      (fin-dashboard--alist '("account" "balance" "%")
                            (mapcar (lambda (a)
                                      (list (plist-get a :name)
@@ -391,7 +391,7 @@ against the bank, taxes, the accounts sheet, the inbox, open items."
                 summary)))
     (fin-dashboard--block
      "Patrimony"
-     "Owned items: cost, lifespan, monthly amortization (cost / lifespan); % share of total monthly"
+     "Cost / lifespan per month, share of total"
      (fin-dashboard--alist '("category" "items" "monthly" "%") rows
                            (list "total" "" (fin-dashboard--money-cell (round total-monthly)) ""))
      "register")))
@@ -519,7 +519,7 @@ Future months of the current year use the objectives forecast
      "Savings (accounts), patrimony, and the yearly cashflow"
      (fin-dashboard--block-accounts)
      (fin-dashboard--block-patrimony)
-     (fin-dashboard--block "Yearly" "Year → month → category drilldown of in/out/liquid; saved is what the bank moved into savings, net of withdrawals"
+     (fin-dashboard--block "Yearly" "Saved: what the bank moved into savings, net of withdrawals"
                            (fin-dashboard--alist '("year" "in" "out" "liquid" "saved" "%") rows)
                            "register"))))
 
