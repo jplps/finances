@@ -71,7 +71,8 @@ wins.  For payees whose memos vary (`Uberbr Uber * Pending', `Uber *Trip')."
   '("compra" "debito" "via" "nupay" "transferencia" "enviada" "recebida" "pelo"
     "pix" "credito" "conta" "ltda" "brasil" "com" "supermercados" "pagamento"
     "boleto" "efetuado" "sao" "jose" "comercio" "servicos" "produtos" "loja"
-    "store" "instituicao" "pagamentos" "tecnologia" "super" "mercado" "parcela")
+    "store" "instituicao" "pagamentos" "tecnologia" "super" "mercado" "parcela"
+    "dos" "das")
   "Words too common in bank descriptions to relate rows.")
 
 (defconst fin-conv--prefix-re
@@ -87,11 +88,11 @@ wins.  For payees whose memos vary (`Uberbr Uber * Pending', `Uber *Trip')."
   (format "%s%d.%02d" (if (< cents 0) "-" "") (/ (abs cents) 100) (% (abs cents) 100)))
 
 (defun fin-conv--bank-words (desc)
-  "Meaningful words of the payee in DESC, mapped through `fin-conv-aliases'.
+  "Meaningful words of the payee in DESC, plus their `fin-conv-aliases'.
 Only the payee counts: the rest names banks and agencies."
-  (mapcar (lambda (w) (or (cdr (assoc w fin-conv-aliases)) w))
-          (cl-set-difference (fin-reconcile--words (fin-conv-item desc)) fin-conv--stopwords
-                             :test #'string=)))
+  (let ((ws (cl-set-difference (fin-reconcile--words (fin-conv-item desc)) fin-conv--stopwords
+                               :test #'string=)))
+    (delete-dups (append ws (delq nil (mapcar (lambda (w) (cdr (assoc w fin-conv-aliases))) ws))))))
 
 (defun fin-conv--word-hit-p (bank-words item-words)
   "Non-nil if a bank word equals an item word, or one prefixes the other
@@ -117,14 +118,23 @@ with at least 5 chars."
 
 (defun fin-conv-suggest (desc history)
   "(CATEGORY . ITEM) most often booked for the payee of DESC, or nil.
-HISTORY is a list of (category item count)."
-  (let ((bw (fin-conv--bank-words desc)) best best-n)
+An item sharing a whole word with the payee beats a prefix or joined
+match.  HISTORY is a list of (category item count)."
+  (let ((bw (fin-conv--bank-words desc)) best best-score)
     (dolist (h history)
       (pcase-let ((`(,cat ,item ,n) h))
-        (when (and item (fin-conv--item-hit-p desc bw item)
-                   (or (null best-n) (> n best-n)))
-          (setq best (cons cat item) best-n n))))
+        (when (and item (fin-conv--item-hit-p desc bw item))
+          (let ((score (list (if (cl-intersection bw (fin-reconcile--words item) :test #'string=) 1 0)
+                             n)))
+            (when (or (null best-score) (fin-conv--score> score best-score))
+              (setq best (cons cat item) best-score score))))))
     best))
+
+(defun fin-conv--score> (a b)
+  "Non-nil if score list A ranks above B, comparing element by element."
+  (cl-assert (= (length a) (length b)))
+  (let ((d (cl-find-if-not #'zerop (cl-mapcar #'- a b))))
+    (and d (> d 0))))
 
 (defun fin-conv-related-fn (history)
   "Predicate on (bank-row ledger-row): the ledger row books that payee.
@@ -148,9 +158,9 @@ payee name, lowercase."
         (downcase (string-trim d "[ \".]+" "[ \".]+")))))
 
 (defun fin-conv--payer (desc)
-  "First name of the person in a received-transfer DESC."
-  (let ((who (cadr (split-string desc " - "))))
-    (downcase (car (split-string (or who (fin-conv-item desc)))))))
+  "First name of the person in a received-transfer DESC, else its item."
+  (let ((first (car (split-string (or (cadr (split-string desc " - ")) "")))))
+    (if first (downcase first) (fin-conv-item desc))))
 
 (defun fin-conv-installment (desc)
   "(K N) of the installment named in bank DESC, or (nil nil)."
@@ -182,13 +192,22 @@ payee name, lowercase."
 
 (defun fin-conv--refunded-purchase (refund rows gone)
   "Out row of ROWS, not in GONE, with REFUND's amount up to
-`fin-conv-refund-days' before it."
-  (cl-find-if (lambda (r)
-                (and (not (gethash (car r) gone)) (equal (nth 2 r) "out")
-                     (= (nth 3 r) (nth 3 refund)) (not (fin-conv--savings-p r))
-                     (not (fin-conv--match-p fin-conv--reversal-re r))
-                     (<= 0 (fin-conv--days r refund) fin-conv-refund-days)))
-              rows))
+`fin-conv-refund-days' before it, the closest one."
+  (fin-conv--nearest-before
+   refund #'identity
+   (cl-remove-if-not (lambda (r)
+                       (and (not (gethash (car r) gone)) (equal (nth 2 r) "out")
+                            (= (nth 3 r) (nth 3 refund)) (not (fin-conv--savings-p r))
+                            (not (fin-conv--match-p fin-conv--reversal-re r))
+                            (<= 0 (fin-conv--days r refund) fin-conv-refund-days)))
+                     rows)))
+
+(defun fin-conv--nearest-before (refund bank-of cands)
+  "Element of CANDS whose bank row (BANK-OF it) is fewest days before
+REFUND; ties keep CANDS order."
+  (car (sort (copy-sequence cands)
+             (lambda (a b) (< (fin-conv--days (funcall bank-of a) refund)
+                              (fin-conv--days (funcall bank-of b) refund))))))
 
 (defun fin-conv--refunded-series (refund rows gone)
   "Installments of ROWS, not in GONE, of the purchase REFUND returns whole:
@@ -409,12 +428,14 @@ names the payee; salary gaps are reported."
 
 (defun fin-conv--refund-action (refund pairs)
   "Delete the ledger row of the purchase REFUND returns, found in PAIRS."
-  (let ((p (cl-find-if (lambda (p)
-                         (let ((b (car p)))
-                           (and (equal (nth 2 b) "out") (= (nth 3 b) (nth 3 refund))
-                                (integerp (car (cdr p)))
-                                (<= 0 (fin-conv--days b refund) fin-conv-refund-days))))
-                       pairs)))
+  (let ((p (fin-conv--nearest-before
+            refund #'car
+            (cl-remove-if-not (lambda (p)
+                                (let ((b (car p)))
+                                  (and (equal (nth 2 b) "out") (= (nth 3 b) (nth 3 refund))
+                                       (integerp (car (cdr p)))
+                                       (<= 0 (fin-conv--days b refund) fin-conv-refund-days))))
+                              pairs))))
     (if p (list :delete (cdr p) (concat "refunded: " (nth 4 refund)))
       (list :report refund "refund with no purchase found"))))
 

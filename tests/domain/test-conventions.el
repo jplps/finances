@@ -24,6 +24,14 @@
     (should (equal '("house" . "aluguel")
                    (fin-conv-suggest "Transferência enviada pelo Pix - Veronica" test-conv--history)))))
 
+(ert-deftest conv/suggest-prefers-whole-word-hit-and-keeps-aliased-word ()
+  (let ((fin-conv-aliases '(("beatriz" . "fisioterapia")))
+        (hist '(("health" "beatriz" 4) ("food" "mercearia dos feios sa" 22)
+                ("food" "mercado santo amaro" 11))))
+    (should (equal '("health" . "beatriz")
+                   (fin-conv-suggest "Transferência enviada pelo Pix - Beatriz Kirchner Steinbach dos Santos - •••.697.199-•• - BCO DO BRASIL S.A. (0001)"
+                                     hist)))))
+
 (ert-deftest conv/add-reuses-an-item-only-for-the-same-payee ()
   (let ((hist '(("free" "uber sk8" 30) ("food" "imperatriz" 114))))
     ;; One shared word picks the category, not the item.
@@ -75,6 +83,17 @@
                     (test-conv--b "k" "2025-05-12" "out" 100 "Padaria")))))
     (should (equal '("k") (mapcar #'car (plist-get res :rows))))
     (should (= 2 (length (plist-get res :notes))))))
+
+(ert-deftest conv/normalize-refund-cancels-the-closest-purchase ()
+  (let ((res (fin-conv-normalize
+              (list (test-conv--b "a" "2026-01-15" "out" 5000 "Loja A")
+                    (test-conv--b "b" "2026-02-10" "out" 5000 "Loja B")
+                    (test-conv--b "r" "2026-02-12" "in" 5000 "Estorno")))))
+    (should (equal '("a") (mapcar #'car (plist-get res :rows))))))
+
+(ert-deftest conv/payer-of-transfer-without-a-name ()
+  (should (equal "maria" (fin-conv--payer "Transferência recebida pelo Pix - MARIA SOUZA - x")))
+  (should (stringp (fin-conv--payer "Transferência recebida pelo Pix - "))))
 
 (ert-deftest conv/normalize-nets-partial-refund-into-payee-purchase ()
   (let ((res (fin-conv-normalize
