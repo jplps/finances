@@ -70,16 +70,24 @@ names."
 CODE (see `fin-ir-receita-codes')."
   :type '(repeat (list string integer string)) :group 'fin)
 
+(defcustom fin-ir-wrong-account-known nil
+  "Taxes paid from the wrong account and already reviewed: list of
+(ISO-DATE CENTS).  `fin-ir-wrong-account' leaves them out; the company
+totals still count them."
+  :type '(repeat (list string integer)) :group 'fin)
+
 (defcustom fin-ir-payment-window 5
   "Days a bank payment may sit from the Receita payment it matches."
   :type 'integer :group 'fin)
 
 (defconst fin-ir-receita-codes
   '(("3333" "das" pj) ("0055" "das" pj) ("1410" "inss" pj) ("4444" "inss" pj)
-    ("0211" "irpf" cpf) ("5320" "irpf fine" cpf))
+    ("1099" "inss" pj) ("0211" "irpf" cpf) ("5320" "irpf fine" cpf)
+    ("third-party" "third party" none))
   "Receita codes (código de receita) -> (ITEM PAYER): the tax item and who
-owes it, pj (the company) or cpf (the partner).  Other codes keep their
-number and are the company's.")
+owes it, pj (the company), cpf (the partner) or none (another taxpayer's
+guide paid by mistake, label only: no tax of either).  Other codes keep
+their number and are the company's.")
 
 (defcustom fin-ir-defis-exempt nil
   "Exempt profit paid to the partner per DEFIS, by calendar year: list of
@@ -413,16 +421,19 @@ payment once across all years."
 
 (defun fin-ir-wrong-account-p (match)
   "Non-nil when MATCH, (ROW . CODE), left the account of the other payer."
-  (and (cdr match)
-       (not (eq (nth 1 (fin-ir-code (cdr match)))
-                (if (equal (nth 2 (car match)) "pj") 'pj 'cpf)))))
+  (let ((payer (and (cdr match) (nth 1 (fin-ir-code (cdr match))))))
+    (and (memq payer '(pj cpf))
+         (not (eq payer (if (equal (nth 2 (car match)) "pj") 'pj 'cpf))))))
 
 (defun fin-ir-wrong-account (receita)
   "Matches of RECEITA (`fin-ir-receita-matches') paid from the wrong account
-once the company had its own (from its first bank row)."
+once the company had its own (from its first bank row), less those in
+`fin-ir-wrong-account-known'."
   (let ((first (caar (fin-db-query "SELECT MIN(date) FROM bank_txn WHERE account = 'pj'"))))
     (cl-remove-if-not (lambda (m) (and first (not (string< (nth 1 (car m)) first))
-                                       (fin-ir-wrong-account-p m)))
+                                       (fin-ir-wrong-account-p m)
+                                       (not (member (list (nth 1 (car m)) (nth 3 (car m)))
+                                                    fin-ir-wrong-account-known))))
                       receita)))
 
 (defun fin-ir-unmatched (receita)
@@ -448,8 +459,10 @@ from the personal account count too."
       (cond ((fin-pj-income-category b) (cl-incf revenue (nth 3 b)))
             ((fin-pj-tax-item b)
              (let ((tax (fin-ir--company-tax b receita)))
-               (if (eq (cdr tax) 'cpf) (cl-incf partner (nth 3 b))
-                 (setq taxes (fin-ir--bump taxes (car tax) (nth 3 b))))))))
+               (pcase (cdr tax)
+                 ('cpf (cl-incf partner (nth 3 b)))
+                 ('none nil)
+                 (_ (setq taxes (fin-ir--bump taxes (car tax) (nth 3 b)))))))))
     (dolist (m receita)
       (when (and (equal (nth 2 (car m)) "account") (string-prefix-p prefix (nth 1 (car m)))
                  (fin-ir-wrong-account-p m))
