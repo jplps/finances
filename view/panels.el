@@ -478,13 +478,6 @@ Future months of the current year use the objectives forecast
                          (if (< left 0) "bad" "good"))
      (fin-dashboard--kpi "savings" (funcall money saved) "accounts"))))
 
-(defun fin-dashboard--liquid-cell (liq ahead)
-  "Signed LIQ, with AHEAD (forecast liquid of the months left) shown apart."
-  (if (null ahead) (fin-dashboard--money-signed-cell liq)
-    (list :raw (format "%s <span class=\"dim\" title=\"plan forecast for the months left\">%s%s</span>"
-                       (cadr (fin-dashboard--money-signed-cell liq))
-                       (if (< ahead 0) "−" "+") (fin-dashboard--money-str (abs ahead))))))
-
 (defun fin-dashboard--panel-wealth ()
   (let* ((now-y (fin-report--year-now))
          (now-m (fin-report--month-now))
@@ -493,15 +486,12 @@ Future months of the current year use the objectives forecast
                    (let* ((y    (nth 0 r))
                           (cur  (= y now-y))
                           (eff  (fin-dashboard--year-effective-months y now-y now-m))
-                          ;; The current year counts actual months only; the
-                          ;; forecast of the months left is shown apart, so the
+                          ;; The current year counts actual months only, so the
                           ;; row never reads as money already saved.
                           (act  (cl-remove-if (lambda (e) (nth 4 e)) eff))
-                          (fut  (cl-remove-if-not (lambda (e) (nth 4 e)) eff))
                           (in   (if cur (apply #'+ (mapcar (lambda (e) (or (nth 1 e) 0)) act)) (nth 1 r)))
                           (out  (if cur (apply #'+ (mapcar (lambda (e) (or (nth 2 e) 0)) act)) (nth 2 r)))
                           (liq  (if cur (- in out) (nth 3 r)))
-                          (ahead (and cur fut (apply #'+ (mapcar (lambda (e) (or (nth 3 e) 0)) fut))))
                           (sav  (if cur
                                     (and (> in 0)
                                          (/ (fround (/ (* 1000.0 (- in out)) in)) 10.0))
@@ -509,7 +499,7 @@ Future months of the current year use the objectives forecast
                      (list (number-to-string y)
                            (list (fin-dashboard--money-cell in)
                                  (fin-dashboard--money-cell out)
-                                 (fin-dashboard--liquid-cell liq ahead)
+                                 (fin-dashboard--money-signed-cell liq)
                                  (fin-dashboard--money-signed-cell (fin-report--bank-saved (number-to-string y)))
                                  sav)
                            (fin-dashboard--monthly-block y eff))))
