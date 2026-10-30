@@ -472,7 +472,7 @@ Future months of the current year use the objectives forecast
          (money (lambda (c) (concat "R$ " (fin-dashboard--money-str c)))))
     (concat
      (fin-dashboard--kpi (fin-dashboard--month-name now-m) (if (or pf pj) (funcall money bal) "—")
-                         (format "in %s · out %s · saved %s"
+                         (format "in %s<br>out %s<br>saved %s"
                                  (fin-dashboard--money-str (nth 1 m)) (fin-dashboard--money-str (nth 2 m))
                                  (fin-dashboard--money-str (fin-report--bank-saved (format "%04d-%02d" now-y now-m))))
                          (if (< left 0) "bad" "good"))

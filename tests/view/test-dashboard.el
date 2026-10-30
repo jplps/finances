@@ -68,6 +68,7 @@
   (fin-test-with-db
     (let ((html (fin-dashboard--panel-cockpit)))
       (should (string-search "saved" html))
+      (should (string-match-p "in [0-9.,]+<br>out [0-9.,]+<br>saved " html))
       (should (string-search "runway" html))
       (should-not (string-search "kpi-label\">plan<" html))
       (should-not (string-search "Over target" html)))))
