@@ -101,16 +101,22 @@
 
 (defun fin-dashboard--ir-exempt-gap (p)
   "\"YEAR: bank X, DEFIS Y, DIRPF Z\" when P's declared exempt profit is
-more than R$ 1.000 off the bank's, else nil; also the declarations off."
+more than R$ 1.000 off the bank's, or in a year with books outside what was
+paid up to the books' profit, else nil; also the declarations off."
   (let* ((bank (plist-get p :exempt))
+         (book (plist-get p :book-profit))
          (off (and bank
                    (cl-remove-if-not
-                    (lambda (d) (and (cdr d) (> (abs (- bank (cdr d))) 100000)))
+                    (lambda (d) (and (cdr d) (if book
+                                                 (or (> (cdr d) (+ book 100000))
+                                                     (< (cdr d) (- (min bank book) 100000)))
+                                               (> (abs (- bank (cdr d))) 100000))))
                     (list (cons "DEFIS" (plist-get p :defis-exempt))
                           (cons "DIRPF" (plist-get p :declared-exempt)))))))
     (when off
       (cons (mapcar #'car off)
-            (format "%d: bank %s%s" (plist-get p :year) (fin-dashboard--ir-money bank)
+            (format "%d: %s %s%s" (plist-get p :year) (if book "books" "bank")
+                    (fin-dashboard--ir-money (or book bank))
                     (mapconcat (lambda (d) (format ", %s %s" (car d) (fin-dashboard--ir-money (cdr d))))
                                off ""))))))
 
@@ -141,11 +147,13 @@ tax the excess adds over the closed years when full books are not verified."
                      (fin-dashboard--ir-span (mapcar (lambda (p) (plist-get p :year)) over))
                      (pcase fin-ir-full-books
                        ('verified "covered by the balance sheet")
-                       ('yes (format "balance sheet missing, else %s more tax" extra))
+                       ('yes (format "books missing or short, else %s more tax" extra))
                        (_ (format "%s more tax" extra))))
              (mapconcat (lambda (p) (format "%d: %s over %s%s" (plist-get p :year)
                                             (fin-dashboard--ir-money (plist-get p :profit))
-                                            (fin-dashboard--ir-money (plist-get p :presumed))
+                                            (if (> (or (plist-get p :book-profit) 0) (plist-get p :presumed))
+                                                (concat "books " (fin-dashboard--ir-money (plist-get p :book-profit)))
+                                              (fin-dashboard--ir-money (plist-get p :presumed)))
                                             (if (memq p closed)
                                                 (format ", %s more tax if taxed" (fin-dashboard--ir-money (plist-get p :excess-tax)))
                                               "")))

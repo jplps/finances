@@ -10,7 +10,8 @@
 ;;   (`fin-conv-salary-regexps'), less what went back, are pró-labore,
 ;;   taxable, plus distributed profit, exempt up to the presumed profit (LC
 ;;   123 art. 14 §1: the Lei 9.249 art. 15 rate times revenue, minus the
-;;   Simples tax) unless full books show more (`fin-ir-full-books').  The
+;;   Simples tax) unless full books show more (`fin-ir-book-profit',
+;;   `fin-ir-full-books').  The
 ;;   split is not in any statement: `fin-ir-pro-labore-files' (Receita
 ;;   files), overridable by `fin-ir-pro-labore'.
 ;; - PGDAS-D and NFS-e lists give revenue declared and invoiced per month.
@@ -121,6 +122,12 @@ verified (balance sheet on file: all profit exempt), yes (claimed, not
 verified: exempt, flagged), no or nil (unknown): only the presumed profit
 is exempt, the excess is the partner's taxable income."
   :type '(choice (const verified) (const yes) (const no) (const nil)) :group 'fin)
+
+(defcustom fin-ir-book-profit nil
+  "Net profit of the company's full books (DRE), by calendar year: list of
+\(YEAR . CENTS).  A year listed is exempt up to the larger of it and the
+presumed profit (LC 123 art. 14 §1); `fin-ir-full-books' covers the rest."
+  :type '(alist :key-type integer :value-type integer) :group 'fin)
 
 (defcustom fin-ir-presumption 0.32
   "Lei 9.249 art. 15 presumed-profit rate of the company's activity
@@ -788,8 +795,11 @@ what went back) beyond the pró-labore net of its INSS."
          (inss (nth 2 pl))
          (profit (and pl (max 0 (- drawn (- (car pl) inss)))))
          (presumed (max 0 (- (round (* fin-ir-presumption (car declared))) (cadr declared))))
-         (excess (and profit (max 0 (- profit presumed))))
-         (books (fin-ir--books-exempt-p))
+         (book (cdr (assq year fin-ir-book-profit)))
+         (limit (max presumed (or book 0)))
+         (excess (and profit (max 0 (- profit limit))))
+         ;; A year with books stands on them; the claim covers the others.
+         (books (and (not book) (fin-ir--books-exempt-p)))
          (taxable (and pl (if books base (+ base excess))))
          (health (fin-ir-health year))
          (retirement (fin-ir-retirement year))
@@ -811,8 +821,8 @@ what went back) beyond the pró-labore net of its INSS."
            :drawn drawn :months (length wd) :peak-month (if wd (apply #'max (mapcar #'cdr wd)) 0)
            :pro-labore (nth 1 pl) :pro-labore-total (car pl) :other-taxable (and pl (- base (car pl)))
            :taxable taxable :inss inss
-           :profit profit :presumed presumed :excess excess
-           :exempt (and profit (if books profit (min profit presumed)))
+           :profit profit :presumed presumed :book-profit book :excess excess
+           :exempt (and profit (if books profit (min profit limit)))
            :excess-tax (and pl (fin-ir--excess-tax year base excess inss health retirement))
            :defis-exempt (fin-ir--defis-exempt year)
            :declared-exempt (fin-ir--declared-field ctx year :exempt fin-ir-declared-exempt)

@@ -85,6 +85,42 @@
       (should (= 632000 (plist-get p :exempt)))
       (should (= 1200000 (plist-get p :taxable))))))
 
+(ert-deftest ir/book-profit-raises-the-exempt-limit-of-its-year ()
+  (let ((fin-ir-book-profit '((2025 . 600000))))
+    ;; Books cover 6.000 of the 6.320 profit; the claim no longer applies.
+    (test-ir--with-2025 'yes
+      (should (= 600000 (plist-get p :book-profit)))
+      (should (= 32000 (plist-get p :excess)))
+      (should (= 600000 (plist-get p :exempt)))
+      (should (= 1232000 (plist-get p :taxable)))))
+  (let ((fin-ir-book-profit '((2025 . 100000))))
+    ;; Books below the presumed profit leave the presumed limit.
+    (test-ir--with-2025 nil
+      (should (= 52000 (plist-get p :excess)))
+      (should (= 580000 (plist-get p :exempt))))))
+
+(ert-deftest ir/exempt-gap-checks-declarations-against-the-books ()
+  (let ((p '(:year 2025 :exempt 600000 :book-profit 900000
+             :defis-exempt 850000 :declared-exempt 1100000)))
+    (should (equal '("DIRPF") (car (fin-dashboard--ir-exempt-gap p)))))
+  (let ((p '(:year 2022 :exempt 600000 :book-profit 900000 :defis-exempt 0)))
+    (should (equal '("DEFIS") (car (fin-dashboard--ir-exempt-gap p)))))
+  (let ((p '(:year 2025 :exempt 600000 :defis-exempt 850000)))
+    (should (equal '("DEFIS") (car (fin-dashboard--ir-exempt-gap p))))))
+
+(ert-deftest ir/profit-line-names-the-limit-each-year-stands-on ()
+  (let* ((fin-ir-full-books 'yes)
+         (line (fin-dashboard--ir-profit-line
+                '((:year 2021 :profit 300000 :presumed 100000 :excess 200000 :excess-tax 2000)
+                  (:year 2022 :profit 600000 :presumed 200000 :book-profit 500000
+                   :excess 100000 :excess-tax 1000)
+                  (:year 2023 :profit 900000 :presumed 950000 :book-profit 950000 :excess 0)))))
+    (should-not (car line))
+    (should (string-search "books missing or short, else R$ 30.00 more tax" (cadr line)))
+    (should (string-search "2021: R$ 3,000.00 over R$ 1,000.00" (cadr line)))
+    (should (string-search "2022: R$ 6,000.00 over books R$ 5,000.00" (cadr line)))
+    (should-not (string-search "2023" (cadr line)))))
+
 (ert-deftest ir/bad-full-books-fails-loud ()
   (let ((fin-ir-full-books 'maybe))
     (should-error (fin-ir--books-exempt-p))))
@@ -275,7 +311,23 @@ FIELDS, (START . CENTS) each, as 13-digit fields."
       (should (equal '(("das" . 60931) ("inss" . 95324) ("darf" . 17831))
                      (plist-get (fin-ir-company 2025 receita) :taxes)))
       (should (equal '("u1") (mapcar #'car (fin-ir-unmatched receita))))
-      (should (equal '("c1") (mapcar #'caar (fin-ir-wrong-account receita)))))))
+      (should (equal '("c1") (mapcar #'caar (fin-ir-wrong-account receita))))
+      (let ((fin-ir-wrong-account-known '(("2025-06-06" 45191))))
+        (should-not (fin-ir-wrong-account receita))))))
+
+(ert-deftest ir/third-party-darf-is-no-tax-of-either ()
+  (fin-test-with-db
+    (fin-bankdb-ensure)
+    (test-ir--bank "t1" "pj" "2025-06-08" "out" 17831 "Pix - RECEITA FEDERAL")
+    (let* ((fin-pj-tax-items '(("RECEITA FED" . "darf")))
+           (fin-ir-payment-labels '(("2025-06-08" 17831 "third-party")))
+           (receita (fin-ir-receita-matches nil))
+           (company (fin-ir-company 2025 receita)))
+      (should (equal "third-party" (cdar receita)))
+      (should-not (plist-get company :taxes))
+      (should (= 0 (plist-get company :partner-taxes)))
+      (should-not (fin-ir-wrong-account receita))
+      (should-not (fin-ir-unmatched receita)))))
 
 (ert-deftest ir/receita-payment-matches-once-across-years ()
   (fin-test-with-db
