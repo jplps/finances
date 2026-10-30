@@ -189,6 +189,22 @@
       (should (= 738239 (plist-get p :drawn)))           ; 8.000 − 1.000 + 382,39
       (should (= 204239 (plist-get p :profit))))))
 
+(ert-deftest ir/company-spending-for-the-partner-counts-as-drawn ()
+  (fin-test-with-db
+    (fin-bankdb-ensure)
+    (test-ir--bank "w1" "account" "2025-01-10" "in" 800000 "Recebida - OWN CNPJ")
+    (test-ir--bank "c1" "pj" "2025-02-19" "out" 1200000 "Pix - GLOBO NISSAN COMERCIO")
+    (test-ir--bank "c2" "pj" "2025-02-20" "in" 1200000 "Pix - GLOBO NISSAN estorno")
+    (test-ir--bank "u1" "pj" "2025-03-05" "out" 9990 "Pix - UNIFIQUE")
+    (let ((fin-conv-salary-regexps '("OWN CNPJ"))
+          (fin-ir-pro-labore '((2025 . 600000)))
+          (fin-ir-partner-payees '("globo nissan")))
+      (should (= 1200000 (fin-ir-partner-paid 2025)))
+      (should (= 0 (fin-ir-partner-paid 2024)))
+      (let ((p (fin-ir-position 2025 (test-ir--ctx))))
+        (should (= 1200000 (plist-get p :partner-paid)))
+        (should (= 2000000 (plist-get p :drawn)))))))   ; 8.000 + 12.000
+
 (ert-deftest ir/annual-pro-labore-and-declared-revenue ()
   (fin-test-with-db
     (fin-bankdb-ensure)

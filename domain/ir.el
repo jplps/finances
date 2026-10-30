@@ -123,6 +123,11 @@ verified: exempt, flagged), no or nil (unknown): only the presumed profit
 is exempt, the excess is the partner's taxable income."
   :type '(choice (const verified) (const yes) (const no) (const nil)) :group 'fin)
 
+(defcustom fin-ir-partner-payees nil
+  "Regexps of company-account payments that were the partner's own spending
+\(a car bought for him): they count as profit drawn, like a transfer to him."
+  :type '(repeat regexp) :group 'fin)
+
 (defcustom fin-ir-book-profit nil
   "Net profit of the company's full books (DRE), by calendar year: list of
 \(YEAR . CENTS).  A year listed is exempt up to the larger of it and the
@@ -497,6 +502,14 @@ in-rows from own accounts (`fin-bank-own-regexps') that are not revenue."
                  (cl-some (lambda (re) (string-match-p re (nth 4 b))) fin-bank-own-regexps))
         (cl-incf sum (nth 3 b))))))
 
+(defun fin-ir-partner-paid (year)
+  "Cents the company account paid in YEAR to `fin-ir-partner-payees'."
+  (let ((case-fold-search t) (sum 0))
+    (dolist (b (fin-ir--pj-rows year) sum)
+      (when (and (equal (nth 2 b) "out")
+                 (cl-some (lambda (re) (string-match-p re (nth 4 b))) fin-ir-partner-payees))
+        (cl-incf sum (nth 3 b))))))
+
 (defun fin-ir-withdrawals (year)
   "(YYYY-MM . CENTS) the company deposited in the personal account in YEAR."
   (let ((case-fold-search t) out)
@@ -775,14 +788,15 @@ position's bank revenue and DAS."
 (defun fin-ir-position (year &optional ctx)
   "Plist of YEAR's income tax position from CTX (`fin-ir-context', read now
 when nil); taxable parts nil while `fin-ir-pro-labore' lacks YEAR.  Profit
-is what reached the partner (deposits and own taxes the company paid, less
-what went back) beyond the pró-labore net of its INSS."
+is what reached the partner (deposits, own taxes and spending the company
+paid, less what went back) beyond the pró-labore net of its INSS."
   (let* ((ctx (or ctx (fin-ir-context)))
          (company (fin-ir-company year (plist-get ctx :receita)))
          (declared (fin-ir--declared year (plist-get ctx :simples) company))
          (wd (fin-ir-withdrawals year))
          (returned (fin-ir-returned year))
-         (drawn (- (+ (apply #'+ (mapcar #'cdr wd)) (plist-get company :partner-taxes)) returned))
+         (paid (fin-ir-partner-paid year))
+         (drawn (- (+ (apply #'+ (mapcar #'cdr wd)) (plist-get company :partner-taxes) paid) returned))
          (pl (fin-ir--pro-labore year (fin-ir--competence-months year (format-time-string "%F"))))
          (individuals (fin-ir-individuals year))
          (from-individuals (apply #'+ (mapcar #'cdr individuals)))
@@ -817,7 +831,7 @@ what went back) beyond the pró-labore net of its INSS."
                                                                   year #'cdr)
                                               0))
            :taxes (plist-get company :taxes) :partner-taxes (plist-get company :partner-taxes)
-           :returned returned
+           :returned returned :partner-paid paid
            :drawn drawn :months (length wd) :peak-month (if wd (apply #'max (mapcar #'cdr wd)) 0)
            :pro-labore (nth 1 pl) :pro-labore-total (car pl) :other-taxable (and pl (- base (car pl)))
            :taxable taxable :inss inss
