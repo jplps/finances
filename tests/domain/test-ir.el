@@ -113,13 +113,34 @@
          (line (fin-dashboard--ir-profit-line
                 '((:year 2021 :profit 300000 :presumed 100000 :excess 200000 :excess-tax 2000)
                   (:year 2022 :profit 600000 :presumed 200000 :book-profit 500000
-                   :excess 100000 :excess-tax 1000)
+                   :excess 150000 :excess-tax 1000)
                   (:year 2023 :profit 900000 :presumed 950000 :book-profit 950000 :excess 0)))))
     (should-not (car line))
     (should (string-search "books missing or short, else R$ 30.00 more tax" (cadr line)))
     (should (string-search "2021: R$ 3,000.00 over R$ 1,000.00" (cadr line)))
     (should (string-search "2022: R$ 6,000.00 over books R$ 5,000.00" (cadr line)))
-    (should-not (string-search "2023" (cadr line)))))
+    (should-not (string-search "2023" (cadr line))))
+  (let ((fin-ir-full-books 'yes))
+    ;; Under R$ 1.000 over is no line; the open year alone is not a warning.
+    (should-not (fin-dashboard--ir-profit-line '((:year 2023 :profit 100 :presumed 0 :excess 99999))))
+    (should (car (fin-dashboard--ir-profit-line
+                  '((:year 2026 :profit 500000 :presumed 100000 :excess 400000)))))))
+
+(ert-deftest ir/tiles-put-each-figure-on-its-line ()
+  (let ((html (fin-dashboard--ir-tiles '(:year 2026 :revenue 100 :taxes (("das" . 10) ("inss" . 20))
+                                         :drawn 50 :pro-labore 30 :profit 20 :tax 0 :model simplified))))
+    (should (string-search "das 0.10<br>inss 0.20" html))
+    (should (string-search "pró-labore 0.30/mo<br>profit 0.20" html))
+    (should (string-search "simplified model<br>before IRRF withheld" html))))
+
+(ert-deftest ir/return-cell-shows-the-status ()
+  (should (equal '(:raw "<span class=\"neg\">late</span>")
+                 (fin-dashboard--ir-return-cell '(:status late :filed "2026-10-07"))))
+  (should (equal '(:raw "<span class=\"neg\">missing</span>")
+                 (fin-dashboard--ir-return-cell '(:status missing))))
+  (should (equal '(:raw "–") (fin-dashboard--ir-return-cell '(:status not-required))))
+  (should (equal '(:raw "–") (fin-dashboard--ir-return-cell nil)))
+  (should (equal '(:raw "?") (fin-dashboard--ir-return-cell '(:status odd)))))
 
 (ert-deftest ir/bad-full-books-fails-loud ()
   (let ((fin-ir-full-books 'maybe))

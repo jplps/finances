@@ -27,15 +27,15 @@
      (fin-dashboard--kpi (format "revenue %d" (plist-get pos :year))
                          (fin-dashboard--ir-money (plist-get pos :revenue))
                          (mapconcat (lambda (tx) (format "%s %s" (car tx) (fin-dashboard--money-str (cdr tx))))
-                                    taxes " · "))
+                                    taxes "<br>"))
      (fin-dashboard--kpi "to cpf" (fin-dashboard--ir-money (plist-get pos :drawn))
                          (if (plist-get pos :pro-labore)
-                             (format "pró-labore %s/mo · profit %s" (fin-dashboard--money-str (plist-get pos :pro-labore))
+                             (format "pró-labore %s/mo<br>profit %s" (fin-dashboard--money-str (plist-get pos :pro-labore))
                                      (fin-dashboard--money-str (plist-get pos :profit)))
                            "pró-labore unknown"))
      (fin-dashboard--kpi "income tax" (fin-dashboard--ir-money (plist-get pos :tax))
                          (if (plist-get pos :model)
-                             (format "%s model · before IRRF withheld" (plist-get pos :model))
+                             (format "%s model<br>before IRRF withheld" (plist-get pos :model))
                            "needs the pró-labore"))
      "</div>")))
 
@@ -48,7 +48,7 @@
   "Return column of a year's DUTY plist (nil for the current year)."
   (list :raw (pcase (plist-get duty :status)
                ('on-time (fin-dashboard--dm (plist-get duty :filed)))
-               ('late (format "<span class=\"neg\">%s late</span>" (fin-dashboard--dm (plist-get duty :filed))))
+               ('late "<span class=\"neg\">late</span>")
                ('missing "<span class=\"neg\">missing</span>")
                ('not-required "–")
                ('nil "–")
@@ -134,14 +134,15 @@ paid up to the books' profit, else nil; also the declarations off."
                  (mapconcat #'cddr gaps "; "))))))
 
 (defun fin-dashboard--ir-profit-line (positions)
-  "One line for the years whose profit exceeds the presumed one, with the
-tax the excess adds over the closed years when full books are not verified."
-  (let* ((over (cl-remove-if-not (lambda (p) (and (plist-get p :excess) (> (plist-get p :excess) 0)))
+  "One line for the years whose profit exceeds the presumed one by more than
+R$ 1.000, with the tax the excess adds over the closed years when full books
+are not verified.  The open year alone only shows: its books come later."
+  (let* ((over (cl-remove-if-not (lambda (p) (and (plist-get p :excess) (> (plist-get p :excess) 100000)))
                                  positions))
          (closed (cl-remove-if-not (lambda (p) (fin-ir-rule (plist-get p :year) :deadline)) over))
          (extra (fin-dashboard--ir-money (apply #'+ (mapcar (lambda (p) (plist-get p :excess-tax)) closed)))))
     (when over
-      (list (eq fin-ir-full-books 'verified)
+      (list (or (eq fin-ir-full-books 'verified) (null closed))
             (fin-dashboard--ir-detail-span
              (format "profit over the presumed %s: %s"
                      (fin-dashboard--ir-span (mapcar (lambda (p) (plist-get p :year)) over))
