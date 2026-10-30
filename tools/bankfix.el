@@ -339,5 +339,20 @@ something changed.  Run `fin' afterwards (or let `fin' run this)."
              (cond (dry-run " (dry run)") (changes ", run M-x fin") (t "")))
     changes))
 
+(defconst fin-bank-fix-passes 3
+  "Most fix passes `fin-bank-fix-settle' runs before it gives up.")
+
+(defun fin-bank-fix-settle (refresh)
+  "Run `fin-bank-fix' quietly, then REFRESH the DB, until a pass changes
+nothing: each pass decides from the DB, which only REFRESH updates.  Fail
+after `fin-bank-fix-passes' passes that all changed something."
+  (cl-assert (functionp refresh))
+  (cl-loop for pass from 1
+           for changes = (fin-bank-fix nil t)
+           do (funcall refresh)
+           until (null changes)
+           when (>= pass fin-bank-fix-passes)
+           do (error "fin-bank: ledger still changing after %d fixes" pass)))
+
 (provide 'bankfix)
 ;;; bankfix.el ends here

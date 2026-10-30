@@ -149,5 +149,21 @@
   (should (equal '("2022-11") (fin-bank-fix--pj-months '("2022-10-05" . "2022-12-10") "2022-01-01")))
   (should-not (fin-bank-fix--pj-months '("2021-10-05" . "2023-12-31") "2024-01-01")))
 
+(ert-deftest bankfix/settle-refreshes-until-a-pass-changes-nothing ()
+  (let* ((results (list '(a b) '(c) nil))
+         (fixes 0) (refreshes 0))
+    (cl-letf (((symbol-function 'fin-bank-fix)
+               (lambda (&rest _) (cl-incf fixes) (pop results))))
+      (fin-bank-fix-settle (lambda () (cl-incf refreshes))))
+    (should (= 3 fixes))
+    (should (= 3 refreshes))))
+
+(ert-deftest bankfix/settle-fails-loud-when-the-ledger-keeps-changing ()
+  (let ((refreshes 0))
+    (cl-letf (((symbol-function 'fin-bank-fix) (lambda (&rest _) '(a))))
+      (should-error (fin-bank-fix-settle (lambda () (cl-incf refreshes)))))
+    (should (= fin-bank-fix-passes refreshes)))
+  (should-error (fin-bank-fix-settle nil)))
+
 (provide 'test-bankfix)
 ;;; test-bankfix.el ends here

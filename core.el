@@ -53,8 +53,7 @@ With prefix arg NO-RELOAD, skip the reload (use the already-loaded code)."
   (interactive "P")
   (unless no-reload (fin-reload))
   (fin-bank-import)
-  (fin-bank-fix nil t)
-  (fin-sync-refresh)
+  (fin-bank-fix-settle #'fin-sync-refresh)
   (fin-dashboard))
 
 ;;;###autoload
