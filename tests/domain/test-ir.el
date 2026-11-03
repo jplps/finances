@@ -305,6 +305,14 @@ FIELDS, (START . CENTS) each, as 13-digit fields."
     (should (= 7343061 (plist-get p :assets)))
     (should (= 2864756 (plist-get p :assets-before)))
     (should (= 1800000 (plist-get p :other-taxable))))
+  ;; The filed 2023 return (ano 2022): same columns, shorter record.
+  (let ((p (fin-ir-dec-totals (test-ir--dec 2023 '((274 . 148650) (300 . 5542153) (326 . 10932)) 718))))
+    (should (= 2023 (plist-get p :exercise)))
+    (should (= 5542153 (plist-get p :exempt)))
+    (should (= 10932 (plist-get p :exclusive)))
+    (should (= 148650 (plist-get p :assets-before)))
+    (should (= 0 (plist-get p :assets))))
+  (should-error (fin-ir-dec-totals (test-ir--dec 2023 nil)))          ; 2023 is 718 long
   (should-error (fin-ir-dec-totals (test-ir--dec 2027 nil)))          ; unknown layout
   (should-error (fin-ir-dec-totals (test-ir--dec 2026 nil 700))))     ; layout changed
 
@@ -316,7 +324,8 @@ FIELDS, (START . CENTS) each, as 13-digit fields."
     (should-not (fin-ir--declared-field ctx 2024 :exempt nil))))
 
 (ert-deftest ir/duty-statuses ()
-  (let ((fin-ir-filed '((2025 . "2026-10-07") (2024 . "2025-04-01"))))
+  (let ((fin-ir-payments-dir nil)              ; no inbox receipts
+        (fin-ir-filed '((2025 . "2026-10-07") (2024 . "2025-04-01"))))
     (should (eq 'missing (plist-get (fin-ir-duty '(:year 2022 :taxable 1439018 :exempt 6052500)) :status)))
     (should (eq 'not-required (plist-get (fin-ir-duty '(:year 2023 :taxable 1584000 :exempt 7355400)) :status)))
     (should (eq 'late (plist-get (fin-ir-duty '(:year 2025 :taxable 4066200 :exempt 0)) :status)))
@@ -326,11 +335,12 @@ FIELDS, (START . CENTS) each, as 13-digit fields."
 
 (ert-deftest ir/duty-counts-exclusive-exempt-income-and-assets ()
   ;; 2022 exempt limit 40.000: 30.000 profit + 6.000 yields + 5.000 from individuals.
-  (let ((d (fin-ir-duty '(:year 2022 :taxable 0 :exempt 3000000 :exclusive 600000 :individuals-exempt 500000))))
+  (let* ((fin-ir-payments-dir nil)             ; no inbox receipts
+         (d (fin-ir-duty '(:year 2022 :taxable 0 :exempt 3000000 :exclusive 600000 :individuals-exempt 500000))))
     (should (eq 'missing (plist-get d :status)))
-    (should (= 4100000 (plist-get d :exempt-total))))
-  (should (eq 'not-required (plist-get (fin-ir-duty '(:year 2022 :taxable 0 :exempt 3000000 :exclusive 600000)) :status)))
-  (should (eq 'missing (plist-get (fin-ir-duty '(:year 2022 :taxable 0 :exempt 0 :assets 30000001)) :status))))
+    (should (= 4100000 (plist-get d :exempt-total)))
+    (should (eq 'not-required (plist-get (fin-ir-duty '(:year 2022 :taxable 0 :exempt 3000000 :exclusive 600000)) :status)))
+    (should (eq 'missing (plist-get (fin-ir-duty '(:year 2022 :taxable 0 :exempt 0 :assets 30000001)) :status)))))
 
 (ert-deftest ir/company-taxes-named-by-receita-payment ()
   (fin-test-with-db

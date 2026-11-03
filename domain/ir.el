@@ -557,10 +557,12 @@ in-rows from own accounts (`fin-bank-own-regexps') that are not revenue."
 
 (defconst fin-ir--dec-layouts
   '((2026 :length 744 :other-taxable (456 . 469) :assets-before (274 . 287)
+          :assets (287 . 300) :exempt (300 . 313) :exclusive (326 . 339))
+    (2023 :length 718 :other-taxable (456 . 469) :assets-before (274 . 287)
           :assets (287 . 300) :exempt (300 . 313) :exclusive (326 . 339)))
   "Columns of the totals record (type 18) of a DIRPF .DEC file, by
-exercício: 13-digit cent fields, read off the filed 2026 return.  A file
-of another exercício fails loud until its layout is added here.")
+exercício: 13-digit cent fields, read off the filed 2026 and 2023 returns.
+A file of another exercício fails loud until its layout is added here.")
 
 (defun fin-ir-dec-totals (text)
   "Plist of a DIRPF .DEC TEXT: :exercise, then the cents of
