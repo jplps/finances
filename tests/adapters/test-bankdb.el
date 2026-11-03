@@ -31,6 +31,15 @@
     (fin-bankdb-ensure)
     (should (= 0 (fin-db-count "bank_txn")))))
 
+(ert-deftest bankdb/account-span-runs-to-the-statement-end ()
+  (fin-test-with-db
+    (should-not (cdr (fin-bankdb-account-rows "card")))
+    (fin-bankdb-insert (list (test-bankdb--row "a" "2025-06-02") (test-bankdb--row "b" "2025-06-26")))
+    (should (equal '("2025-06-02" . "2025-06-26") (cdr (fin-bankdb-account-rows "card"))))
+    (fin-bankdb-record-balance "card" "2025-06-30" 0)
+    (should (equal '("2025-06-02" . "2025-06-30") (cdr (fin-bankdb-account-rows "card"))))
+    (should (equal '("a" "b") (sort (car (fin-bankdb-account-rows "card")) #'string<)))))
+
 (ert-deftest bankdb/year-filters-and-orders ()
   (fin-test-with-db
     (fin-bankdb-insert (list (test-bankdb--row "b" "2025-07-01")

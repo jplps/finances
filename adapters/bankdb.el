@@ -213,10 +213,15 @@ added from bank rows a later export no longer lists."
   (caar (fin-db-query "SELECT COUNT(*) FROM bank_txn WHERE imported_at > ?" (list stamp))))
 
 (defun fin-bankdb-account-rows (account)
-  "Ids and (FIRST . LAST) dates of ACCOUNT's rows: (IDS . SPAN), SPAN nil if none."
+  "Ids and (FIRST . LAST) dates of ACCOUNT's rows: (IDS . SPAN), SPAN nil if none.
+LAST is the later of the last row and the last statement balance: a
+statement can run past its last transaction."
   (fin-bankdb-ensure)
   (let ((ids (mapcar #'car (fin-db-query "SELECT id FROM bank_txn WHERE account = ?" (list account))))
-        (span (car (fin-db-query "SELECT MIN(date), MAX(date) FROM bank_txn WHERE account = ?"
+        (span (car (fin-db-query "SELECT MIN(date),
+                                         MAX(MAX(date), COALESCE((SELECT MAX(date) FROM bank_balance
+                                                                   WHERE account = ?1), ''))
+                                    FROM bank_txn WHERE account = ?1"
                                  (list account)))))
     (cons ids (and (car span) (cons (car span) (cadr span))))))
 
