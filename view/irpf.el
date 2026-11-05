@@ -136,9 +136,15 @@ paid up to the books' profit, else nil; also the declarations off."
 (defun fin-dashboard--ir-profit-line (positions)
   "One line for the years whose profit exceeds the presumed one by more than
 R$ 1.000, with the tax the excess adds over the closed years when full books
-are not verified.  The open year alone only shows: its books come later."
-  (let* ((over (cl-remove-if-not (lambda (p) (and (plist-get p :excess) (> (plist-get p :excess) 100000)))
-                                 positions))
+are not verified.  A year whose filed return declares no more exempt than
+allowed taxed the excess there and is settled.  The open year alone only
+shows: its books come later."
+  (let* ((over (cl-remove-if-not
+                (lambda (p) (and (plist-get p :excess) (> (plist-get p :excess) 100000)
+                                 (not (and (plist-get p :declared-exempt)
+                                           (<= (plist-get p :declared-exempt)
+                                               (+ (plist-get p :exempt) 100000))))))
+                positions))
          (closed (cl-remove-if-not (lambda (p) (fin-ir-rule (plist-get p :year) :deadline)) over))
          (extra (fin-dashboard--ir-money (apply #'+ (mapcar (lambda (p) (plist-get p :excess-tax)) closed)))))
     (when over
