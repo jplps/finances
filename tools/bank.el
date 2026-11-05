@@ -7,21 +7,13 @@
 (require 'ofx)
 
 (defcustom fin-bank-inbox
-  (expand-file-name "../infra/inbox/nubank/"
+  (expand-file-name "../infra/inbox/"
                     (file-name-directory
                      (or load-file-name buffer-file-name default-directory)))
-  "Directory holding bank statement files to import."
+  "Inbox root.  Each bank's .ofx statements sit in a folder named after it."
   :type 'directory :group 'fin)
 
-(defcustom fin-bank-ignore-regexps
-  '("\\`Pagamento de fatura\\'"
-    "\\`Pagamento da fatura"
-    "\\`Pagamento recebido\\'"
-    "\\`Valor adicionado na conta por cartão"
-    "\\`Valor enviado como crédito na fatura"
-    "\\`Estorno de pagamento"
-    "\\`Ajuste a crédito" "\\`Encerramento de dívida"
-    "\\`Depósito de Confiança" "\\`Reversão do Crédito de Confiança")
+(defcustom fin-bank-ignore-regexps nil
   "Bank descriptions of moves with no ledger counterpart, skipped by
 reconciliation: card bill payments, card credit moved for a Pix and back,
 cent debt adjustments, dispute deposits and their reversals."
@@ -31,10 +23,6 @@ cent debt adjustments, dispute deposits and their reversals."
   "Bank descriptions of transfers between own accounts (name, company).
 Ignored like `fin-bank-ignore-regexps', except `fin-conv-salary-regexps'."
   :type '(repeat regexp) :group 'fin)
-
-(defcustom fin-bank-name "nubank"
-  "Bank prefix of statement file names in the inbox."
-  :type 'string :group 'fin)
 
 (defvar fin-conv-salary-regexps)
 
@@ -57,19 +45,26 @@ Ignored like `fin-bank-ignore-regexps', except `fin-conv-salary-regexps'."
           (and (any fin-bank-own-regexps)
                (not (any (bound-and-true-p fin-conv-salary-regexps))))))))
 
-(defun fin-bank--txn-id (fitid date cents memo seen)
-  "Stable id hashing FITID, DATE, CENTS and MEMO: Nubank reuses a FITID
-across installments and refunds.  SEEN counts ids within one file;
+(defun fin-bank--name (path)
+  "Bank of statement PATH: the inbox folder holding it."
+  (let ((dir (file-name-directory (expand-file-name path))))
+    (when (equal (file-name-as-directory (expand-file-name fin-bank-inbox)) dir)
+      (user-error "fin-bank: put %s in a folder named after its bank" (file-name-nondirectory path)))
+    (file-name-nondirectory (directory-file-name dir))))
+
+(defun fin-bank--txn-id (bank fitid date cents memo seen)
+  "Stable BANK id hashing FITID, DATE, CENTS and MEMO: a bank may reuse a
+FITID across installments and refunds.  SEEN counts ids within one file;
 repeats get an ordinal suffix."
-  (let* ((base (format "nu:%s:%s" fitid
+  (let* ((base (format "%s:%s:%s" bank fitid
                        (substring (secure-hash 'sha1 (format "%s|%d|%s" date cents memo))
                                   0 12)))
          (n    (1+ (gethash base seen 0))))
     (puthash base n seen)
     (if (= n 1) base (format "%s#%d" base n))))
 
-(defun fin-bank--ofx-rows (text)
-  "Bank rows from OFX TEXT and the count of zero-amount txns dropped."
+(defun fin-bank--ofx-rows (bank text)
+  "BANK rows from OFX TEXT and the count of zero-amount txns dropped."
   (let* ((parsed  (fin-ofx-parse text))
          (kind    (fin-bank--kind text))
          (seen    (make-hash-table :test #'equal))
@@ -79,8 +74,8 @@ repeats get an ordinal suffix."
       (pcase-let ((`(,fitid ,date ,cents ,memo) tx))
         (if (zerop cents)
             (setq dropped (1+ dropped))
-          (push (list (fin-bank--txn-id fitid date cents memo seen)
-                      "nubank-ofx" kind date
+          (push (list (fin-bank--txn-id bank fitid date cents memo seen)
+                      (concat bank "-ofx") kind date
                       (if (< cents 0) "out" "in") (abs cents) memo)
                 rows))))
     (cons (nreverse rows) dropped)))
@@ -96,17 +91,17 @@ file was already imported."
     (if (fin-bankdb-file-imported-p sha1)
         (progn (message "fin-bank: already imported %s" path) nil)
       (pcase-let* ((`(,rows . ,skipped)
-                    (fin-bank--ofx-rows text))
+                    (fin-bank--ofx-rows (fin-bank--name path) text))
                    (n (fin-bankdb-insert rows)))
         (fin-bankdb-record-import sha1 (expand-file-name path) n)
         (message "fin-bank: %s — %d txns, %d new, %d skipped"
                  (file-name-nondirectory path) (length rows) n skipped)
         n))))
 
-(defun fin-bank--canonical-name (text)
-  "Inbox file name for OFX TEXT: bank, kind and statement period."
+(defun fin-bank--canonical-name (bank text)
+  "Inbox file name for BANK's OFX TEXT: bank, kind and statement period."
   (pcase-let ((`(,_ ,start ,end) (fin-ofx-period text)))
-    (format "%s-%s-%s_%s.ofx" fin-bank-name (fin-bank--kind text) start end)))
+    (format "%s-%s-%s_%s.ofx" bank (fin-bank--kind text) start end)))
 
 (defun fin-bank--same-statement-p (a b)
   "Non-nil if OFX texts A and B differ only in their export timestamp."
@@ -118,11 +113,11 @@ file was already imported."
   (let ((v (fin-ofx--field text "DTSERVER")))
     (and v (string-match "\\`[0-9]\\{14\\}" v) (match-string 0 v))))
 
-(defun fin-bank--supersede (text)
-  "Drop bank rows of the statement period that OFX TEXT, a later export of
-it, no longer lists."
+(defun fin-bank--supersede (bank text)
+  "Drop bank rows of the statement period that BANK's OFX TEXT, a later
+export of it, no longer lists."
   (pcase-let* ((`(,_ ,start ,end) (fin-ofx-period text))
-               (ids (mapcar #'car (car (fin-bank--ofx-rows text))))
+               (ids (mapcar #'car (car (fin-bank--ofx-rows bank text))))
                (n (fin-bankdb-drop-superseded (fin-bank--kind text) start end ids)))
     (when (> n 0)
       (message "fin-bank: dropped %d rows the later export no longer lists" n))
@@ -133,7 +128,8 @@ it, no longer lists."
 canonical file holds the same statement.  Otherwise the later export wins;
 signal when export times do not tell.  Return the resulting path or nil."
   (let* ((text (fin-ofx-read-file path))
-         (dst (expand-file-name (fin-bank--canonical-name text) fin-bank-inbox)))
+         (bank (fin-bank--name path))
+         (dst (expand-file-name (fin-bank--canonical-name bank text) (file-name-directory path))))
     (cond ((string= (expand-file-name path) dst) dst)
           ((not (file-exists-p dst)) (rename-file path dst) dst)
           (t (let* ((old (fin-ofx-read-file dst))
@@ -143,7 +139,7 @@ signal when export times do not tell.  Return the resulting path or nil."
                       (message "fin-bank: removed re-export %s" (file-name-nondirectory path))
                       nil)
                      ((and new-at old-at (string< old-at new-at))
-                      (fin-bank--supersede text)
+                      (fin-bank--supersede bank text)
                       (rename-file path dst t)
                       (message "fin-bank: %s replaced by its later export" (file-name-nondirectory dst))
                       dst)
@@ -154,17 +150,21 @@ signal when export times do not tell.  Return the resulting path or nil."
                      (t (user-error "fin-bank: %s and %s cover the same period but differ"
                                     (file-name-nondirectory path) (file-name-nondirectory dst)))))))))
 
+(defun fin-bank--statements ()
+  "Every .ofx file under `fin-bank-inbox'."
+  (directory-files-recursively fin-bank-inbox "\\.[oO][fF][xX]\\'"))
+
 (defun fin-bank-import ()
-  "Name, then import, every .ofx file in `fin-bank-inbox' not imported yet."
+  "Name, then import, every .ofx file under `fin-bank-inbox' not imported yet."
   (interactive)
   (unless (file-directory-p fin-bank-inbox)
     (user-error "fin-bank: inbox missing: %s" fin-bank-inbox))
-  (dolist (f (directory-files fin-bank-inbox t "\\.[oO][fF][xX]\\'"))
+  (dolist (f (fin-bank--statements))
     (fin-bank--normalize-file f))
-  (dolist (f (directory-files fin-bank-inbox t "\\.[oO][fF][xX]\\'"))
+  (dolist (f (fin-bank--statements))
     (let* ((text (fin-ofx-read-file f)) (bal (fin-ofx-balance text)))
       (when bal (fin-bankdb-record-balance (fin-bank--kind text) (car bal) (cdr bal)))))
-  (let ((files (directory-files fin-bank-inbox t "\\.[oO][fF][xX]\\'"))
+  (let ((files (fin-bank--statements))
         (new 0))
     (dolist (f files)
       (setq new (+ new (or (fin-bank-import-file f) 0))))

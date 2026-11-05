@@ -4,7 +4,7 @@
 
 (defun fin-ofx--decode (raw)
   "Decode unibyte RAW as UTF-8 when valid, else as windows-1252.
-The header is ignored: Nubank card bills declare CHARSET:1252 but are UTF-8."
+The header is ignored: some banks declare CHARSET:1252 but write UTF-8."
   (let ((utf8 (decode-coding-string raw 'utf-8)))
     (if (cl-some (lambda (c) (eq (char-charset c) 'eight-bit)) utf8)
         (decode-coding-string raw 'windows-1252)

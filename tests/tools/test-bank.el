@@ -89,12 +89,14 @@
 (defmacro test-bank--with-ofx (var text &rest body)
   "Bind VAR to a temp .ofx file holding TEXT while running BODY."
   (declare (indent 2))
-  `(let ((,var (make-temp-file "fin-bank-" nil ".ofx")))
+  `(let* ((fin-bank-inbox (make-temp-file "fin-inbox-" t))
+          (,var (expand-file-name "bank/s.ofx" fin-bank-inbox)))
      (unwind-protect
-         (progn (let ((coding-system-for-write 'utf-8))
+         (progn (make-directory (file-name-directory ,var))
+                (let ((coding-system-for-write 'utf-8))
                   (write-region ,text nil ,var))
                 ,@body)
-       (delete-file ,var))))
+       (delete-directory fin-bank-inbox t))))
 
 (defconst test-bank--ofx
   "ENCODING:UTF-8
@@ -125,7 +127,7 @@
 <STMTTRN><DTPOSTED>20260520</DTPOSTED><TRNAMT>-10.00</TRNAMT><FITID>D</FITID><MEMO>Café</MEMO></STMTTRN>
 <STMTTRN><DTPOSTED>20260520</DTPOSTED><TRNAMT>-10.00</TRNAMT><FITID>D</FITID><MEMO>Café</MEMO></STMTTRN>
 </BANKTRANLIST>"
-  "Nubank card bill: installments, discount and refund reuse one FITID;
+  "Card bill: installments, discount and refund reuse one FITID;
 the last two rows are a genuine double charge.")
 
 (ert-deftest bank/import-keeps-rows-sharing-fitid ()
@@ -153,43 +155,45 @@ the last two rows are a genuine double charge.")
 
 (ert-deftest bank/import-scans-inbox ()
   (fin-test-with-db
-    (let ((fin-bank-inbox (make-temp-file "fin-inbox-" t)))
+    (let* ((fin-bank-inbox (make-temp-file "fin-inbox-" t))
+           (dir (expand-file-name "acme" fin-bank-inbox)))
       (unwind-protect
           (progn
+            (make-directory dir)
             (let ((coding-system-for-write 'utf-8))
-              (write-region test-bank--ofx nil
-                            (expand-file-name "a.OFX" fin-bank-inbox))
-              (write-region "ignored" nil
-                            (expand-file-name "notes.txt" fin-bank-inbox)))
+              (write-region test-bank--ofx nil (expand-file-name "a.OFX" dir))
+              (write-region "ignored" nil (expand-file-name "notes.txt" dir)))
             (should (= 2 (fin-bank-import)))
-            (should (equal '("notes.txt" "nubank-account-2025-06-01_2025-06-30.ofx")
-                           (directory-files fin-bank-inbox nil "\\`[^.]"))))
+            (should (equal '("acme-account-2025-06-01_2025-06-30.ofx" "notes.txt")
+                           (directory-files dir nil "\\`[^.]")))
+            (should (equal '("acme-ofx") (car (fin-db-query "SELECT DISTINCT source FROM bank_txn")))))
         (delete-directory fin-bank-inbox t)))))
 
 (ert-deftest bank/import-removes-re-export-keeps-later-export-and-refuses-conflict ()
   (fin-test-with-db
-    (let ((fin-bank-inbox (make-temp-file "fin-inbox-" t))
-          (coding-system-for-write 'utf-8))
+    (let* ((fin-bank-inbox (make-temp-file "fin-inbox-" t))
+           (dir (expand-file-name "nubank" fin-bank-inbox))
+           (coding-system-for-write 'utf-8))
       (unwind-protect
-          (cl-flet ((put (name text) (write-region text nil (expand-file-name name fin-bank-inbox))))
+          (cl-flet ((put (name text) (make-directory dir t) (write-region text nil (expand-file-name name dir))))
             (put "a.ofx" test-bank--ofx)
             (put "b.ofx" (replace-regexp-in-string "20261002101930" "20261003000000" test-bank--ofx))
             (fin-bank-import)
             (should (equal '("nubank-account-2025-06-01_2025-06-30.ofx")
-                           (directory-files fin-bank-inbox nil "\\.ofx\\'")))
+                           (directory-files dir nil "\\.ofx\\'")))
             (put "c.ofx" (replace-regexp-in-string "Padaria" "Mercado" test-bank--ofx))
             (should-error (fin-bank-import) :type 'user-error)
-            (should (file-exists-p (expand-file-name "c.ofx" fin-bank-inbox)))
-            (delete-file (expand-file-name "c.ofx" fin-bank-inbox))
+            (should (file-exists-p (expand-file-name "c.ofx" dir)))
+            (delete-file (expand-file-name "c.ofx" dir))
             (put "d.ofx" (replace-regexp-in-string
                           "20261002101930" "20261009000000"
                           (replace-regexp-in-string "Padaria" "Mercado" test-bank--ofx)))
             (fin-bank-import)
             (should (equal '("nubank-account-2025-06-01_2025-06-30.ofx")
-                           (directory-files fin-bank-inbox nil "\\.ofx\\'")))
+                           (directory-files dir nil "\\.ofx\\'")))
             (should (string-search "Mercado" (fin-ofx-read-file
                                               (expand-file-name "nubank-account-2025-06-01_2025-06-30.ofx"
-                                                                fin-bank-inbox)))))
+                                                                dir)))))
         (delete-directory fin-bank-inbox t)))))
 
 (ert-deftest bank/later-export-drops-rows-it-no-longer-lists ()
@@ -202,7 +206,7 @@ the last two rows are a genuine double charge.")
     (let ((text (concat "<CCACCTFROM><BANKTRANLIST><DTSTART>20261006</DTSTART><DTEND>20261106</DTEND>"
                         "<STMTTRN><DTPOSTED>20261006</DTPOSTED><TRNAMT>-2.00</TRNAMT><FITID>L</FITID>"
                         "<MEMO>Loja - Parcela 8/12</MEMO></STMTTRN></BANKTRANLIST>")))
-      (should (= 2 (fin-bank--supersede text)))
+      (should (= 2 (fin-bank--supersede "nubank" text)))
       (should (equal '("next-bill" "old-before" "other-acct")
                      (mapcar #'car (fin-db-query "SELECT id FROM bank_txn ORDER BY id")))))))
 
@@ -215,6 +219,7 @@ the last two rows are a genuine double charge.")
 
 (ert-deftest bank/own-transfers-ignored-except-salary ()
   (let ((fin-bank-own-regexps '("JOAO P"))
+        (fin-bank-ignore-regexps '("\\`Valor adicionado na conta por cartão"))
         (fin-conv-salary-regexps '("\\`Transferência Recebida - JOAO PEDRO")))
     (should (fin-bank--ignored-p '("a" "2025-06-10" "in" 100 "Transferência recebida pelo Pix - JOAO P LIMA")))
     (should-not (fin-bank--ignored-p '("b" "2025-06-10" "in" 100 "Transferência Recebida - JOAO PEDRO LIMA")))
@@ -223,9 +228,10 @@ the last two rows are a genuine double charge.")
 
 (ert-deftest bank/ignored-descriptions-skip-reconcile ()
   (fin-test-with-db
-    (fin-bankdb-insert '(("a" "t" "account" "2025-06-10" "out" 1000 "Pagamento de fatura")
-                         ("b" "t" "account" "2025-06-10" "out" 2000 "Padaria")))
-    (should (equal '("b") (mapcar #'car (fin-bank--bank-year 2025))))))
+    (let ((fin-bank-ignore-regexps '("\\`Pagamento de fatura\\'")))
+      (fin-bankdb-insert '(("a" "t" "account" "2025-06-10" "out" 1000 "Pagamento de fatura")
+                           ("b" "t" "account" "2025-06-10" "out" 2000 "Padaria")))
+      (should (equal '("b") (mapcar #'car (fin-bank--bank-year 2025)))))))
 
 (provide 'test-bank)
 ;;; test-bank.el ends here

@@ -236,12 +236,12 @@ be the only candidate that day."
     (if name (car hits) (and (= (length hits) 1) (car hits)))))
 
 (defun fin-conv--fitid (row)
-  "FITID inside bank ROW's id (`nu:FITID:hash'), or nil."
+  "FITID inside bank ROW's id (`BANK:FITID:hash'), or nil."
   (let ((parts (split-string (car row) ":")))
-    (and (= (length parts) 3) (equal (car parts) "nu") (nth 1 parts))))
+    (and (= (length parts) 3) (nth 1 parts))))
 
 (defun fin-conv--same-fitid-host (fee rows gone)
-  "The one other out row of ROWS sharing FEE's FITID: Nubank gives a
+  "The one other out row of ROWS sharing FEE's FITID: a card bill may give a
 purchase's IOF the purchase's FITID."
   (let* ((id (fin-conv--fitid fee))
          (hits (and id (cl-remove-if-not

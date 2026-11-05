@@ -143,7 +143,7 @@ than `fin-health-cash-slack'."
                     '(0 1))))
 
 (defun fin-health--inbox-root ()
-  (file-name-directory (directory-file-name fin-bank-inbox)))
+  (file-name-as-directory fin-bank-inbox))
 
 (defun fin-health--inbox-files ()
   "Paths of every file under the inbox root, relative to it."

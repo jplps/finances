@@ -56,7 +56,7 @@ Return (FIRST LAST ROWS): rows must be contiguous."
 
 (defun fin-odsw--row-values (row)
   "(date type category item amount installment installments via) of ROW;
-\"\" for empty.  VIA: how a row was paid outside the bank (cash, bb)."
+\"\" for empty.  VIA: how a row was paid outside the bank (e.g. cash)."
   (fin-odsw--cells row 8))
 
 (defun fin-odsw--cells (row n)

@@ -10,6 +10,7 @@
            (ym (substring last 0 7))
            (day (concat ym "-10"))
            (fin-bank-own-regexps nil) (fin-conv-salary-regexps nil)
+           (fin-bank-ignore-regexps '("\\`Pagamento da fatura"))
            (fin-pj-tax-items '(("\\bDAS\\b" . "das"))))
       (fin-bankdb-insert
        (list (list "a" "nubank-ofx" "account" day "out" 10000 "Compra no débito - Padaria")
@@ -92,7 +93,7 @@
 
 (ert-deftest health/inbox-documents-and-key-files ()
   (let* ((root (make-temp-file "fin-inbox-" t))
-         (fin-bank-inbox (file-name-as-directory (expand-file-name "nubank" root))))
+         (fin-bank-inbox root))
     (unwind-protect
         (progn
           (make-directory (expand-file-name "ir/defis" root) t)
