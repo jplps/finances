@@ -10,7 +10,7 @@
 
 (defun fin-dashboard--ir-years ()
   "Years up to now with `fin-ir-rules' and a known pró-labore, ascending."
-  (let ((now (fin-report--year-now)))
+  (let ((now (fin-cashflow--year-now)))
     (sort (cl-remove-if-not (lambda (y) (and (<= y now) (assq y fin-ir-rules)))
                             (delete-dups (append (mapcar #'car fin-ir-pro-labore)
                                                  (mapcar #'car (fin-ir-pro-labore-files)))))

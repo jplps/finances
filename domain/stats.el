@@ -4,32 +4,32 @@
 (require 'db)
 (require 'cashflow)
 
-(defconst fin-report--to-date "date <= date('now', 'localtime')"
+(defconst fin-stats--to-date "date <= date('now', 'localtime')"
   "SQL condition: the row is dated today or earlier.")
 
-(defun fin-report--cat-shares ()
+(defun fin-stats--cat-shares ()
   "Rows (CATEGORY TOTAL) of spending to date."
-  (fin-report--flow-query
+  (fin-cashflow--flow-query
    (format "SELECT category, SUM(amount)
       FROM flow
      WHERE type='out' AND %s
      GROUP BY category
-     ORDER BY SUM(amount) DESC" fin-report--to-date)))
+     ORDER BY SUM(amount) DESC" fin-stats--to-date)))
 
-(defun fin-report--income-shares ()
+(defun fin-stats--income-shares ()
   "Rows (CATEGORY TOTAL) of income to date."
-  (fin-report--flow-query
+  (fin-cashflow--flow-query
    (format "SELECT category, SUM(amount)
       FROM flow WHERE type='in' AND %s
-      GROUP BY category ORDER BY SUM(amount) DESC" fin-report--to-date)))
+      GROUP BY category ORDER BY SUM(amount) DESC" fin-stats--to-date)))
 
-(defun fin-report--top-recurring (&optional limit min-months sort-by)
+(defun fin-stats--top-recurring (&optional limit min-months sort-by)
   "Rows (ITEM MONTHS TOTAL AVG-PER-MONTH) of items in ≥MIN-MONTHS months.
 SORT-BY `value' sorts by total, else by months."
   (let* ((order (if (eq sort-by 'value)
                     "SUM(amount)"
                   "COUNT(DISTINCT strftime('%%Y-%%m', date)), SUM(amount)")))
-    (fin-report--flow-query
+    (fin-cashflow--flow-query
      (format "SELECT item,
                      COUNT(DISTINCT strftime('%%Y-%%m', date)) AS m,
                      SUM(amount),
@@ -41,11 +41,11 @@ SORT-BY `value' sorts by total, else by months."
                HAVING m >= %d
                ORDER BY %s DESC
                LIMIT %d"
-             fin-report--to-date (or min-months 6) order (or limit 10)))))
+             fin-stats--to-date (or min-months 6) order (or limit 10)))))
 
-(defun fin-report--top-by-count (&optional limit min-count)
+(defun fin-stats--top-by-count (&optional limit min-count)
   "Rows (ITEM COUNT TOTAL AVG-PER-ENTRY) of the most frequent spending items."
-  (fin-report--flow-query
+  (fin-cashflow--flow-query
    (format "SELECT item,
                    COUNT(*) AS n,
                    SUM(amount),
@@ -56,23 +56,23 @@ SORT-BY `value' sorts by total, else by months."
              HAVING n >= %d
              ORDER BY n DESC, SUM(amount) DESC
              LIMIT %d"
-           fin-report--to-date (or min-count 3) (or limit 10))))
+           fin-stats--to-date (or min-count 3) (or limit 10))))
 
-(defun fin-report--cumulative-networth ()
+(defun fin-stats--cumulative-networth ()
   "Rows (YYYY-MM CUMULATIVE-LIQUID) to date."
-  (fin-report--flow-query
+  (fin-cashflow--flow-query
    (format "SELECT ym, SUM(net) OVER (ORDER BY ym) AS cum
       FROM (SELECT strftime('%%Y-%%m', date) AS ym,
                    SUM(CASE WHEN type='in'  THEN amount ELSE 0 END)
                  - SUM(CASE WHEN type='out' THEN amount ELSE 0 END) AS net
               FROM flow WHERE %s
               GROUP BY ym)
-     ORDER BY ym" fin-report--to-date)))
+     ORDER BY ym" fin-stats--to-date)))
 
-(defun fin-report--calendar-flow ()
-  "`fin-report--monthly-flow' to the current month, gaps filled with zeros."
+(defun fin-stats--calendar-flow ()
+  "`fin-cashflow--monthly-flow' to the current month, gaps filled with zeros."
   (let* ((now  (format-time-string "%Y-%m"))
-         (rows (cl-remove-if (lambda (r) (string> (car r) now)) (fin-report--monthly-flow)))
+         (rows (cl-remove-if (lambda (r) (string> (car r) now)) (fin-cashflow--monthly-flow)))
          (y    (and rows (string-to-number (substring (caar rows) 0 4))))
          (m    (and rows (string-to-number (substring (caar rows) 5 7))))
          (end  (caar (last rows)))
@@ -85,38 +85,38 @@ SORT-BY `value' sorts by total, else by months."
     (cl-assert (equal (caar out) end))
     (nreverse out)))
 
-(defun fin-report--trailing-12 (months)
+(defun fin-stats--trailing-12 (months)
   "((YM . WINDOW) ...) for MONTHS, WINDOW the month and up to 11 before."
   (let ((v (vconcat months)))
     (cl-loop for k below (length v)
              collect (cons (car (aref v k))
                            (append (cl-subseq v (max 0 (- k 11)) (1+ k)) nil)))))
 
-(defun fin-report--column-sum (rows n)
+(defun fin-stats--column-sum (rows n)
   "Sum of column N over ROWS, nil as zero."
   (apply #'+ (mapcar (lambda (r) (or (nth n r) 0)) rows)))
 
-(defun fin-report--rolling-save-rate ()
+(defun fin-stats--rolling-save-rate ()
   "Rows (YYYY-MM SAVE-%) over trailing 12 months; nil SAVE-% without income."
   (mapcar (lambda (w)
-            (let ((i (fin-report--column-sum (cdr w) 1))
-                  (o (fin-report--column-sum (cdr w) 2)))
+            (let ((i (fin-stats--column-sum (cdr w) 1))
+                  (o (fin-stats--column-sum (cdr w) 2)))
               (list (car w) (and (> i 0) (/ (fround (/ (* 1000.0 (- i o)) i)) 10.0)))))
-          (fin-report--trailing-12 (fin-report--calendar-flow))))
+          (fin-stats--trailing-12 (fin-stats--calendar-flow))))
 
-(defun fin-report--rolling-flow ()
+(defun fin-stats--rolling-flow ()
   "Rows (YYYY-MM IN OUT) of trailing 12-month averages."
   (mapcar (lambda (w)
             (let ((n (float (length (cdr w)))))
               (list (car w)
-                    (round (/ (fin-report--column-sum (cdr w) 1) n))
-                    (round (/ (fin-report--column-sum (cdr w) 2) n)))))
-          (fin-report--trailing-12 (fin-report--calendar-flow))))
+                    (round (/ (fin-stats--column-sum (cdr w) 1) n))
+                    (round (/ (fin-stats--column-sum (cdr w) 2) n)))))
+          (fin-stats--trailing-12 (fin-stats--calendar-flow))))
 
-(defun fin-report--pareto-spending (&optional limit)
+(defun fin-stats--pareto-spending (&optional limit)
   "Rows (ITEM TOTAL CUMULATIVE-%) of top spending items to date.
 The percentage is of all spending, itemized or not."
-  (fin-report--flow-query
+  (fin-cashflow--flow-query
    (format
     "SELECT item, v,
             ROUND(100.0 * SUM(v) OVER (ORDER BY v DESC ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
@@ -126,18 +126,18 @@ The percentage is of all spending, itemized or not."
               GROUP BY item)
       ORDER BY v DESC
       LIMIT %d"
-    fin-report--to-date fin-report--to-date (or limit 20))))
+    fin-stats--to-date fin-stats--to-date (or limit 20))))
 
-(defun fin-report--monthly-spend-grid ()
+(defun fin-stats--monthly-spend-grid ()
   "Rows (YEAR MONTH SPEND) to date."
-  (fin-report--flow-query
+  (fin-cashflow--flow-query
    (format "SELECT CAST(strftime('%%Y', date) AS INTEGER),
            CAST(strftime('%%m', date) AS INTEGER),
            SUM(amount)
       FROM flow WHERE type='out' AND %s
-      GROUP BY 1, 2 ORDER BY 1, 2" fin-report--to-date)))
+      GROUP BY 1, 2 ORDER BY 1, 2" fin-stats--to-date)))
 
-(defun fin-report--period ()
+(defun fin-stats--period ()
   "Return (FIRST LAST MONTHS ENTRIES) up to the current month."
   (car (fin-db-query
         "SELECT MIN(date), MAX(date),
@@ -146,15 +146,15 @@ The percentage is of all spending, itemized or not."
            FROM entry
           WHERE strftime('%Y-%m', date) <= strftime('%Y-%m', 'now', 'localtime')")))
 
-(defun fin-report--records ()
+(defun fin-stats--records ()
   "Plist of headline facts, transfers excluded.
 Best and worst month skip the current one; :avg-save is income-weighted."
-  (let* ((biggest    (car (fin-report--flow-query
+  (let* ((biggest    (car (fin-cashflow--flow-query
                            "SELECT item, amount, date
                               FROM flow
                              WHERE type='out' AND item IS NOT NULL
                              ORDER BY amount DESC LIMIT 1")))
-         (best-mo    (car (fin-report--flow-query
+         (best-mo    (car (fin-cashflow--flow-query
                            "SELECT strftime('%Y-%m', date) AS ym,
                                    SUM(CASE WHEN type='in'  THEN amount ELSE 0 END)
                                  - SUM(CASE WHEN type='out' THEN amount ELSE 0 END) AS liq
@@ -163,7 +163,7 @@ Best and worst month skip the current one; :avg-save is income-weighted."
                                AND strftime('%Y-%m', date) < strftime('%Y-%m', 'now', 'localtime')
                              GROUP BY ym
                              ORDER BY liq DESC LIMIT 1")))
-         (worst-mo   (car (fin-report--flow-query
+         (worst-mo   (car (fin-cashflow--flow-query
                            "SELECT strftime('%Y-%m', date) AS ym,
                                    SUM(CASE WHEN type='in'  THEN amount ELSE 0 END)
                                  - SUM(CASE WHEN type='out' THEN amount ELSE 0 END) AS liq
@@ -172,21 +172,21 @@ Best and worst month skip the current one; :avg-save is income-weighted."
                                AND strftime('%Y-%m', date) < strftime('%Y-%m', 'now', 'localtime')
                              GROUP BY ym
                              ORDER BY liq ASC LIMIT 1")))
-         (avg-save   (caar (fin-report--flow-query
+         (avg-save   (caar (fin-cashflow--flow-query
                             (concat "SELECT ROUND(100.0 *
                                     (SUM(CASE WHEN type='in'  THEN amount ELSE 0 END)
                                    - SUM(CASE WHEN type='out' THEN amount ELSE 0 END))
                                     / NULLIF(SUM(CASE WHEN type='in' THEN amount ELSE 0 END),0), 1)
                                FROM flow
-                              WHERE " fin-report--to-date))))
+                              WHERE " fin-stats--to-date))))
          (months-tracked (caar (fin-db-query
                                 (concat "SELECT COUNT(DISTINCT strftime('%Y-%m', date)) FROM entry
-                                          WHERE " fin-report--to-date))))
-         (biggest-in (car (fin-report--flow-query
+                                          WHERE " fin-stats--to-date))))
+         (biggest-in (car (fin-cashflow--flow-query
                            "SELECT category, amount, date
                               FROM flow WHERE type='in'
                               ORDER BY amount DESC LIMIT 1")))
-         (rec-share  (caar (fin-report--flow-query
+         (rec-share  (caar (fin-cashflow--flow-query
                             "SELECT ROUND(100.0 *
                               (SELECT SUM(amount) FROM flow
                                 WHERE type='out' AND item IS NOT NULL
@@ -196,7 +196,7 @@ Best and worst month skip the current one; :avg-save is income-weighted."
                                                 HAVING COUNT(DISTINCT strftime('%Y-%m',date)) >= 6))
                               /
                               (SELECT SUM(amount) FROM flow WHERE type='out'), 1)")))
-         (best-save  (car (fin-report--flow-query
+         (best-save  (car (fin-cashflow--flow-query
                            "SELECT CAST(strftime('%Y',date) AS INTEGER) AS y,
                                    ROUND(100.0 *
                                          (SUM(CASE WHEN type='in'  THEN amount ELSE 0 END)

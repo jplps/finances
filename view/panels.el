@@ -57,12 +57,12 @@
                 (when months (list "months" (format "%d" months)))))))
 
 (defun fin-dashboard--panel-spending ()
-  (let* ((cats    (fin-report--cat-shares))
-         (inc     (fin-report--income-shares))
-         (rec     (fin-report--top-recurring 10 6))
-         (rec-cnt (fin-report--top-by-count 10 3))
-         (pareto  (fin-report--pareto-spending 20))
-         (heat    (fin-report--monthly-spend-grid))
+  (let* ((cats    (fin-stats--cat-shares))
+         (inc     (fin-stats--income-shares))
+         (rec     (fin-stats--top-recurring 10 6))
+         (rec-cnt (fin-stats--top-by-count 10 3))
+         (pareto  (fin-stats--pareto-spending 20))
+         (heat    (fin-stats--monthly-spend-grid))
          (cat-slices (mapcar (lambda (r) (cons (nth 0 r) (nth 1 r))) cats))
          (inc-slices (mapcar (lambda (r) (cons (nth 0 r) (nth 1 r))) inc))
          (rec-rows   (mapcar (lambda (r) (list (nth 0 r) (nth 1 r)
@@ -74,8 +74,8 @@
     (fin-dashboard--panel
      "Spending" "spending" "Records, where the money goes and what recurs"
      (fin-dashboard--block "Records" "Best and worst month exclude the current one"
-                           (fin-dashboard--table '("" "") (fin-dashboard--records-rows (fin-report--records)
-                                                                                       (fin-report--patrimony-total))))
+                           (fin-dashboard--table '("" "") (fin-dashboard--records-rows (fin-stats--records)
+                                                                                       (fin-patrimony--total))))
      "<div class=\"stats-body\">"
      "<div class=\"stats-col\">"
      (fin-dashboard--block "Pareto"
@@ -282,15 +282,15 @@
      (concat "<div class=\"health\">" (mapconcat #'cadr (cl-remove-if #'car parts) "") "</div>"))))
 
 (defun fin-dashboard--panel-cockpit ()
-  (let* ((year   (fin-report--year-now))
-         (month  (fin-report--month-now))
-         (budg   (fin-report--budget-share year))
+  (let* ((year   (fin-cashflow--year-now))
+         (month  (fin-cashflow--month-now))
+         (budg   (fin-budget--share year))
          (goals  (fin-goals year month))
          (pct    (lambda (kind) (cl-reduce #'+ (mapcar (lambda (b) (if (equal (nth 1 b) kind) (or (nth 3 b) 0) 0)) budg))))
          (fix-pct (funcall pct "fix"))
          (var-pct (funcall pct "var"))
          (kind-rows (lambda (kind) (cl-remove-if-not (lambda (r) (equal (plist-get r :kind) kind)) goals)))
-         (rw (fin-report--runway)))
+         (rw (fin-budget--runway)))
     (fin-dashboard--panel
      "Cockpit" "cockpit"
      "This month, balance, savings, runway, all time flow, plan targets and the to do list"
@@ -300,7 +300,7 @@
      "</div>"
      (fin-dashboard--block "All time flow"
                            "In and out per month; future months dimmed"
-                           (fin-dashboard--svg-flow (fin-report--monthly-flow))
+                           (fin-dashboard--svg-flow (fin-cashflow--monthly-flow))
                            "flow")
      (fin-dashboard--block (format "Fixed <span class=\"dim\">%.1f%% / %d%%</span>" fix-pct fin-budget-fix-target)
                            "Fixed monthly outflows, driven by amount"
@@ -312,7 +312,7 @@
 
 (defun fin-dashboard--block-accounts ()
   "Open accounts, each balance's basis as its tooltip."
-  (let* ((accts (cl-remove-if (lambda (a) (plist-get a :closed)) (fin-report--accounts-derived)))
+  (let* ((accts (cl-remove-if (lambda (a) (plist-get a :closed)) (fin-accounts--balances)))
          (total (apply #'+ (mapcar (lambda (a) (plist-get a :cents)) accts))))
     (fin-dashboard--block
      "Accounts"
@@ -330,8 +330,8 @@
      "register")))
 
 (defun fin-dashboard--block-patrimony ()
-  (let* ((summary       (fin-report--patrimony-summary))
-         (items         (fin-report--patrimony-items))
+  (let* ((summary       (fin-patrimony--summary))
+         (items         (fin-patrimony--items))
          (by-cat        (fin-dashboard--group-by items 0))
          (total-monthly (apply #'+ (mapcar (lambda (r) (or (nth 3 r) 0)) summary)))
          (idx-by-cat    (let ((h (make-hash-table :test 'equal)))
@@ -399,8 +399,8 @@
 
 (defun fin-dashboard--year-effective-months (year now-y now-m)
   "(M IN OUT LIQ FUTURE?) per month of YEAR.
-The current year's future months take `fin-report--planned-month'."
-  (let ((planned (and (= year now-y) (fin-report--planned-month year))))
+The current year's future months take `fin-budget--planned-month'."
+  (let ((planned (and (= year now-y) (fin-budget--planned-month year))))
     (mapcar
      (lambda (r)
        (let* ((m       (car r))
@@ -408,7 +408,7 @@ The current year's future months take `fin-report--planned-month'."
          (if (and future? planned)
              (list m (nth 0 planned) (nth 1 planned) (nth 2 planned) t)
            (list m (nth 1 r) (nth 2 r) (nth 3 r) nil))))
-     (fin-report--year-months year))))
+     (fin-cashflow--year-months year))))
 
 (defun fin-dashboard--monthly-block (year eff)
   "Accordion of YEAR's months EFF (`fin-dashboard--year-effective-months')."
@@ -416,13 +416,13 @@ The current year's future months take `fin-report--planned-month'."
                (lambda (e)
                  (let* ((m       (nth 0 e))
                         (future? (nth 4 e))
-                        (items   (and (not future?) (fin-report--month-items year m))))
+                        (items   (and (not future?) (fin-cashflow--month-items year m))))
                    (list (fin-dashboard--month-name m)
                          (list (fin-dashboard--money-cell (nth 1 e))
                                (fin-dashboard--money-cell (nth 2 e))
                                (fin-dashboard--money-signed-cell (nth 3 e))
                                (if future? "" (fin-dashboard--money-signed-cell
-                                               (fin-report--bank-saved (format "%04d-%02d" year m)))))
+                                               (fin-accounts--bank-saved (format "%04d-%02d" year m)))))
                          (when items (fin-dashboard--month-body items))
                          (when future? "future"))))
                eff)))
@@ -436,20 +436,20 @@ The current year's future months take `fin-report--planned-month'."
          (pf (fin-bankdb-latest-balance "account"))
          (pj (fin-bankdb-latest-balance "pj"))
          (bal (+ (or (cdr pf) 0) (or (cdr pj) 0)))
-         (saved (- (fin-report--accounts-total) (fin-report--accounts-total :cash)))
+         (saved (- (fin-accounts--total) (fin-accounts--total :cash)))
          (left (car (fin-health-cash now-y now-m)))
          (money (lambda (c) (concat "R$ " (fin-dashboard--money-str c)))))
     (concat
      (fin-dashboard--kpi (fin-dashboard--month-name now-m) (if (or pf pj) (funcall money bal) "—")
                          (format "in %s<br>out %s<br>saved %s"
                                  (fin-dashboard--money-str (nth 1 m)) (fin-dashboard--money-str (nth 2 m))
-                                 (fin-dashboard--money-str (fin-report--bank-saved (format "%04d-%02d" now-y now-m))))
+                                 (fin-dashboard--money-str (fin-accounts--bank-saved (format "%04d-%02d" now-y now-m))))
                          (if (< left 0) "bad" "good"))
      (fin-dashboard--kpi "savings" (funcall money saved) "accounts"))))
 
 (defun fin-dashboard--panel-wealth ()
-  (let* ((now-y (fin-report--year-now))
-         (now-m (fin-report--month-now))
+  (let* ((now-y (fin-cashflow--year-now))
+         (now-m (fin-cashflow--month-now))
          (rows  (mapcar
                  (lambda (r)
                    (let* ((y    (nth 0 r))
@@ -467,13 +467,13 @@ The current year's future months take `fin-report--planned-month'."
                            (list (fin-dashboard--money-cell in)
                                  (fin-dashboard--money-cell out)
                                  (fin-dashboard--money-signed-cell liq)
-                                 (fin-dashboard--money-signed-cell (fin-report--bank-saved (number-to-string y)))
+                                 (fin-dashboard--money-signed-cell (fin-accounts--bank-saved (number-to-string y)))
                                  sav)
                            (fin-dashboard--monthly-block y eff))))
-                 (reverse (fin-report--annual-sums))))
-         (netw  (fin-report--cumulative-networth))
-         (rsave (fin-report--rolling-save-rate))
-         (rflow (fin-report--rolling-flow)))
+                 (reverse (fin-cashflow--annual-sums))))
+         (netw  (fin-stats--cumulative-networth))
+         (rsave (fin-stats--rolling-save-rate))
+         (rflow (fin-stats--rolling-flow)))
     (fin-dashboard--panel
      "Wealth" "wealth"
      "Income vs expense, the yearly cashflow, save rate, net worth, savings (accounts) and patrimony"

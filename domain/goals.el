@@ -18,7 +18,7 @@ caixinha; `reserve' rows are emergency reserve withdrawals.")
 
 (defun fin-goals--classes ()
   "Patrimony register classes."
-  (mapcar #'car (fin-report--patrimony-summary)))
+  (mapcar #'car (fin-patrimony--summary)))
 
 (defun fin-goals--spec (category &optional parent)
   "(DIRECTION SOURCES) for plan CATEGORY under PARENT."
@@ -71,7 +71,7 @@ caixinha; `reserve' rows are emergency reserve withdrawals.")
                 (list :category (nth 0 s) :kind kind :parent "patrimony" :depth 2
                       :direction 'save :target target :mtd saved
                       :status (fin-goals-status 'save target saved))))
-            (fin-report--patrimony-summary))))
+            (fin-patrimony--summary))))
 
 (defun fin-goals (year month)
   "Goal plists for MONTH of YEAR, each plan row followed by its children.
@@ -79,10 +79,10 @@ Keys :category :kind :parent :depth :direction :target :mtd :status;
 `patrimony' is followed by its classes at depth 2."
   (cl-assert (and (integerp year) (<= 1 month 12)))
   (let (out)
-    (dolist (b (fin-report--budget-share year))
+    (dolist (b (fin-budget--share year))
       (pcase-let ((`(,cat ,kind ,target ,_pct) b))
         (push (fin-goals--row cat kind nil target year month) out)
-        (dolist (k (fin-report--budget-children cat year))
+        (dolist (k (fin-budget--children cat year))
           (push (fin-goals--row (car k) kind cat (nth 1 k) year month) out)
           (when (equal (car k) "patrimony")
             (dolist (p (fin-goals--patrimony-rows kind year month)) (push p out))))))

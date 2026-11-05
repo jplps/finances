@@ -3,7 +3,7 @@
 (require 'cl-lib)
 (require 'db)
 
-(defcustom fin-report-transfer-categories
+(defcustom fin-cashflow-transfer-categories
   '(("out" "investments" "retirement" "reserve")
     ("in"  "investments" "retirement" "reserve"))
   "Alist (TYPE CATEGORY...) of transfers between own accounts.
@@ -11,26 +11,26 @@ An `out' row is a savings contribution, an `in' row a withdrawal; flow
 metrics count neither as spending nor income."
   :type '(alist :key-type string :value-type (repeat string)) :group 'fin)
 
-(defun fin-report--sql-string (s)
+(defun fin-cashflow--sql-string (s)
   "S as a single-quoted SQL literal."
   (cl-assert (stringp s))
   (concat "'" (string-replace "'" "''" s) "'"))
 
-(defun fin-report--transfer-sql ()
+(defun fin-cashflow--transfer-sql ()
   "SQL condition true for a transfer `entry' row."
-  (if (null fin-report-transfer-categories) "0"
+  (if (null fin-cashflow-transfer-categories) "0"
     (mapconcat (lambda (e)
                  (cl-assert (and (member (car e) '("in" "out")) (cdr e)))
-                 (format "(type=%s AND category IN (%s))" (fin-report--sql-string (car e))
-                         (mapconcat #'fin-report--sql-string (cdr e) ",")))
-               fin-report-transfer-categories " OR ")))
+                 (format "(type=%s AND category IN (%s))" (fin-cashflow--sql-string (car e))
+                         (mapconcat #'fin-cashflow--sql-string (cdr e) ",")))
+               fin-cashflow-transfer-categories " OR ")))
 
-(defun fin-report--flow-query (sql &optional values)
+(defun fin-cashflow--flow-query (sql &optional values)
   "Run SQL with VALUES after a `flow' CTE over `entry'.
 Transfers become type `save', contributions positive and withdrawals
 negative, so `in' is income and `out' spending.  SQL is a SELECT, or
 `, NAME AS (...) SELECT' to add CTEs."
-  (let ((tr (fin-report--transfer-sql)))
+  (let ((tr (fin-cashflow--transfer-sql)))
     (fin-db-query
      (format "WITH flow AS (
                 SELECT id, date, category, item,
@@ -40,15 +40,15 @@ negative, so `in' is income and `out' spending.  SQL is a SELECT, or
              tr tr sql)
      values)))
 
-(defun fin-report--year-now ()
+(defun fin-cashflow--year-now ()
   (string-to-number (format-time-string "%Y")))
 
-(defun fin-report--month-now ()
+(defun fin-cashflow--month-now ()
   (string-to-number (format-time-string "%m")))
 
-(defun fin-report--year-months (year)
+(defun fin-cashflow--year-months (year)
   "Twelve rows (M IN OUT LIQUID) for YEAR; empty months carry nils."
-  (let* ((raw (fin-report--flow-query
+  (let* ((raw (fin-cashflow--flow-query
                "SELECT CAST(strftime('%m', date) AS INTEGER) AS m,
                        SUM(CASE WHEN type='in'  THEN amount ELSE 0 END),
                        SUM(CASE WHEN type='out' THEN amount ELSE 0 END),
@@ -64,10 +64,10 @@ negative, so `in' is income and `out' spending.  SQL is a SELECT, or
              collect (or (cdr (assoc m by-m))
                          (list m nil nil nil)))))
 
-(defun fin-report--month-items (year month)
+(defun fin-cashflow--month-items (year month)
   "Spending rows (ITEM CATEGORY AMOUNT DATE) of YEAR-MONTH by date.
 ITEM falls back to the category."
-  (fin-report--flow-query
+  (fin-cashflow--flow-query
    "SELECT COALESCE(item, category), category, amount, date
       FROM flow
      WHERE strftime('%Y-%m', date) = printf('%04d-%02d', ?, ?)
@@ -75,9 +75,9 @@ ITEM falls back to the category."
      ORDER BY date ASC, id ASC"
    (list year month)))
 
-(defun fin-report--annual-sums ()
+(defun fin-cashflow--annual-sums ()
   "Rows (YEAR IN OUT LIQUID SAVE-%), nil SAVE-% without income."
-  (fin-report--flow-query
+  (fin-cashflow--flow-query
    "SELECT CAST(strftime('%Y', date) AS INTEGER) AS y,
            SUM(CASE WHEN type='in'  THEN amount ELSE 0 END),
            SUM(CASE WHEN type='out' THEN amount ELSE 0 END),
@@ -93,9 +93,9 @@ ITEM falls back to the category."
      GROUP BY y
      ORDER BY y ASC"))
 
-(defun fin-report--monthly-flow ()
+(defun fin-cashflow--monthly-flow ()
   "Rows (YYYY-MM IN OUT) for every month."
-  (fin-report--flow-query
+  (fin-cashflow--flow-query
    "SELECT strftime('%Y-%m', date) AS ym,
            SUM(CASE WHEN type='in'  THEN amount ELSE 0 END),
            SUM(CASE WHEN type='out' THEN amount ELSE 0 END)

@@ -32,7 +32,7 @@
   (fin-test-with-db
     (let ((fin-accounts-derived '((:name "nu" :since "2020-01-01" :opening 0
                                    :into ("\\`Aplicação RDB") :out-of ("\\`Resgate RDB"))))
-          (fin-report-transfer-categories '(("out" "investments"))))
+          (fin-cashflow-transfer-categories '(("out" "investments"))))
       (fin-bankdb-insert
        (list (list "a" "nubank-ofx" "account" "2026-10-01" "in" 500000 "Pix recebido")
              (list "b" "nubank-ofx" "account" "2026-10-02" "out" 300000 "Aplicação RDB")

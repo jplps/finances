@@ -57,10 +57,10 @@
                         "<p class=\"dim\">No entries yet: see the cockpit's to do.</p>"))
 
 (defun fin-dashboard--render ()
-  (let* ((fin-report--accounts-memo (list nil))
+  (let* ((fin-accounts--memo (list nil))
          (ods-ts  (file-attribute-modification-time
                    (file-attributes (expand-file-name fin-ods-path))))
-         (period  (fin-report--period))
+         (period  (fin-stats--period))
          (first-d (nth 0 period))
          (last-d  (nth 1 period))
          (entries (nth 3 period))

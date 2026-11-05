@@ -64,7 +64,7 @@ Category and name values are lowercase kebab-case; money is integer cents.  =exa
   - =type= is =in= or =out=; every row is a leaf.
   - =installment= / =installments=: /k/ of /n/, one row per installment, else both empty.
   - Company tax is an =out= row under =cnpj=.
-  - Savings moves (=fin-report-transfer-categories=) are neither income nor spending.
+  - Savings moves (=fin-cashflow-transfer-categories=) are neither income nor spending.
 - =plan=: =category | parent | type | amount | share=
   - =type= is =income=, =fix= or =var=.  =income= rows =brute= and =cnpj= set the liquid base; without them it is the actual monthly average.
   - =fix= rows are driven by =amount=, =var= rows by =share= of liquid; children may use either.
@@ -101,7 +101,7 @@ Accounts are not a sheet: =fin-accounts-derived= rebuilds each balance from the 
 | =fin-bank-pj-accounts=, =fin-pj-income-payers=, =fin-pj-tax-items= | company account, clients, tax items |
 | =fin-reconcile-net-rules=                                 | (INCOME . TAX) paid as one net deposit    |
 | =fin-bank-fix-flag-min=, =fin-bank-fix-flag-ignore-regexps= | large rows to flag, rows to mute        |
-| =fin-report-transfer-categories=                          | savings categories                        |
+| =fin-cashflow-transfer-categories=                        | savings categories                        |
 | =fin-budget-fix-target=, =fin-budget-var-target=          | fixed and variable target %               |
 | =fin-health-expected-docs=, =fin-health-todo=             | inbox documents expected, manual to-dos   |
 | =fin-ir-health-categories=, =fin-ir-retirement-categories= | deduction categories                     |

@@ -7,7 +7,7 @@
 (ert-deftest cashflow/year-months-pads-missing-with-12-rows ()
   (fin-test-with-db
     (fin-test-insert-entry "2025-06-30" "in" "salary" 100000 nil)
-    (let ((rows (fin-report--year-months 2025)))
+    (let ((rows (fin-cashflow--year-months 2025)))
       (should (= 12 (length rows)))
       (should (equal 6 (car (nth 5 rows))))
       (should (= 100000 (nth 1 (nth 5 rows))))
@@ -18,7 +18,7 @@
     (fin-test-insert-entry "2025-06-10" "out" "food" 100 nil)
     (fin-test-insert-entry "2025-06-15" "out" "food" 200 "bread")
     (fin-test-insert-entry "2025-06-20" "out" "food" 300 "butter")
-    (let ((rows (fin-report--month-items 2025 6)))
+    (let ((rows (fin-cashflow--month-items 2025 6)))
       (should (= 3 (length rows)))
       (should (equal "food"   (nth 0 (nth 0 rows))))
       (should (equal "bread"  (nth 0 (nth 1 rows))))
@@ -29,7 +29,7 @@
   (fin-test-with-db
     (fin-test-insert-entry "2025-01-31" "in"  "salary" 1000 nil)
     (fin-test-insert-entry "2025-06-30" "out" "food"   400  nil)
-    (let* ((row (car (fin-report--annual-sums))))
+    (let* ((row (car (fin-cashflow--annual-sums))))
       (should (equal 2025 (nth 0 row)))
       (should (= 1000 (nth 1 row)))
       (should (= 400  (nth 2 row)))
@@ -39,7 +39,7 @@
 (ert-deftest cashflow/annual-sums-no-income-yields-nil-save-pct ()
   (fin-test-with-db
     (fin-test-insert-entry "2025-06-30" "out" "food" 100 nil)
-    (let ((row (car (fin-report--annual-sums))))
+    (let ((row (car (fin-cashflow--annual-sums))))
       (should (null (nth 4 row))))))
 
 (ert-deftest cashflow/monthly-flow-orders-asc-by-ym ()
@@ -47,7 +47,7 @@
     (fin-test-insert-entry "2025-03-31" "in" "salary" 300 nil)
     (fin-test-insert-entry "2025-01-31" "in" "salary" 100 nil)
     (fin-test-insert-entry "2025-02-28" "in" "salary" 200 nil)
-    (let ((yms (mapcar #'car (fin-report--monthly-flow))))
+    (let ((yms (mapcar #'car (fin-cashflow--monthly-flow))))
       (should (equal '("2025-01" "2025-02" "2025-03") yms)))))
 
 (defun fin-test--seed-transfers ()
@@ -61,24 +61,24 @@
 (ert-deftest cashflow/transfers-are-neither-income-nor-spending ()
   (fin-test-with-db
     (fin-test--seed-transfers)
-    (should (equal '(1 1000 400 600) (car (fin-report--year-months 2025))))
-    (should (equal '(2025 1000 400 600 60.0) (car (fin-report--annual-sums))))
-    (should (equal '(("2025-01" 1000 400)) (fin-report--monthly-flow)))
-    (should (equal '(("food" "food" 400 "2025-01-31")) (fin-report--month-items 2025 1)))))
+    (should (equal '(1 1000 400 600) (car (fin-cashflow--year-months 2025))))
+    (should (equal '(2025 1000 400 600 60.0) (car (fin-cashflow--annual-sums))))
+    (should (equal '(("2025-01" 1000 400)) (fin-cashflow--monthly-flow)))
+    (should (equal '(("food" "food" 400 "2025-01-31")) (fin-cashflow--month-items 2025 1)))))
 
 (ert-deftest cashflow/flow-signs-saves-contributions-minus-withdrawals ()
   (fin-test-with-db
     (fin-test--seed-transfers)
-    (should (= 350 (caar (fin-report--flow-query "SELECT SUM(amount) FROM flow WHERE type='save'"))))))
+    (should (= 350 (caar (fin-cashflow--flow-query "SELECT SUM(amount) FROM flow WHERE type='save'"))))))
 
 (ert-deftest cashflow/transfer-categories-are-configurable ()
   (fin-test-with-db
     (fin-test--seed-transfers)
     (fin-test-insert-entry "2025-01-31" "out" "d'água" 7 nil)
-    (let ((fin-report-transfer-categories nil))
-      (should (equal '(1 1050 807 243) (car (fin-report--year-months 2025)))))
-    (let ((fin-report-transfer-categories '(("out" "d'água"))))
-      (should (equal '(1 1050 800 250) (car (fin-report--year-months 2025)))))))
+    (let ((fin-cashflow-transfer-categories nil))
+      (should (equal '(1 1050 807 243) (car (fin-cashflow--year-months 2025)))))
+    (let ((fin-cashflow-transfer-categories '(("out" "d'água"))))
+      (should (equal '(1 1050 800 250) (car (fin-cashflow--year-months 2025)))))))
 
 (provide 'test-cashflow)
 ;;; test-cashflow.el ends here

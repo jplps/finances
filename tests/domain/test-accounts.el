@@ -21,10 +21,10 @@
              (:name "checking" :balance "account"))))
       (should (equal '((:name "nubank" :cents 470000 :note "since 31/12/2025" :cash nil :reserve t :closed nil)
                        (:name "checking" :cents 12345 :note "28/02/2026" :cash t :reserve nil :closed nil))
-                     (fin-report--accounts-derived)))
-      (should (= 482345 (fin-report--accounts-total)))
-      (should (= 470000 (fin-report--accounts-total :reserve)))
-      (should (= 12345 (fin-report--accounts-total :cash))))))
+                     (fin-accounts--balances)))
+      (should (= 482345 (fin-accounts--total)))
+      (should (= 470000 (fin-accounts--total :reserve)))
+      (should (= 12345 (fin-accounts--total :cash))))))
 
 (ert-deftest accounts/derived-from-zero-notes-first-flow ()
   (fin-test-with-db
@@ -33,10 +33,10 @@
                   VALUES ('a','t','account','2023-04-13','out',5000,'Aplicação RDB')")
     (let ((fin-accounts-derived '((:name "nu" :since "2020-01-01" :opening 0
                                    :into ("\\`Aplicação RDB") :out-of ()))))
-      (should (equal "since 13/04/2023" (plist-get (car (fin-report--accounts-derived)) :note)))
+      (should (equal "since 13/04/2023" (plist-get (car (fin-accounts--balances)) :note)))
       (let ((fin-accounts-derived (list (append (car fin-accounts-derived) '(:yield 700)))))
         (should (equal '(5700 "since 13/04/2023 + yield 7.00")
-                       (let ((a (car (fin-report--accounts-derived)))) (list (plist-get a :cents) (plist-get a :note)))))))))
+                       (let ((a (car (fin-accounts--balances)))) (list (plist-get a :cents) (plist-get a :note)))))))))
 
 (ert-deftest accounts/closed-account-shows-result ()
   (fin-test-with-db
@@ -47,12 +47,12 @@
     (let ((fin-accounts-derived '((:name "crypto" :since "2020-01-01" :opening 0 :closed t
                                    :into ("\\`Compra de cripto") :out-of ("\\`Venda de cripto")))))
       (should (equal '(:name "crypto" :cents 0 :note "closed, loss 50.00" :cash nil :reserve nil :closed t)
-                     (car (fin-report--accounts-derived)))))))
+                     (car (fin-accounts--balances)))))))
 
 (ert-deftest accounts/derived-spec-fails-loud ()
   (fin-test-with-db
     (let ((fin-accounts-derived '((:name "x"))))
-      (should-error (fin-report--accounts-derived)))))
+      (should-error (fin-accounts--balances)))))
 
 (ert-deftest accounts/bank-saved-nets-withdrawals ()
   (fin-test-with-db
@@ -72,12 +72,12 @@
              (:name "etf" :since "2020-01-01" :opening 0 :into ("\\`Compra de ETF") :out-of ("\\`Compra de ETF"))
              (:name "bb" :since "2023-12-31" :opening 0 :into ("Conta: 51-6\\'") :out-of ("Conta: 51-6\\'"))
              (:name "checking" :balance "account"))))
-      (should (= 89000 (fin-report--bank-saved "2026-10")))
-      (should (= 9000 (fin-report--bank-saved "2026-09")))
-      (should (= 98000 (fin-report--bank-saved "2026")))
-      (should (= 0 (fin-report--bank-saved "2023")))
-      (should (= 6000 (fin-report--bank-saved "2024")))
-      (should-error (fin-report--bank-saved "2026-1")))))
+      (should (= 89000 (fin-accounts--bank-saved "2026-10")))
+      (should (= 9000 (fin-accounts--bank-saved "2026-09")))
+      (should (= 98000 (fin-accounts--bank-saved "2026")))
+      (should (= 0 (fin-accounts--bank-saved "2023")))
+      (should (= 6000 (fin-accounts--bank-saved "2024")))
+      (should-error (fin-accounts--bank-saved "2026-1")))))
 
 (ert-deftest accounts/derived-defaults-and-memo ()
   (fin-test-with-db
@@ -86,13 +86,13 @@
                   VALUES ('a','t','account','2020-03-01','out',5000,'Aplicação RDB')")
     (let ((fin-accounts-derived '((:name "nu" :into ("\\`Aplicação RDB") :out-of ()))))
       (should (equal '(5000 "since 01/03/2020")
-                     (let ((a (car (fin-report--accounts-derived)))) (list (plist-get a :cents) (plist-get a :note)))))
-      (let ((fin-report--accounts-memo (list nil)) (calls 0))
-        (cl-letf* ((orig (symbol-function 'fin-report--accounts-compute))
-                   ((symbol-function 'fin-report--accounts-compute)
+                     (let ((a (car (fin-accounts--balances)))) (list (plist-get a :cents) (plist-get a :note)))))
+      (let ((fin-accounts--memo (list nil)) (calls 0))
+        (cl-letf* ((orig (symbol-function 'fin-accounts--compute))
+                   ((symbol-function 'fin-accounts--compute)
                     (lambda () (cl-incf calls) (funcall orig))))
-          (fin-report--accounts-total)
-          (fin-report--accounts-total :reserve)
+          (fin-accounts--total)
+          (fin-accounts--total :reserve)
           (should (= 1 calls)))))))
 
 (provide 'test-accounts)

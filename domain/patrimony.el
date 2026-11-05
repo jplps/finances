@@ -3,7 +3,7 @@
 (require 'db)
 (require 'accounts)
 
-(defun fin-report--patrimony-summary ()
+(defun fin-patrimony--summary ()
   "Rows (CATEGORY COUNT AMOUNT MONTHLY), MONTHLY = amount / lifespan_months."
   (fin-db-query
    "SELECT category,
@@ -14,7 +14,7 @@
      GROUP BY category
      ORDER BY monthly DESC"))
 
-(defun fin-report--patrimony-items ()
+(defun fin-patrimony--items ()
   "Rows (CATEGORY ITEM AMOUNT LIFESPAN-MONTHS MONTHLY)."
   (fin-db-query
    "SELECT category, item, amount, lifespan_months,
@@ -22,9 +22,9 @@
       FROM patrimony
      ORDER BY category, amount * 1.0 / NULLIF(lifespan_months,0) DESC"))
 
-(defun fin-report--patrimony-total ()
+(defun fin-patrimony--total ()
   "Net worth in cents."
-  (fin-report--accounts-total))
+  (fin-accounts--total))
 
 (provide 'patrimony)
 ;;; patrimony.el ends here

@@ -125,8 +125,8 @@ left out."
   "(LEFT CASH) of YEAR-MONTH: ledger income less spending less what the bank
 moved into savings, and the cash the bank accounts gained.  They match when
 the ledger holds the month's flows."
-  (pcase-let ((`(,_ ,in ,out ,_) (nth (1- month) (fin-report--year-months year))))
-    (list (- (or in 0) (or out 0) (fin-report--bank-saved (format "%04d-%02d" year month)))
+  (pcase-let ((`(,_ ,in ,out ,_) (nth (1- month) (fin-cashflow--year-months year))))
+    (list (- (or in 0) (or out 0) (fin-accounts--bank-saved (format "%04d-%02d" year month)))
           (fin-health--bank-cash year month))))
 
 (defun fin-health-cash-gaps ()

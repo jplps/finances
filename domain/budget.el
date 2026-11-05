@@ -10,12 +10,12 @@
 (defconst fin-budget-var-target (- 100 fin-budget-fix-target)
   "Target share (%) of monthly liquid for var outflows.")
 
-(defun fin-report--realized-income (year)
+(defun fin-budget--realized-income (year)
   "Average monthly (BRUTE CNPJ) cents realized in YEAR.
 Complete months only, else every month with rows; savings withdrawals are
 not income."
   (or (car
-       (fin-report--flow-query
+       (fin-cashflow--flow-query
         ", m AS (
            SELECT strftime('%Y-%m', date) AS ym,
                   SUM(CASE WHEN type='in' THEN amount ELSE 0 END) AS brute,
@@ -34,7 +34,7 @@ not income."
         (list (format "%d" year))))
       (list 0 0)))
 
-(defun fin-report--monthly-income (year)
+(defun fin-budget--monthly-income (year)
   "Monthly (BRUTE CNPJ LIQUID SOURCE) for YEAR, in cents.
 SOURCE is `plan' when the budget declares income rows, else `actual'."
   (let* ((plan  (car (fin-db-query
@@ -43,19 +43,19 @@ SOURCE is `plan' when the budget declares income rows, else `actual'."
                          FROM budget
                         WHERE parent IS NULL AND type='income'")))
          (declared (> (or (nth 0 plan) 0) 0))
-         (pair  (if declared plan (fin-report--realized-income year)))
+         (pair  (if declared plan (fin-budget--realized-income year)))
          (brute (or (nth 0 pair) 0))
          (cnpj  (or (nth 1 pair) 0)))
     (list brute cnpj (- brute cnpj) (if declared 'plan 'actual))))
 
-(defun fin-report--monthly-liquid (year)
+(defun fin-budget--monthly-liquid (year)
   "Monthly liquid income for YEAR, in cents."
-  (nth 2 (fin-report--monthly-income year)))
+  (nth 2 (fin-budget--monthly-income year)))
 
-(defun fin-report--budget-share (year)
+(defun fin-budget--share (year)
   "Top-level rows (CATEGORY TYPE AMOUNT SHARE-%) for YEAR.
 Fix rows store the amount, var rows the share of monthly liquid."
-  (let ((liquid (fin-report--monthly-liquid year)))
+  (let ((liquid (fin-budget--monthly-liquid year)))
     (fin-db-query
      "SELECT category, type,
              CAST(ROUND(COALESCE(amount, share * ?1)) AS INTEGER) AS amt,
@@ -67,7 +67,7 @@ Fix rows store the amount, var rows the share of monthly liquid."
        ORDER BY type, amt DESC"
      (list liquid))))
 
-(defun fin-report--budget-base (parent year)
+(defun fin-budget--base (parent year)
   "Return (PARENT-AMT BASE) in cents for budget category PARENT in YEAR.
 BASE, split by share-driven children, is PARENT-AMT less children with an
 amount and, for `investments', patrimony amortization; it may be negative."
@@ -81,14 +81,14 @@ amount and, for `investments', patrimony amortization; it may be negative."
                                   FROM patrimony p WHERE ?2 = 'investments'), 0)
                FROM (SELECT CAST(ROUND(COALESCE(amount, share * ?1)) AS INTEGER) AS amt
                        FROM budget WHERE category = ?2 AND parent IS NULL)"
-            (list (fin-report--monthly-liquid year) parent)))
+            (list (fin-budget--monthly-liquid year) parent)))
       (list 0 0)))
 
-(defun fin-report--budget-children (parent year)
+(defun fin-budget--children (parent year)
   "Rows (CATEGORY AMOUNT PCT-OF-PARENT) under PARENT in YEAR.
-Shares resolve against `fin-report--budget-base'; `investments' also gets
+Shares resolve against `fin-budget--base'; `investments' also gets
 a patrimony amortization row."
-  (let* ((b          (fin-report--budget-base parent year))
+  (let* ((b          (fin-budget--base parent year))
          (parent-amt (nth 0 b))
          (base       (nth 1 b)))
     (fin-db-query
@@ -109,34 +109,34 @@ a patrimony amortization row."
        ORDER BY amt DESC"
      (list base parent parent-amt))))
 
-(defun fin-report--var-total (year &optional spend-only)
+(defun fin-budget--var-total (year &optional spend-only)
   "Cents of var leaves for YEAR: a parent's children, else its own amount.
-SPEND-ONLY skips `out' transfer rows of `fin-report-transfer-categories'."
-  (let ((saving (and spend-only (cdr (assoc "out" fin-report-transfer-categories))))
+SPEND-ONLY skips `out' transfer rows of `fin-cashflow-transfer-categories'."
+  (let ((saving (and spend-only (cdr (assoc "out" fin-cashflow-transfer-categories))))
         (total 0))
-    (dolist (row (fin-report--budget-share year) total)
+    (dolist (row (fin-budget--share year) total)
       (when (and (equal (nth 1 row) "var") (not (member (nth 0 row) saving)))
-        (let ((kids (fin-report--budget-children (nth 0 row) year)))
+        (let ((kids (fin-budget--children (nth 0 row) year)))
           (setq total
                 (+ total
                    (if kids
                        (apply #'+ (mapcar (lambda (k) (or (nth 1 k) 0)) kids))
                      (or (nth 2 row) 0)))))))))
 
-(defun fin-report--planned-month (year)
+(defun fin-budget--planned-month (year)
   "Plan-derived monthly (IN OUT LIQUID) in cents for forecast months.
 IN is brute income, OUT fix, spending var and cnpj; saving rows stay in
 LIQUID."
-  (let* ((inc     (fin-report--monthly-income year))
+  (let* ((inc     (fin-budget--monthly-income year))
          (in      (round (nth 0 inc)))
-         (fix     (or (nth 1 (fin-report--runway)) 0))
-         (var     (round (fin-report--var-total year t)))
+         (fix     (or (nth 1 (fin-budget--runway)) 0))
+         (var     (round (fin-budget--var-total year t)))
          (out     (+ fix var (round (nth 1 inc)))))
     (list in out (- in out))))
 
-(defun fin-report--runway ()
+(defun fin-budget--runway ()
   "Return (RESERVE FIX-MONTHLY MONTHS), money in cents."
-  (let* ((reserve (fin-report--accounts-total :reserve))
+  (let* ((reserve (fin-accounts--total :reserve))
          (fix     (or (caar (fin-db-query
                              "SELECT SUM(amount)
                                 FROM budget
