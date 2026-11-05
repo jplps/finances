@@ -293,9 +293,15 @@
   (mapcar (lambda (s) (list nil (fin-dashboard--health-line nil (fin-dashboard--esc s))))
           fin-health-todo))
 
+(defun fin-dashboard--health-start ()
+  "(nil HTML) when the ledger has no entries: how to start."
+  (when (zerop (fin-db-count "entry"))
+    (list nil (fin-dashboard--health-line
+               nil "no entries yet: fill the entries sheet of <b>infra/seeds.ods</b> or put OFX statements in <b>infra/inbox/&lt;bank&gt;/</b>, then run <b>fin</b>"))))
+
 (defun fin-dashboard--health-block ()
   "To-do block listing only the lines not ok."
-  (let* ((parts (delq nil (append (list (fin-dashboard--health-inbox) (fin-dashboard--health-fix)
+  (let* ((parts (delq nil (append (list (fin-dashboard--health-start) (fin-dashboard--health-inbox) (fin-dashboard--health-fix)
                                         (fin-dashboard--health-flags) (fin-dashboard--health-gaps)
                                         (fin-dashboard--health-cash))
                                   (fin-dashboard--ir-todo)

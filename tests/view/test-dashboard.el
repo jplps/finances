@@ -16,12 +16,12 @@
     (let ((html (fin-test--render-html)))
       (should (string-match-p "<!doctype html>" html))
       (should (string-match-p "</html>" html))
-      (should (string-match-p "STATS\\|Stats\\|stats"      html))
       (should (string-match-p "Cockpit"                   html))
-      (should (string-match-p "ACCOUNTS\\|Accounts"        html))
-      (should (string-match-p "PATRIMONY\\|Patrimony"      html))
-      (should (string-match-p "Wealth"                    html))
-      (should (string-match-p "To do"                     html)))))
+      (should (string-match-p "To do"                     html))
+      (should (string-search "no entries yet"             html))
+      (should (string-search "<section id=\"wealth\""    html))
+      (should (string-search "<section id=\"stats\""     html))
+      (should (string-search "No entries yet"             html)))))
 
 (ert-deftest dashboard/parses-as-html-via-libxml ()
   (fin-test-with-db

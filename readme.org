@@ -5,6 +5,8 @@ Personal finance tool in Emacs Lisp.  ODS spreadsheet is the source of truth; SQ
 
 Zero external runtime deps beyond Emacs 29+ stdlib and macOS-bundled =unzip= / =zip= / =open=.
 
+Scope: amounts are BRL; banks are any that export OFX, their statement wording read from a profile in =banks/=; the imposto de renda and obligations module covers a Brazilian Empresário Individual on the Simples Nacional paying a pró-labore, and shows only when configured.
+
 * Setup
 
 First run:
@@ -12,7 +14,7 @@ First run:
 1. =cp examples/seeds.ods infra/seeds.ods= and fill the plan sheet with your income, fixed costs and shares.
 2. =cp examples/config.el infra/config.el= and set your name, bank descriptions and accounts (see /Personal settings/).
 3. Put each bank's OFX statements in =infra/inbox/<bank>/=.
-4. =M-x fin= (or =finances fin=): the DB is created on first use.
+4. =M-x fin= (or =finances fin=): the DB is created on first use.  Until the ledger has entries, the cockpit's to do says how to start and the other panels wait.
 
 Two install paths.  Pick either; they coexist.
 

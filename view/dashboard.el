@@ -51,6 +51,11 @@
           (format "<span class=\"clock\">%s</span></nav>"
                   (downcase (format-time-string "%H:%M %d-%b-%y")))))
 
+(defun fin-dashboard--empty-panel (name id)
+  "Panel NAME with section ID saying it waits for entries."
+  (fin-dashboard--panel name id "Shown once the ledger has entries"
+                        "<p class=\"dim\">No entries yet: see the cockpit's to do.</p>"))
+
 (defun fin-dashboard--render ()
   (let* ((fin-report--accounts-memo (list nil))
          (ods-ts  (file-attribute-modification-time
@@ -75,8 +80,8 @@
      "</header>"
      "<main>"
      (fin-dashboard--panel-cockpit)
-     (fin-dashboard--panel-wealth)
-     (fin-dashboard--panel-stats)
+     (if (zerop (or entries 0)) (fin-dashboard--empty-panel "Wealth" "wealth") (fin-dashboard--panel-wealth))
+     (if (zerop (or entries 0)) (fin-dashboard--empty-panel "Stats" "stats") (fin-dashboard--panel-stats))
      (fin-dashboard--panel-ir)
      "</main>"
      (fin-dashboard--status-bar)
