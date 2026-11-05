@@ -106,8 +106,14 @@
       s)))
 
 (defun fin-dashboard--ym (date)
-  "YYYY-MM of ISO DATE; shorter strings pass through, nil as empty."
-  (if (and (stringp date) (>= (length date) 7)) (substring date 0 7) (or date "")))
+  "mm/yyyy of ISO DATE or YYYY-MM; shorter strings pass through, nil as empty."
+  (if (and (stringp date) (>= (length date) 7))
+      (format "%s/%s" (substring date 5 7) (substring date 0 4))
+    (or date "")))
+
+(defun fin-dashboard--date (iso)
+  "ISO date as dd/mm/yyyy."
+  (format "%s/%s" (fin-dashboard--dm iso) (substring iso 0 4)))
 
 (defun fin-dashboard--dm (date)
   "ISO DATE as dd/mm, empty when shorter."

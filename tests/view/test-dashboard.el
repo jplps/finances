@@ -34,7 +34,7 @@
   (fin-test-with-db
     (fin-test-seed-multi-year)
     (let ((html (fin-test--render-html)))
-      (dolist (panel '("Records" "Pareto" "Net worth" "Spend heatmap"))
+      (dolist (panel '("Records" "Pareto" "Net worth" "Heatmap"))
         (should (string-match-p panel html))))))
 
 (ert-deftest dashboard/renders-with-budget-tree ()

@@ -40,9 +40,9 @@
         (months     (plist-get recs :months-tracked)))
     (delq nil
           (list (list "net worth" (funcall signed (format "R$ %s" (fin-dashboard--money-str (round nw))) nw))
-                (when best (list "best month" (funcall signed (format "%s R$ %s" (nth 0 best) (fin-dashboard--k-signed (nth 1 best)))
+                (when best (list "best month" (funcall signed (format "%s R$ %s" (fin-dashboard--ym (nth 0 best)) (fin-dashboard--k-signed (nth 1 best)))
                                                        (nth 1 best))))
-                (when worst (list "worst month" (funcall signed (format "%s R$ %s" (nth 0 worst) (fin-dashboard--k-signed (nth 1 worst)))
+                (when worst (list "worst month" (funcall signed (format "%s R$ %s" (fin-dashboard--ym (nth 0 worst)) (fin-dashboard--k-signed (nth 1 worst)))
                                                          (nth 1 worst))))
                 (when biggest-in (list "biggest income" (format "%s R$ %s" (fin-dashboard--ym (nth 2 biggest-in))
                                                                 (fin-dashboard--k (nth 1 biggest-in)))))
@@ -82,9 +82,9 @@
                            "Top 20 items by spend, cumulative share"
                            (fin-dashboard--svg-pareto pareto)
                            "pareto")
-     (fin-dashboard--block "Spend heatmap"
+     (fin-dashboard--block "Heatmap"
                            "Spending per year and month"
-                           (fin-dashboard--svg-heatmap heat)
+                           (fin-dashboard--heatmap heat)
                            "heatmap")
      "</div>"
      "<div class=\"stats-col\">"
@@ -98,11 +98,11 @@
                            "inc")
      "</div>"
      "<div class=\"stats-col\">"
-     (fin-dashboard--block "Recurring by months"
+     (fin-dashboard--block "Recurring monthly"
                            "Recurring items by months active"
                            (fin-dashboard--table '("item" "months" "total" "avg") rec-rows)
                            "recurring")
-     (fin-dashboard--block "Recurring all time"
+     (fin-dashboard--block "Recurring by count"
                            "Items by entry count"
                            (fin-dashboard--table '("item" "count" "total" "avg") rec-cnt-rows)
                            "recurring-count")

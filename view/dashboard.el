@@ -32,7 +32,7 @@
           ((< d 3600)  (format "%dm" (/ d 60)))
           ((< d 86400) (format "%dh" (/ d 3600)))
           ((< d 604800) (format "%dd" (/ d 86400)))
-          (t (format-time-string "%Y-%m-%d %H:%M" ts)))))
+          (t (format-time-string "%d/%m/%Y %H:%M" ts)))))
 
 (defun fin-dashboard--shown-tabs ()
   "`fin-dashboard--tabs' with a panel to show."
@@ -49,7 +49,7 @@
                                    id id (1+ i) (1+ i) label)))
                        (number-sequence 0 (1- (length tabs))) ""))
           (format "<span class=\"clock\">%s</span></nav>"
-                  (downcase (format-time-string "%H:%M %d-%b-%y")))))
+                  (format-time-string "%H:%M %d/%m/%Y"))))
 
 (defun fin-dashboard--empty-panel (name id)
   "Panel NAME with section ID saying it waits for entries."
@@ -71,9 +71,9 @@
      "<title>finances</title>"
      "<style>" (fin-dashboard--style) "</style></head><body>"
      "<header><h1>finances</h1>"
-     (format "<span class=\"meta\">%s / %s (%dy %dm) &middot; %d entries &middot; <span title=\"ODS edited\">↻ %s</span> &middot; λ</span>"
-             (or (and first-d (substring first-d 0 7)) "?")
-             (or (and last-d  (substring last-d  0 7)) "?")
+     (format "<span class=\"meta\">%s – %s (%dy %dm) &middot; %d entries &middot; <span title=\"ODS edited\">↻ %s</span> &middot; λ</span>"
+             (or (and first-d (substring (fin-dashboard--date first-d) 3)) "?")
+             (or (and last-d  (substring (fin-dashboard--date last-d) 3)) "?")
              (or (nth 0 ymd) 0) (or (nth 1 ymd) 0)
              (or entries 0)
              (fin-dashboard--relative-time ods-ts))

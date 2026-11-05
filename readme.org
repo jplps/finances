@@ -111,11 +111,11 @@ Accounts are not a sheet: =fin-accounts-derived= rebuilds each balance from the 
 
 * Dashboard
 
-=M-x fin-dashboard= writes =view/dashboard.html=: one panel at a time, picked from a status bar (=1:cockpit 2:wealth 3:spending 4:ir=, each number its =accesskey=).  Dark by default, light with =data-theme="light"=; colors are roles in =fin-dashboard--palette=.
+=M-x fin-dashboard= writes =view/dashboard.html=: one panel at a time, picked from a status bar (=1:cockpit 2:wealth 3:spending 4:ir=, each number its =accesskey=).  Dates read =dd/mm/yyyy=, months =mm/yyyy= or by name; amounts =1,234.56=, =R$= only in tiles and sentences.  Dark by default, light with =data-theme="light"=; colors are roles in =fin-dashboard--palette=.
 
 - *Cockpit*: tiles (this month's balance with in / out / saved, savings, runway), All time flow, Fixed and Variable goals, To do (=tools/health.el=: ledger vs bank, IR risks, inbox, manual items).
 - *Wealth*: Income vs expense, Yearly (year → month → category → item), Rolling save %, Net worth, Accounts, Patrimony.
-- *Spending*: Records, Pareto, Spend heatmap, Category share, Income share, Recurring by months, Recurring all time.
+- *Spending*: Records, Pareto, Heatmap, Category share, Income share, Recurring monthly, Recurring by count.
 - *IR* (only when configured): tiles, Yearly (expands to months), Rules, Inputs.  Risks go to the cockpit to do; obligations come from =domain/duties.el=.
 - Empty ledger: the to do says how to start, the other panels wait.
 

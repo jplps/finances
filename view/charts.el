@@ -98,10 +98,10 @@ Months after the current one are dimmed."
                (h-out (* half-h (/ (float out) max-v)))
                (op    (if (string> ym now-ym) 0.25 1.0)))
           (concat
-           (format "<rect x=\"%.2f\" y=\"%.2f\" width=\"%.2f\" height=\"%.2f\" fill=\"%s\" opacity=\"%.2f\"><title>%s · in %.2f</title></rect>"
-                   x0 (- mid h-in) bar-w h-in green op ym (/ in 100.0))
-           (format "<rect x=\"%.2f\" y=\"%.2f\" width=\"%.2f\" height=\"%.2f\" fill=\"%s\" opacity=\"%.2f\"><title>%s · out %.2f</title></rect>"
-                   x0 mid bar-w h-out red op ym (/ out 100.0)))))
+           (format "<rect x=\"%.2f\" y=\"%.2f\" width=\"%.2f\" height=\"%.2f\" fill=\"%s\" opacity=\"%.2f\"><title>%s · in %s</title></rect>"
+                   x0 (- mid h-in) bar-w h-in green op (fin-dashboard--ym ym) (fin-dashboard--money-str in))
+           (format "<rect x=\"%.2f\" y=\"%.2f\" width=\"%.2f\" height=\"%.2f\" fill=\"%s\" opacity=\"%.2f\"><title>%s · out %s</title></rect>"
+                   x0 mid bar-w h-out red op (fin-dashboard--ym ym) (fin-dashboard--money-str out)))))
       months "")
      "</svg>")))
 
@@ -201,38 +201,31 @@ Months after the current one are dimmed."
                (h    (* (- vh (* 2 pad-y)) (/ v max-v)))
                (x0   (+ pad-x gap (* i2 col-w)))
                (y    (- vh pad-y h)))
-          (format "<rect x=\"%.2f\" y=\"%.2f\" width=\"%.2f\" height=\"%.2f\" fill=\"%s\"><title>%s · R$ %.2f · cum %.1f%%</title></rect>"
-                  x0 y bar-w h bar (fin-dashboard--esc item) (/ v 100.0) cp)))
+          (format "<rect x=\"%.2f\" y=\"%.2f\" width=\"%.2f\" height=\"%.2f\" fill=\"%s\"><title>%s · %s · cum %.1f%%</title></rect>"
+                  x0 y bar-w h bar (fin-dashboard--esc item) (fin-dashboard--money-str v) cp)))
       rows "")
      (format "<polyline points=\"%s\" stroke=\"%s\" stroke-width=\"2\" fill=\"none\"/>" line-pts line)
      "</svg>")))
 
-(defun fin-dashboard--svg-heatmap (cells)
-  "Year by month grid of CELLS (YEAR MONTH CENTS), opacity by spend rank."
-  (let* ((years (sort (delete-dups (mapcar (lambda (c) (nth 0 c)) cells)) #'<))
-         (ny (max 1 (length years)))
-         (pad 12) (cell-h 14) (cell-gap 2)
-         (vw 600)
-         (vh (+ (* 2 pad) (* cell-h ny)))
-         (cell-w (/ (- vw (* 2 pad)) 12.0))
+(defun fin-dashboard--heatmap (cells)
+  "Table of CELLS (YEAR MONTH CENTS), newest year first, shaded by spend rank."
+  (let* ((years (sort (delete-dups (mapcar #'car cells)) #'>))
          (ranked (vconcat (sort (mapcar (lambda (c) (or (nth 2 c) 0)) cells) #'<)))
          (top (max 1 (1- (length ranked))))
-         (yidx (let ((h (make-hash-table)) (i 0))
-                 (dolist (y years) (puthash y i h) (cl-incf i)) h))
-         (hue (fin-dashboard--c 'neg)))
-    (concat
-     (format "<svg viewBox=\"0 0 %d %d\" xmlns=\"http://www.w3.org/2000/svg\" class=\"chart heatmap\" preserveAspectRatio=\"none\">" vw vh)
-     (mapconcat
-      (lambda (c)
-        (let* ((y (nth 0 c)) (m (nth 1 c)) (v (or (nth 2 c) 0))
-               (row (gethash y yidx))
-               (x   (+ pad (* (- m 1) cell-w)))
-               (yy  (+ pad (* row cell-h)))
-               (op  (+ 0.1 (* 0.9 (/ (float (cl-position v ranked)) top)))))
-          (format "<rect x=\"%.2f\" y=\"%.2f\" width=\"%.2f\" height=\"%.2f\" fill=\"%s\" opacity=\"%.2f\"><title>%d-%02d · R$ %.2f</title></rect>"
-                  x yy (- cell-w cell-gap) (- cell-h cell-gap) hue op y m (/ v 100.0))))
-      cells "")
-     "</svg>")))
+         (cell (lambda (y m)
+                 (let ((c (cl-find-if (lambda (c) (and (= (car c) y) (= (nth 1 c) m))) cells)))
+                   (if (null c) "<td></td>"
+                     (let ((v (or (nth 2 c) 0)))
+                       (format "<td title=\"%02d/%d · %s\"><i style=\"opacity:%.2f\"></i></td>"
+                               m y (fin-dashboard--money-str v)
+                               (+ 0.1 (* 0.9 (/ (float (cl-position v ranked)) top))))))))))
+    (concat "<table class=\"heat\">"
+            (mapconcat (lambda (y)
+                         (concat "<tr>"
+                                 (mapconcat (lambda (m) (funcall cell y m)) (number-sequence 1 12) "")
+                                 "</tr>"))
+                       years "")
+            "</table>")))
 
 (provide 'charts)
 ;;; charts.el ends here

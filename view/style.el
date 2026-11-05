@@ -132,6 +132,9 @@ table.goals td.cat label:has(input:checked)::before { transform: rotate(90deg); 
 .dim { color: var(--muted); font-weight: 400; }
 
 /* ── charts ────────────────────────────────────────── */
+table.heat { width: 100%; border-collapse: separate; border-spacing: 2px; table-layout: fixed; }
+table.heat td, table.heat td:first-child, table.heat td:last-child { width: auto; border: 0; padding: 0; }
+table.heat td i { display: block; height: 12px; background: var(--neg); }
 .chart       { display: block; width: 100%; height: auto; margin: 4px 0 8px; }
 .chart.flow  { height: 8rem; }
 .chart.pie   { max-width: 420px; margin-inline: auto; }

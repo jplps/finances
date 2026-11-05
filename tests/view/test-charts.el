@@ -57,19 +57,21 @@
     (should (string-match-p "<polyline" out))))
 
 (ert-deftest charts/heatmap-empty-no-crash ()
-  (let ((out (fin-dashboard--svg-heatmap nil)))
-    (should (string-match-p "<svg" out))))
+  (let ((out (fin-dashboard--heatmap nil)))
+    (should (string-match-p "<table" out))))
 
 (ert-deftest charts/heatmap-emits-rect-per-cell ()
   (let* ((cells '((2024 1 1000) (2024 2 2000) (2025 1 3000)))
-         (out   (fin-dashboard--svg-heatmap cells)))
-    (should (= 3 (fin-test--substring-count "<rect" out)))))
+         (out   (fin-dashboard--heatmap cells)))
+    (should (= 3 (fin-test--substring-count "<i style" out)))
+    (should (= 24 (fin-test--substring-count "<td" out)))
+    (should-not (string-search "<th" out))))
 
 (ert-deftest charts/heatmap-spreads-opacity-by-rank ()
-  (let ((out (fin-dashboard--svg-heatmap '((2024 1 100000) (2024 2 101000) (2024 3 102000)))))
-    (should (string-search "opacity=\"0.10\"" out))
-    (should (string-search "opacity=\"0.55\"" out))
-    (should (string-search "opacity=\"1.00\"" out))))
+  (let ((out (fin-dashboard--heatmap '((2024 1 100000) (2024 2 101000) (2024 3 102000)))))
+    (should (string-search "opacity:0.10" out))
+    (should (string-search "opacity:0.55" out))
+    (should (string-search "opacity:1.00" out))))
 
 (provide 'test-charts)
 ;;; test-charts.el ends here

@@ -28,7 +28,7 @@
   (let ((taxes (plist-get pos :taxes)))
     (concat
      "<div class=\"kpis\">"
-     (fin-dashboard--kpi (format "revenue %d" (plist-get pos :year))
+     (fin-dashboard--kpi "revenue"
                          (fin-dashboard--ir-money (plist-get pos :revenue))
                          (mapconcat (lambda (tx) (format "%s %s" (car tx) (fin-dashboard--money-str (cdr tx))))
                                     taxes "<br>"))
@@ -52,17 +52,13 @@
   "DIRPF cell of DUTY: filing date, late (filed date on hover), missing or –
 when not required; nil empty."
   (list :raw (pcase (plist-get duty :status)
-               ('on-time (fin-dashboard--ir-date (plist-get duty :filed)))
+               ('on-time (fin-dashboard--date (plist-get duty :filed)))
                ('late (format "<span class=\"neg\" title=\"filed %s\">late</span>"
-                              (fin-dashboard--ir-date (plist-get duty :filed))))
+                              (fin-dashboard--date (plist-get duty :filed))))
                ('missing "<span class=\"neg\">missing</span>")
                ('not-required "–")
                ('nil "")
                (_ "?"))))
-
-(defun fin-dashboard--ir-date (iso)
-  "ISO date as dd/mm/yyyy."
-  (format "%s/%s" (fin-dashboard--dm iso) (substring iso 0 4)))
 
 (defun fin-dashboard--ir-span (years)
   "YEARS (ascending) as 2021–2025 when consecutive, else 2021, 2023."
@@ -83,7 +79,7 @@ when not required; nil empty."
                        (mapconcat (lambda (d) (format "%s %s" (fin-dashboard--esc (nth 3 d))
                                                       (fin-dashboard--ir-money (nth 2 d))))
                                   fin-ir-open-debts " · "))
-               (mapconcat (lambda (d) (format "code %s due %s" (nth 1 d) (fin-dashboard--ir-date (nth 0 d)))) fin-ir-open-debts "; ")))))
+               (mapconcat (lambda (d) (format "code %s due %s" (nth 1 d) (fin-dashboard--date (nth 0 d)))) fin-ir-open-debts "; ")))))
 
 (defun fin-dashboard--ir-return-risks (closed)
   "(OK HTML) per CLOSED year whose return is missing, late or unknown."
@@ -94,14 +90,14 @@ when not required; nil empty."
                       ('missing
                        (list nil (fin-dashboard--ir-detail-span
                                   (format "file the %d return, overdue since %s · fine ≥ %s"
-                                          y (fin-dashboard--ir-date (plist-get d :deadline))
+                                          y (fin-dashboard--date (plist-get d :deadline))
                                           (fin-dashboard--ir-money fin-ir-late-fine-min))
                                   (format "taxable %s (limit %s), exempt %s (limit %s)"
                                           (fin-dashboard--ir-money (plist-get p :taxable))
                                           (fin-dashboard--ir-money (fin-ir-rule y :filing-taxable))
                                           (fin-dashboard--ir-money (plist-get d :exempt-total))
                                           (fin-dashboard--ir-money (fin-ir-rule y :filing-exempt))))))
-                      ('late (list t (format "%d return filed late on %s" y (fin-dashboard--ir-date (plist-get d :filed)))))
+                      ('late (list t (format "%d return filed late on %s" y (fin-dashboard--date (plist-get d :filed)))))
                       ('unknown (list nil (format "%d: add its payer-income or DCTFWeb file to the ir inbox" y))))))
                 closed)))
 
@@ -219,7 +215,7 @@ the PGDAS-D is within R$ 1 of the bank, else the PGDAS-D."
       (list nil (fin-dashboard--ir-detail-span
                  (format "%s with no Receita record"
                          (fin-dashboard--count (length rows) "payment"))
-                 (mapconcat (lambda (r) (format "%s %s" (fin-dashboard--ir-date (nth 1 r)) (fin-dashboard--ir-money (nth 3 r))))
+                 (mapconcat (lambda (r) (format "%s %s" (fin-dashboard--date (nth 1 r)) (fin-dashboard--ir-money (nth 3 r))))
                             rows "; "))))))
 
 (defun fin-dashboard--ir-wrong-account-line (ctx)
@@ -230,7 +226,7 @@ the PGDAS-D is within R$ 1 of the bank, else the PGDAS-D."
                  (format "taxes from the wrong account: %s in %s"
                          (fin-dashboard--ir-money (apply #'+ (mapcar (lambda (m) (nth 3 (car m))) wrong)))
                          (fin-dashboard--count (length wrong) "payment"))
-                 (mapconcat (lambda (m) (format "%s %s %s from the %s" (fin-dashboard--ir-date (nth 1 (car m)))
+                 (mapconcat (lambda (m) (format "%s %s %s from the %s" (fin-dashboard--date (nth 1 (car m)))
                                                 (car (fin-ir-code (cdr m))) (fin-dashboard--ir-money (nth 3 (car m)))
                                                 (if (equal (nth 2 (car m)) "pj") "pj" "cpf")))
                             wrong "; "))))))
@@ -323,7 +319,7 @@ whose DCTFWeb is off before due."
               (let ((cell (assoc a late)))
                 (if cell (setcdr cell (append (cdr cell) (list (plist-get m :month))))
                   (setq late (append late (list (list a (plist-get m :month)))))))
-            (push (list nil (format "fix before %s: %s %s" (fin-dashboard--ir-date due)
+            (push (list nil (format "fix before %s: %s %s" (fin-dashboard--date due)
                                     (fin-dashboard--duty-month-mm (plist-get m :month))
                                     (fin-dashboard--esc a)))
                   errors)))))
@@ -378,7 +374,7 @@ pró-labore and INSS paid, ⚠ where action is due."
    '("month" "revenue" "DAS" "accountant" "pró-labore" "INSS")
    (mapcar (lambda (m)
              (let ((alerts (fin-dashboard--duty-alerts m today)))
-               (list (fin-dashboard--duty-month-mm (plist-get m :month))
+               (list (fin-dashboard--month-name (string-to-number (substring (plist-get m :month) 5 7)))
                      (fin-dashboard--duty-cell (plist-get m :declared) alerts '("PGDAS-D"))
                      (fin-dashboard--duty-cell (plist-get m :das-paid) alerts '("DAS"))
                      (fin-dashboard--duty-cell (plist-get m :accounting) nil nil)

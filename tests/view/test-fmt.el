@@ -11,11 +11,11 @@
   (should (equal (fin-dashboard--esc nil) "")))
 
 (ert-deftest fmt/ym-strips-day ()
-  (should (equal (fin-dashboard--ym "2025-06-30") "2025-06")))
+  (should (equal (fin-dashboard--ym "2025-06-30") "06/2025")))
 
 (ert-deftest fmt/ym-short-input-passthrough ()
   (should (equal (fin-dashboard--ym "2025")    "2025"))
-  (should (equal (fin-dashboard--ym "2025-06") "2025-06")))
+  (should (equal (fin-dashboard--ym "2025-06") "06/2025")))
 
 (ert-deftest fmt/ym-nil-returns-empty-string ()
   (should (equal (fin-dashboard--ym nil) "")))

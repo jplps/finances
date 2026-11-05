@@ -3,6 +3,7 @@
 (require 'cl-lib)
 (require 'db)
 (require 'bankdb)
+(require 'fmt)
 
 (defcustom fin-accounts-derived nil
   "Account plists rebuilt from bank statements.
@@ -40,25 +41,26 @@ loss.  :yield (cents) adds earnings the statements never show."
         (since (or (plist-get spec :since) ""))
         (opening (or (plist-get spec :opening) 0)))
     (cond (kind (let ((b (fin-bankdb-latest-balance kind)))
-                  (and b (cons (cdr b) (car b)))))
+                  (and b (cons (cdr b) (fin-dashboard--date (car b))))))
           ((plist-get spec :closed)
            (let ((result (- (fin-report--bank-sum "in" (plist-get spec :out-of) since)
                             (fin-report--bank-sum "out" (plist-get spec :into) since))))
-             (cons 0 (format "closed, %s %.2f" (if (< result 0) "loss" "gain") (/ (abs result) 100.0)))))
+             (cons 0 (format "closed, %s %s" (if (< result 0) "loss" "gain") (fin-dashboard--money-str (abs result))))))
           ((plist-get spec :yield)
            (let ((b (fin-report--derived-balance (cl-list* :yield nil spec))))
              (cons (+ (car b) (plist-get spec :yield))
-                   (format "%s + yield %.2f" (cdr b) (/ (plist-get spec :yield) 100.0)))))
+                   (format "%s + yield %s" (cdr b) (fin-dashboard--money-str (plist-get spec :yield))))))
           (t (cl-assert (and (plist-get spec :into) (stringp since) (integerp opening)) nil
                         "fin-accounts: %S needs :balance or :into (and a valid :since, :opening)"
                         (plist-get spec :name))
              (cons (+ opening
                       (fin-report--bank-sum "out" (plist-get spec :into) since)
                       (- (fin-report--bank-sum "in" (plist-get spec :out-of) since)))
-                   (format "since %s"
-                           (or (and (zerop opening)
-                                    (fin-report--first-flow (plist-get spec :into) since))
-                               (if (string-empty-p since) "the first statement" since))))))))
+                   (let ((from (or (and (zerop opening)
+                                        (fin-report--first-flow (plist-get spec :into) since))
+                                   since)))
+                     (if (string-empty-p from) "since the first statement"
+                       (concat "since " (fin-dashboard--date from)))))))))
 
 (defun fin-report--bank-saved (period)
   "Cents moved into `fin-accounts-derived' accounts in PERIOD, net.

@@ -19,8 +19,8 @@
            '((:name "nubank" :reserve t :since "2025-12-31" :opening 400000
               :into ("\\`Aplicação RDB") :out-of ("\\`Resgate RDB"))
              (:name "checking" :balance "account"))))
-      (should (equal '((:name "nubank" :cents 470000 :note "since 2025-12-31" :cash nil :reserve t :closed nil)
-                       (:name "checking" :cents 12345 :note "2026-02-28" :cash t :reserve nil :closed nil))
+      (should (equal '((:name "nubank" :cents 470000 :note "since 31/12/2025" :cash nil :reserve t :closed nil)
+                       (:name "checking" :cents 12345 :note "28/02/2026" :cash t :reserve nil :closed nil))
                      (fin-report--accounts-derived)))
       (should (= 482345 (fin-report--accounts-total)))
       (should (= 470000 (fin-report--accounts-total :reserve)))
@@ -33,9 +33,9 @@
                   VALUES ('a','t','account','2023-04-13','out',5000,'Aplicação RDB')")
     (let ((fin-accounts-derived '((:name "nu" :since "2020-01-01" :opening 0
                                    :into ("\\`Aplicação RDB") :out-of ()))))
-      (should (equal "since 2023-04-13" (plist-get (car (fin-report--accounts-derived)) :note)))
+      (should (equal "since 13/04/2023" (plist-get (car (fin-report--accounts-derived)) :note)))
       (let ((fin-accounts-derived (list (append (car fin-accounts-derived) '(:yield 700)))))
-        (should (equal '(5700 "since 2023-04-13 + yield 7.00")
+        (should (equal '(5700 "since 13/04/2023 + yield 7.00")
                        (let ((a (car (fin-report--accounts-derived)))) (list (plist-get a :cents) (plist-get a :note)))))))))
 
 (ert-deftest accounts/closed-account-shows-result ()
@@ -85,7 +85,7 @@
     (fin-db-exec "INSERT INTO bank_txn (id, source, account, date, type, amount, description)
                   VALUES ('a','t','account','2020-03-01','out',5000,'Aplicação RDB')")
     (let ((fin-accounts-derived '((:name "nu" :into ("\\`Aplicação RDB") :out-of ()))))
-      (should (equal '(5000 "since 2020-03-01")
+      (should (equal '(5000 "since 01/03/2020")
                      (let ((a (car (fin-report--accounts-derived)))) (list (plist-get a :cents) (plist-get a :note)))))
       (let ((fin-report--accounts-memo (list nil)) (calls 0))
         (cl-letf* ((orig (symbol-function 'fin-report--accounts-compute))
