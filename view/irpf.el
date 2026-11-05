@@ -450,7 +450,7 @@ each year the totals of its months and its tax, expanding into the months."
          (first (apply #'min now (append (and fin-duty-since (list (string-to-number (substring fin-duty-since 0 4))))
                                          (mapcar (lambda (p) (plist-get p :year)) positions)))))
     (fin-dashboard--block
-     "Years"
+     "Yearly"
      "Company months totalled per year (revenue, DAS, accountant, pró-labore, INSS; due the 20th), the tax and the DIRPF; hover revenue and tax for their detail, ⚠ for what needs action"
      (fin-dashboard--alist
       '("year" "revenue" "DAS" "accountant" "pró-labore" "INSS" "tax" "DIRPF" "")
@@ -586,12 +586,12 @@ for the current year from 2026 on."
      "IR" "ir"
      "Imposto de renda per year: taxable and exempt income, filing duty and return, revenue, company taxes, money to the CPF, deductions and tax; risks are in the cockpit's to do"
      (when current (fin-dashboard--ir-tiles current))
+     (when (or positions fin-duty-since)
+       (fin-dashboard--years-block positions closed ctx))
      (when current
        (fin-dashboard--block "Rules" "Hover a status for its detail"
                              (fin-dashboard--ir-rules positions closed ctx)))
-     (fin-dashboard--ir-lines "Inputs" "Inputs the estimate still needs" (fin-dashboard--ir-input-lines))
-     (when (or positions fin-duty-since)
-       (fin-dashboard--years-block positions closed ctx)))))
+     (fin-dashboard--ir-lines "Inputs" "Inputs the estimate still needs" (fin-dashboard--ir-input-lines)))))
 
 (provide 'irpf)
 ;;; irpf.el ends here
