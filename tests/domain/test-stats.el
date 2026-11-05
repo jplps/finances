@@ -10,7 +10,6 @@
     (should (null (fin-report--income-shares)))
     (should (null (fin-report--top-recurring 5 6)))
     (should (null (fin-report--top-by-count 5 3)))
-    (should (null (fin-report--yearly-saves)))
     (should (null (fin-report--cumulative-networth)))
     (should (null (fin-report--rolling-save-rate)))
     (should (null (fin-report--rolling-flow)))
@@ -32,13 +31,6 @@
     (fin-test-insert-entry "2099-12-31" "out" "food"  100000 nil)
     (let ((p (fin-report--period)))
       (should (string< (nth 1 p) "2099-01-01")))))
-
-(ert-deftest stats/yearly-saves-skips-years-with-zero-income ()
-  (fin-test-with-db
-    (fin-test-insert-entry "2025-06-30" "out" "food" 50000 nil)
-    (let ((rows (fin-report--yearly-saves)))
-      (should (= 1 (length rows)))
-      (should (null (nth 1 (car rows)))))))
 
 (ert-deftest stats/top-by-count-ranks-by-entry-count ()
   (fin-test-with-db
@@ -96,7 +88,6 @@
     (fin-test-insert-entry "2025-01-31" "out" "investments" 300  nil)
     (should (equal '(("food" 400)) (fin-report--cat-shares)))
     (should (equal '(("salary" 1000)) (fin-report--income-shares)))
-    (should (equal '((2025 60.0)) (fin-report--yearly-saves)))
     (should (equal '(("2025-01" 600)) (fin-report--cumulative-networth)))
     (should (equal '((2025 1 400)) (fin-report--monthly-spend-grid)))))
 

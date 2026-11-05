@@ -61,40 +61,6 @@
     (push "</svg>" paths)
     (mapconcat #'identity (nreverse paths) "")))
 
-(defun fin-dashboard--svg-bars (rows)
-  "Bars of ROWS (LABEL PERCENT), negatives below the baseline."
-  (let* ((n      (length rows))
-         (vw     200) (vh 80)
-         (pad-x  4) (pad-y 8)
-         (mid    (/ vh 2))
-         (half-h (- mid pad-y))
-         (max-v  (max 1.0 (apply #'max 0.0
-                                 (mapcar (lambda (r) (abs (or (nth 1 r) 0))) rows))))
-         (col-w  (/ (- vw (* 2 pad-x)) (float n)))
-         (bar-w  (max 1.0 (* col-w 0.7)))
-         (gap    (/ (- col-w bar-w) 2.0))
-         (green  (fin-dashboard--c 'pos))
-         (red    (fin-dashboard--c 'neg))
-         (i      -1))
-    (concat
-     (format "<svg viewBox=\"0 0 %d %d\" xmlns=\"http://www.w3.org/2000/svg\" class=\"chart bars\" preserveAspectRatio=\"none\">" vw vh)
-     (format "<line x1=\"%d\" y1=\"%d\" x2=\"%d\" y2=\"%d\" stroke=\"%s\" stroke-width=\"0.5\"/>"
-             pad-x mid (- vw pad-x) mid (fin-dashboard--c 'grid))
-     (mapconcat
-      (lambda (r)
-        (cl-incf i)
-        (let* ((label (nth 0 r))
-               (val   (or (nth 1 r) 0))
-               (pos   (>= val 0))
-               (h     (* half-h (/ (abs val) max-v)))
-               (x0    (+ pad-x gap (* i col-w)))
-               (y     (if pos (- mid h) mid))
-               (color (if pos green red)))
-          (format "<rect x=\"%.2f\" y=\"%.2f\" width=\"%.2f\" height=\"%.2f\" fill=\"%s\"><title>%s · %.1f%%</title></rect>"
-                  x0 y bar-w h color label val)))
-      rows "")
-     "</svg>")))
-
 (defun fin-dashboard--svg-flow (months)
   "Bars of MONTHS (YM IN OUT) in cents, out below the baseline.
 Months after the current one are dimmed."
@@ -242,16 +208,15 @@ Months after the current one are dimmed."
      "</svg>")))
 
 (defun fin-dashboard--svg-heatmap (cells)
-  "Year by month grid of CELLS (YEAR MONTH CENTS), opacity log-scaled."
+  "Year by month grid of CELLS (YEAR MONTH CENTS), opacity by spend rank."
   (let* ((years (sort (delete-dups (mapcar (lambda (c) (nth 0 c)) cells)) #'<))
          (ny (max 1 (length years)))
          (pad 12) (cell-h 14) (cell-gap 2)
          (vw 600)
          (vh (+ (* 2 pad) (* cell-h ny)))
          (cell-w (/ (- vw (* 2 pad)) 12.0))
-         (max-v (max 1.0 (apply #'max 0.0
-                                (mapcar (lambda (c) (or (nth 2 c) 0)) cells))))
-         (log-max (log (+ 1.0 max-v)))
+         (ranked (vconcat (sort (mapcar (lambda (c) (or (nth 2 c) 0)) cells) #'<)))
+         (top (max 1 (1- (length ranked))))
          (yidx (let ((h (make-hash-table)) (i 0))
                  (dolist (y years) (puthash y i h) (cl-incf i)) h))
          (hue (fin-dashboard--c 'neg)))
@@ -263,7 +228,7 @@ Months after the current one are dimmed."
                (row (gethash y yidx))
                (x   (+ pad (* (- m 1) cell-w)))
                (yy  (+ pad (* row cell-h)))
-               (op  (max 0.08 (/ (log (+ 1.0 v)) log-max))))
+               (op  (+ 0.1 (* 0.9 (/ (float (cl-position v ranked)) top)))))
           (format "<rect x=\"%.2f\" y=\"%.2f\" width=\"%.2f\" height=\"%.2f\" fill=\"%s\" opacity=\"%.2f\"><title>%d-%02d · R$ %.2f</title></rect>"
                   x yy (- cell-w cell-gap) (- cell-h cell-gap) hue op y m (/ v 100.0))))
       cells "")

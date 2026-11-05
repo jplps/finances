@@ -81,7 +81,7 @@
      "<main>"
      (fin-dashboard--panel-cockpit)
      (if (zerop (or entries 0)) (fin-dashboard--empty-panel "Wealth" "wealth") (fin-dashboard--panel-wealth))
-     (if (zerop (or entries 0)) (fin-dashboard--empty-panel "Stats" "stats") (fin-dashboard--panel-stats))
+     (if (zerop (or entries 0)) (fin-dashboard--empty-panel "Spending" "spending") (fin-dashboard--panel-spending))
      (fin-dashboard--panel-ir)
      "</main>"
      (fin-dashboard--status-bar)

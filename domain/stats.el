@@ -58,17 +58,6 @@ SORT-BY `value' sorts by total, else by months."
              LIMIT %d"
            fin-report--to-date (or min-count 3) (or limit 10))))
 
-(defun fin-report--yearly-saves ()
-  "Rows (YEAR SAVE-%), SAVE-% being (in − out) / in."
-  (fin-report--flow-query
-   "SELECT CAST(strftime('%Y',date) AS INTEGER) AS y,
-           ROUND(100.0 *
-                 (SUM(CASE WHEN type='in'  THEN amount ELSE 0 END)
-                - SUM(CASE WHEN type='out' THEN amount ELSE 0 END))
-                 / NULLIF(SUM(CASE WHEN type='in' THEN amount ELSE 0 END),0), 1)
-      FROM flow WHERE date IS NOT NULL
-      GROUP BY y ORDER BY y ASC"))
-
 (defun fin-report--cumulative-networth ()
   "Rows (YYYY-MM CUMULATIVE-LIQUID) to date."
   (fin-report--flow-query

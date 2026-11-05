@@ -1,340 +1,140 @@
 #+TITLE: finances
 #+OPTIONS: toc:nil num:nil
 
-Personal finance tool in Emacs Lisp.  ODS spreadsheet is the source of truth; SQLite mirrors it; a dark static HTML dashboard renders reports.
-
-Zero external runtime deps beyond Emacs 29+ stdlib and macOS-bundled =unzip= / =zip= / =open=.
+Personal finance tool in Emacs Lisp.  An ODS spreadsheet is the source of truth, SQLite mirrors it, and a static HTML dashboard reports on it.  Needs Emacs 29+ (built with SQLite) and =unzip= / =zip=; no other dependencies.
 
 Scope: amounts are BRL; banks are any that export OFX, their statement wording read from a profile in =banks/=; the imposto de renda and obligations module covers a Brazilian Empresário Individual on the Simples Nacional paying a pró-labore, and shows only when configured.
 
 * Setup
 
-First run:
-
-1. =cp examples/seeds.ods infra/seeds.ods= and fill the plan sheet with your income, fixed costs and shares.
-2. =cp examples/config.el infra/config.el= and set your name, bank descriptions and accounts (see /Personal settings/).
+1. =cp examples/seeds.ods infra/seeds.ods=, fill the plan sheet.
+2. =cp examples/config.el infra/config.el=, set your name, bank and accounts (see /Settings/).
 3. Put each bank's OFX statements in =infra/inbox/<bank>/=.
-4. =M-x fin= (or =finances fin=): the DB is created on first use.  Until the ledger has entries, the cockpit's to do says how to start and the other panels wait.
+4. =M-x fin= or =finances fin=.  The DB is created on first use.
 
-Two install paths.  Pick either; they coexist.
+Emacs: add =(load "/path/to/finances/bootstrap.el")= to =init.el=.
 
-** Interactive (Emacs)
+CLI: =make install= links =~/.local/bin/finances= (=PREFIX= to change); =make uninstall= removes it.  =finances <command>= runs any command in batch; =finances --shell= opens a REPL with the code loaded.
 
-Drop one line in =init.el=:
+| Command                 | Action                                     |
+|-------------------------+--------------------------------------------|
+| =fin=                   | Reload, import, bank fix, sync, dashboard. |
+| =fin-dashboard=         | Regenerate and open the dashboard.         |
+| =fin-sync-refresh=      | ODS → DB.                                  |
+| =fin-db-rebuild=        | Drop and recreate the ledger tables.       |
+| =fin-open-ods=          | Open the ODS.                              |
+| =fin-reload=            | Reload sources and config.                 |
+| =fin-bank-import=       | Import new OFX statements.                 |
+| =fin-bank-fix=          | Fix the ODS from the bank (=C-u=: dry run). |
+| =fin-bank-reconcile=    | Read-only bank vs ledger review of a year. |
+| =fin-bank-copy-missing= | Copy a year's bank-only rows as TSV.       |
 
-#+begin_src elisp
-(load "/path/to/finances/bootstrap.el")
-#+end_src
+* Monthly flow
 
-=bootstrap.el= self-locates the repo via its own load path, wires =load-path=, and requires =core=.  Move the repo → update one line (or symlink the repo to a stable location once and never touch =init.el= again).
-
-** CLI (batch / cron / scripts)
-
-=bin/finances= is a self-locating shell wrapper.  Link it once:
-
-#+begin_src sh
-make install                # symlinks $(PREFIX)/bin/finances -> bin/finances
-                            # PREFIX defaults to ~/.local
-#+end_src
-
-Then:
-
-#+begin_src sh
-finances fin-dashboard      # regenerate HTML, open in browser
-finances fin-sync-refresh   # ODS → DB only
-finances fin-db-rebuild     # drop + recreate tables
-finances --shell            # ielm REPL with code loaded
-#+end_src
-
-Uninstall: =make uninstall=.
-
-Schema is auto-created on first =M-x fin-db-rebuild= (or =finances fin-db-rebuild=).
-
-* Daily workflow
-
-1. Open =~/Projects/finances/infra/seeds.ods= in LibreOffice.
-2. Add or edit rows (entries / plan / patrimony / accounts).
-3. Save.
-4. =M-x fin= — imports new statements from the inbox, fixes the ODS from them, refreshes the DB and opens the dashboard in your browser.
-
-* M-x commands
-
-| Command                 | Action                                         |
-|-------------------------+------------------------------------------------|
-| =fin=                   | Import, fix, refresh DB, open dashboard.       |
-| =fin-reload=            | Reload every project source file (no restart). |
-| =fin-sync-refresh=      | ODS → DB only.                                 |
-| =fin-dashboard=         | Regenerate HTML, open in browser.              |
-| =fin-open-ods=          | Open the source ODS in LibreOffice.            |
-| =fin-db-rebuild=        | Drop + recreate SQLite tables.                 |
-| =fin-bank-import=       | Import new OFX statements from the inbox.      |
-| =fin-bank-reconcile=    | Bank vs ledger review buffer for a year.       |
-| =fin-bank-copy-missing= | Copy a year's bank-only rows as TSV.           |
-| =fin-bank-fix=          | Fix the ODS from bank rows (=C-u=: dry run).   |
-
-=fin= reloads sources before refreshing so edits land without an Emacs restart; a prefix arg (=C-u M-x fin=) skips the reload.
-
-* Layout
-
-#+begin_example
-~/Projects/finances/
-├── readme.org  .gitignore  Makefile
-├── bootstrap.el         ; self-locating loader for init.el
-├── bin/finances         ; self-locating shell wrapper (batch CLI)
-├── core.el              ; entry point — (require 'core)
-├── adapters/
-│   ├── parser.el        ; ODS XML reader (outbound port)
-│   ├── db.el            ; SQLite schema + helpers
-│   ├── bankdb.el        ; bank staging tables (survive rebuild)
-│   ├── odswrite.el      ; edit entries and patrimony sheets in place, re-zip
-│   └── ofx.el           ; OFX statement parser
-├── tools/
-│   ├── sync.el          ; use case: ODS → DB
-│   ├── bank.el          ; use case: inbox → bank tables, reconcile review
-│   ├── bankfix.el       ; use case: bank rows → ODS fixes
-│   └── health.el        ; ledger health to-do (inbox, fix, flags, gaps)
-├── domain/              ; pure aggregations (queries only)
-│   ├── cashflow.el
-│   ├── budget.el
-│   ├── goals.el         ; plan targets vs actual entries
-│   ├── patrimony.el
-│   ├── accounts.el
-│   ├── reconcile.el     ; bank ↔ ledger matching (pure)
-│   ├── conventions.el   ; how bank rows become ledger fixes (pure)
-│   ├── pj.el            ; company account: client payments, tax items (pure)
-│   ├── ir.el            ; imposto de renda: rules per year, position, filing duty
-│   └── stats.el         ; cat/income shares, top-recurring, top-by-count,
-│                        ; yearly-saves, cumulative-networth, rolling-save-rate,
-│                        ; rolling-flow, pareto-spending, monthly-spend-grid, records, period
-├── view/                ; presentation (HTML/SVG/CSS)
-│   ├── fmt.el           ; palette + esc/money/k/pct/ym/cell helpers
-│   ├── style.el         ; CSS (grouped selectors, grid-area map)
-│   ├── charts.el        ; SVG donut/bars/flow/line/multiline/pareto/heatmap
-│   ├── html.el          ; panel/block/pair/table/alist/kv builders
-│   ├── panels.el        ; cockpit, wealth, stats panels + drilldowns
-│   ├── irpf.el          ; ir panel: risks, returns, watch, year switch
-│   ├── dashboard.el     ; render + M-x fin-dashboard
-│   └── dashboard.html   ; generated (gitignored)
-├── tests/               ; ERT suite mirroring source layout
-│   ├── helpers.el       ; temp-db fixture + seed inserters
-│   ├── all-tests.el     ; entrypoint
-│   ├── adapters/{test-db,test-parser,test-bankdb,test-ofx,test-odswrite}.el
-│   ├── domain/{test-budget,test-stats,test-patrimony,test-accounts,test-cashflow,test-reconcile,test-conventions,test-goals,test-pj,test-ir}.el
-│   ├── tools/{test-sync,test-bank,test-bankfix,test-health}.el
-│   └── view/{test-fmt,test-charts,test-dashboard}.el
-└── infra/
-    ├── finances.db      ; SQLite mirror + bank tables (gitignored)
-    ├── inbox/           ; source documents (gitignored), see * Inbox
-    │   ├── <bank>/      ; OFX statements imported by fin-bank-import, one folder per bank
-    │   ├── ir/          ; Receita Federal: dirpf/ defis/ pgdasd/ caixa-postal/ <accountant>/, payments
-    │   ├── nfse/        ; company invoices (NFS-e) + index csv
-    │   ├── inss/        ; CNIS contribution statement
-    │   └── docs/        ; company registration papers
-    ├── config.el        ; personal settings (gitignored, optional)
-    └── seeds.ods        ; source of truth
-#+end_example
+1. Export the OFX statements into =infra/inbox/<bank>/=.
+2. Close the ODS in LibreOffice (=fin-bank-fix= refuses while its lock file exists).
+3. =M-x fin=: import, bank fix, sync, dashboard.
+4. Read /Needs a look/ in the fix report when it shows.
+5. Add rows paid outside the imported banks by hand, with =via= set (e.g. =cash=).
 
 * Inbox
 
-=infra/inbox/= keeps every source document, gitignored, for backup.  Names: =<source>-<cpf|cnpj>-<period>[-<kind>][-<id>].<ext>=, lowercase ASCII, ISO periods (=2025=, =2025-01=, =2026-10-11=), ranges as =start_end=; yearly documents carry the ano-calendário (=defis-cnpj-2025.pdf= is the DEFIS about 2025, filed in 2026).  Bank folders keep the names =fin-bank-import= gives.
+=infra/inbox/= keeps every source document (gitignored).  Names: =<source>-<cpf|cnpj>-<period>[-<kind>][-<id>].<ext>=, lowercase ASCII, ISO periods, ranges as =start_end=; yearly documents carry the ano-calendário.  Bank folders keep the names =fin-bank-import= gives.
 
-| Folder | What | Where from | When |
-|--------+------+------------+------|
-| =<bank>/= | account, card, PJ OFX | bank app or internet banking | monthly |
-| =ir/pgdasd/= | PGDAS-D declaration, receipt, DAS statement per month | e-CAC → PGDAS-D → Consultar Declarações | monthly |
-| =ir/= | payments (=pagamentos-<cpf/cnpj>-*=), DCTFWeb list, guides | Meu Pagamentos, DCTFWeb | monthly |
-| =ir/defis/= | DEFIS | e-CAC → DEFIS → Imprimir | yearly (March) |
-| =ir/dirpf/= | return, receipt, original file | Meu Imposto de Renda | yearly (May) |
-| =ir/caixa-postal/= | e-CAC messages, Painel de Conformidade notices and debt statements | Caixa Postal, Painel de Conformidade | when notified |
-| =ir/accountant/= | accountant's invoices and accounting reports | accountant e-mail | monthly |
-| =nfse/= | invoices issued, =nfse-cnpj-<competência>-<municipal/nacional>-<n>[-cancelada].pdf= | the city's NFS-e portal or the Emissor Nacional (CNPJ login or certificate) | monthly |
-| =inss/= | CNIS | Meu INSS → Extrato de Contribuições | yearly |
-| =docs/= | company registration papers | — | on change |
+| Folder             | What                                  | When        |
+|--------------------+---------------------------------------+-------------|
+| =<bank>/=          | account, card, PJ OFX                 | monthly     |
+| =ir/pgdasd/=       | PGDAS-D declarations, DAS statements  | monthly     |
+| =ir/=              | Receita payments, DCTFWeb, guides     | monthly     |
+| =ir/defis/=        | DEFIS                                 | yearly      |
+| =ir/dirpf/=        | return, receipt, original file        | yearly      |
+| =ir/caixa-postal/= | e-CAC messages, compliance notices    | when notified |
+| =ir/<accountant>/= | accountant invoices and reports       | monthly     |
+| =nfse/=            | invoices issued, index CSV            | monthly     |
+| =inss/=            | CNIS                                  | yearly      |
+| =docs/=            | company registration papers           | on change   |
 
-Keep digital certificates (=.pfx=) out of the inbox: they carry a private key.
+Keep digital certificates (=.pfx=) out of the inbox; the cockpit to do flags key files left there.
 
-* ODS layout
+* ODS sheets
 
-Three synced sheets; =examples/seeds.ods= is an empty template.  All category/name values *lowercase kebab-case*; item descriptions keep case + accents.  All monetary values are *integer cents*.
+Category and name values are lowercase kebab-case; money is integer cents.  =examples/seeds.ods= is the empty template.
 
-** =entries=
-=date | type | category | item | amount | installment | installments | via=
+- =entries=: =date | type | category | item | amount | installment | installments | via=
+  - =type= is =in= or =out=; every row is a leaf.
+  - =installment= / =installments=: /k/ of /n/, one row per installment, else both empty.
+  - Company tax is an =out= row under =cnpj=.
+  - Savings moves (=fin-report-transfer-categories=) are neither income nor spending.
+- =plan=: =category | parent | type | amount | share=
+  - =type= is =income=, =fix= or =var=.  =income= rows =brute= and =cnpj= set the liquid base; without them it is the actual monthly average.
+  - =fix= rows are driven by =amount=, =var= rows by =share= of liquid; children may use either.
+  - =investments= children: a patrimony amortization row, then share-driven rows splitting what remains (may be negative).
+- =patrimony=: =category | item | amount | lifespan_months=; monthly amortization = amount / lifespan.
 
-- =type= ∈ {=in=, =out=}
-- CNPJ tax is a normal =type=out= row under =category=cnpj= (positive cents).  It is netted out of gross income in the liquid base (see /Liquid/), not treated as ordinary spend there.
-- Every entry is a leaf; aggregations sum all rows of the relevant =type=.  An un-itemized lump just leaves =item= NULL and surfaces under its category in the cashflow drilldown.
-- Savings moves (=fin-report-transfer-categories=, default out and in =investments= / =retirement= / =reserve=) are neither income nor spending in flow and save metrics: they are what was saved.
-- =amount= = cents (integer).
-- =installment= / =installments=: whole numbers /k/ of /n/ for a purchase paid in installments, one row per installment; both empty otherwise.  Sync rejects anything but 1 ≤ k ≤ n.
-- =via=: how a row was paid outside the imported banks (e.g. =cash=); the bank checks skip it.
+Liquid = average monthly income less =cnpj= tax; future months forecast from the plan.
+Accounts are not a sheet: =fin-accounts-derived= rebuilds each balance from the statements (=:into= / =:out-of= regexps from =:opening= on =:since=, or =:balance= of a statement), with =:yield=, =:closed= and =:reserve= (counts toward runway).  Net worth is their total.
 
-** =plan=
-=category | parent | type | amount | share=
+* Bank
 
-- =type= ∈ {=income=, =fix=, =var=}
-- =income= rows: =brute= (gross monthly income) and =cnpj= (company tax) set the liquid base; without them it is the year's actual monthly average.
-- Fix rows are driven by =amount=; share derived = amount / liquid.
-- Var rows are driven by =share=; amount derived = share × liquid.
-- Children of a parent (e.g., var children of =investments=) can use either driver.
-- =investments= var children = auto-derived patrimony amortization per category + =extra= (share 1: what patrimony leaves of the parent's share; negative when patrimony exceeds it).
+- *Import*: =fin-bank-import= reads any bank folder under =infra/inbox/=, renames files to =<bank>-<kind>-<start>_<end>.ofx=, replaces re-exports and dedups rows into the DB.  Bank tables survive =fin-db-rebuild=.
+- *Profiles*: =banks/<bank>.el= holds a bank's statement wording (installments, refunds, fees, savings moves, bill payments); load it from =infra/config.el=, as =examples/config.el= does with =banks/nubank.el=.  Without a profile those folds are off.
+- *Fix*: =fin-bank-fix= compares bank rows since =fin-bank-fix-from= (default: first day of last month) with the ledger and writes the fixes into the ODS.  Running it again changes nothing.
+  - folds refunds, fees and pass-through payments into their purchases;
+  - ignores card bill payments, own transfers and savings moves;
+  - matches rows exact, near, shifted or combined;
+  - adds bank-only outflows under the payee's usual category, inflows from people under =extras=;
+  - edits near amounts when the ledger item names the payee;
+  - reports what it cannot settle (salary gaps, refunds with no purchase) under /Needs a look/.
+  Rules: =domain/conventions.el=, =domain/reconcile.el=, =tools/bankfix.el=.
 
-** =patrimony=
-=category | item | amount | lifespan_months=
+* Settings
 
-- Monthly amortization derived = =amount / lifespan_months=.
+=infra/config.el= (gitignored, loaded by =core.el=).  Full lists: =domain/ir.el=, =domain/duties.el=, bank profile settings in =banks/nubank.el=.
 
-** Accounts
-
-Not a sheet: balances come from the bank statements.  =fin-accounts-derived= gives each account the personal-account rows moving money into and out of it (=:into=, =:out-of=), counted from zero over every statement or from =:opening= on =:since=, or a statement balance (=:balance "account"=); a rebuilt account's note shows its first move.  One dashboard render rebuilds them once (=fin-report--accounts-memo=).  =:yield= adds the earnings the bank app or yearly informe shows; =:closed t= marks an emptied account, left out of the table; =:reserve t= counts it toward runway (reserve / fix-monthly).  Net worth is their total; the savings tile, the total less the statement balances.
-
-* Liquid
-
-=monthly_liquid= = AVG over the current year's complete months of (Σ =type=in=, withdrawals excluded, − Σ =category=cnpj=).  Future months forecast in = plan brute, out = fix + spending var + cnpj; saving rows stay in liquid.
-CNPJ tax (a =type=out= row under =category=cnpj=) is subtracted from gross income in this base rather than counted as expense.
-
-* Bank reconciliation
-
-The ODS stays canonical; bank statements fix it.  =M-x fin-bank-fix= compares every bank row since =fin-bank-fix-from= (default: the first day of last month, so settled history is never touched; a ledger row it added goes again when a later export drops its bank row) with the ledger, writes the fixes into the ODS and shows what it did.  Running it again changes nothing.
-
-** Sources
-
-- *Statements*: any bank's OFX export, account and card, one folder per bank under =infra/inbox/=; the folder name is the bank's name in file names and row ids.
-- *Card bills*: one closed bill per file; the open bill is just updated by each new export.
-- *Bank profiles*: =banks/<bank>.el= holds a bank's statement wording (installments, refunds, fees, savings moves, bill payments); load it from =infra/config.el=.  Without a profile those folds are off.
-- *History older than the bank app allows*: an LGPD request to the bank's data protection officer.
-
-** Monthly flow
-
-1. Export the OFX statements (account, card, pj, pj-card) whenever you like and copy them into =infra/inbox/<bank>/=; the month in progress is just updated by each new export.
-2. Close the ODS in LibreOffice: its next save would undo the fix (=fin-bank-fix= refuses while the lock file exists).
-3. =M-x fin= — runs the steps below and opens the dashboard; the fix report shows only when it changed something.
-   - =fin-bank-import= renames files to =<bank>-<kind>-<start>_<end>.ofx= from the statement period, removes a re-export of a statement already there (a later export replaces it and drops rows it no longer lists; card bills span [start, end), account statements [start, end]), imports new rows into =bank_txn=.  Rows dedup by =FITID= plus date, amount and memo (a bank may reuse a =FITID= across installments and refunds).
-   - =fin-bank-fix= writes the fixes to the ODS (keep your own copy of it); alone, =C-u M-x fin-bank-fix= is a dry run.
-   - =fin-sync-refresh= mirrors the ODS into the DB.
-4. Read /Needs a look/ in the report when it shows (salary gaps, refunds with no purchase), fix those by hand if needed.
-5. Spending paid outside the imported banks (cash someone gave, another bank): add the row by hand with =via= set (e.g. =cash=).
-
-=M-x fin-bank-reconcile= (one year's review buffer) and =M-x fin-bank-copy-missing= (bank-only rows as TSV) remain for reading without writing.
-
-** What a fix does
-
-Before matching, bank rows the ledger never books on their own are folded or dropped:
-- a refund (=fin-conv-refund-re=) cancels its purchase, or a whole installment series when it equals the series; a partial refund reduces it; a refunded purchase already in the ledger is deleted from it; a dispute credit (=fin-conv-dispute-credit-regexp=) and its reversal (=fin-conv-reversal-regexp=) cancel out;
-- a fee such as IOF adds to, an installment discount subtracts from, its purchase (=fin-conv-fee-rules=);
-- a payment funded by card credit moved into the account (=fin-conv-pass-through=) counts once, on the card;
-- card bill payments, card credit moved to the account and back, cent-level debt adjustments (=fin-bank-ignore-regexps=), and transfers between own accounts (=fin-bank-own-regexps=) are ignored;
-- savings moves (=fin-conv-savings-regexps=) are skipped: the ledger books savings per goal (=investments= / =retirement= / =reserve=, balances in the =accounts= sheet).
-
-Matching, in order:
-- *Exact*: same =type= and =amount=, dates within =fin-reconcile-window= (3 days); closest pairs first, so a nearby same-amount row never takes another's exact-date match.
-- *Near*: within the window, amount gap ≤ =fin-reconcile-near-ratio= (5%) with a word shared by bank payee and ledger =item= (case and accents ignored), or gap ≤ =fin-reconcile-near-close-ratio= (1%).
-- *Shifted*: the ledger date is off: same amount (≤ 1%) within =fin-reconcile-shift-window= (14 days) and the ledger row names the payee; the same installment (bank =fin-reconcile-installment-regexp=, ledger =installment= / =installments=, amount ≤ 1%) within =fin-reconcile-exact-window= (31 days), since the ledger names installments after the item and dates the first at purchase; or an exact amount of at least R$100 with cents within 31 days.
-- *Combined*: one ledger row booking two bank rows of the same payee.
-
-Then the fix:
-- *adds* each bank-only outflow under the category the ledger history books that payee under, else =fin-conv-default-category= (=free=), installments with /k/ and /n/ from =fin-reconcile-installment-regexp= — but only while the month's ledger spending stays within the bank's (categories in =fin-bank-fix-unspent-categories= left out); a month already at the bank's total gets its bank-only rows reported instead, since the ledger books them in its own shape;
-- *adds* money received from people under =fin-conv-inflow-category= (=extras=);
-- *edits* a near or shifted ledger amount to the bank's when its =item= names the payee;
-- *reports* a salary deposit (=fin-conv-salary-regexps=) that differs from the income less =cnpj= of =fin-reconcile-net-rules=: the tax booked is a fact the bank cannot tell.  Net rules (=fin-reconcile-net-rules=) fold only item-less =cnpj= rows; a =cnpj= row with an item was paid on its own.
-
-Future-dated rows are skipped on both sides: ledger plan placeholders, and installments an open card bill lists before they are charged.
-
-** Personal settings
-
-=infra/config.el= (gitignored, loaded by =core.el= when present) holds what identifies you: =fin-bank-own-regexps= (own name, own company), =fin-conv-salary-regexps= (the company's deposits into the personal account; match every description variant the bank used), =fin-conv-aliases= — payee words mapped to ledger item words (=("landlord" . "rent")=), =fin-conv-payee-categories= — bank words booked to a category, =fin-reconcile-net-rules= — (INCOME . TAX) categories the bank pays as one net deposit, and =fin-report-transfer-categories= — savings moves.  Deduction categories: =fin-ir-health-categories=, =fin-ir-retirement-categories=.  =examples/config.el= is a starting point.  The bank profile it loads sets the bank's wording, all nil by default: =fin-bank-ignore-regexps= (moves with no ledger counterpart), =fin-bank-bill-paid-regexp= / =fin-bank-bill-received-regexp= (card bill paid on the account, received on the card), =fin-reconcile-installment-regexp= (groups 1 and 2: /k/ and /n/), =fin-conv-refund-re=, =fin-conv-savings-regexps=, =fin-conv-reversal-regexp=, =fin-conv-dispute-credit-regexp=, =fin-conv-fee-rules= ((REGEXP SAME-DAY); group 1 names the merchant), =fin-conv-pass-through= ((FUNDING . PAYMENT)), =fin-conv-transfer-regexp= (received transfers, named after the payer), =fin-conv-prefix-regexps= (boilerplate before the payee) and =fin-conv-stopwords= (words too common to relate rows).  Company account: =fin-bank-pj-accounts=, =fin-pj-income-payers= (client → income category), =fin-pj-tax-items= (payee → =cnpj= item).
-
-Imposto de renda inputs, each read from a document in =infra/inbox/=:
-| Variable                     | Value                                   | Source                             |
-|------------------------------+-----------------------------------------+------------------------------------|
-| =fin-ir-pro-labore=          | override: year total, or =(:monthly CENTS)= | default: =ir/fontes-pagadoras/*.csv=, =ir/dctfweb-*.csv= |
-| =fin-ir-other-taxable=       | override: taxable income outside the bank | default: the return's =.DEC=, else payers with no INSS in =ir/fontes-pagadoras/= |
-| =fin-ir-filed=               | override: year → delivery date          | default: =dirpf-cpf-<ano>-recibo-<date>.pdf= names |
-| =fin-ir-payments-dir=        | Receita payments and PGDAS-D summary CSVs | =ir/pagamentos-*.csv=, =ir/pgdasd-cnpj-*-resumo.csv= |
-| =fin-ir-nfse-dir=            | NFS-e index CSV                         | =nfse/nfse-cnpj-*-index.csv=       |
-| =fin-ir-declared-exempt=     | override: year → exempt profit declared | default: the return's =.DEC= |
-| =fin-ir-exclusive=           | override: year → exclusive-taxation income | default: the return's =.DEC= |
-| =fin-ir-assets-declared=     | override: year → bens e direitos on 31/12 | default: the returns' =.DEC= |
-| =fin-ir-payment-labels=      | date, cents, code of Receita payments no list shows (a code outside the table counts as a company tax) | the bank row |
-| =fin-ir-health-deductible=   | regexps of deductible health items      | Lei 9.250 art. 8 II a              |
-| =fin-ir-defis-exempt=        | override: year → exempt profit the DEFIS reports | default: =ir/defis/defis-cnpj-*-resumo.csv= (ano, declaracao, isento), else 0 when a DEFIS PDF is filed |
-| =fin-ir-book-profit=         | override: year → net profit of the books (DRE) | default: =ir/dre-cnpj-*-resumo.csv= (ano, arquivo, lucro) |
-| =fin-duty-since=             | first month (YYYY-MM) whose obligations the IR panel tracks | — |
-| =fin-duty-mei-until=         | last month (YYYY-MM) as MEI: only the DAS-MEI is due, no PGDAS-D, pró-labore, books or DEFIS | the CNPJ's history |
-| =fin-duty-known=             | (YEAR LABEL) gaps reviewed and accepted: books, DEFIS, DIRPF filings or exempt-profit mismatches (DEFIS, DIRPF, informe) no longer flagged | your review |
-| =fin-duty-pro-labore=        | (YYYY-MM . CENTS) pró-labore declared in eSocial from that month on; its DCTFWeb must charge 11% | eSocial demonstrativo |
-| =fin-ir-open-debts=          | due, code, cents, text; delete when paid | Painel de Conformidade, caixa postal |
-| =fin-ir-full-books=          | =verified= / =yes= (claimed) / =no= / nil | the balance sheet                |
-| =fin-ir-retirement-plan=     | =pgbl= / =vgbl= / =none= / nil          | the plan's statement               |
-| =fin-ir-individual-income=   | =taxable= / =exempt= / nil              | what =extras= income is            |
-
-** Encoding
-
-Some banks declare =CHARSET:1252= but write UTF-8.  The parser ignores the header: valid UTF-8 decodes as UTF-8, anything else as windows-1252.
+| Setting                                                   | What                                      |
+|-----------------------------------------------------------+-------------------------------------------|
+| =fin-bank-own-regexps=                                    | own name and company                      |
+| =fin-conv-salary-regexps=                                 | company deposits to the personal account  |
+| =fin-conv-aliases=, =fin-conv-payee-categories=           | payee words → item words, categories      |
+| =fin-accounts-derived=                                    | accounts rebuilt from statements          |
+| =fin-bank-fix-from=                                       | first date the bank fix touches           |
+| =fin-bank-pj-accounts=, =fin-pj-income-payers=, =fin-pj-tax-items= | company account, clients, tax items |
+| =fin-reconcile-net-rules=                                 | (INCOME . TAX) paid as one net deposit    |
+| =fin-bank-fix-flag-min=, =fin-bank-fix-flag-ignore-regexps= | large rows to flag, rows to mute        |
+| =fin-report-transfer-categories=                          | savings categories                        |
+| =fin-budget-fix-target=, =fin-budget-var-target=          | fixed and variable target %               |
+| =fin-health-expected-docs=, =fin-health-todo=             | inbox documents expected, manual to-dos   |
+| =fin-ir-health-categories=, =fin-ir-retirement-categories= | deduction categories                     |
+| =fin-ir-pro-labore=, =fin-ir-filed=, =fin-ir-open-debts=  | IR overrides, notified debts             |
+| =fin-ir-full-books=, =fin-ir-retirement-plan=             | IR facts                                  |
+| =fin-duty-since=, =fin-duty-mei-until=, =fin-duty-pro-labore=, =fin-duty-known= | obligations tracking |
 
 * Dashboard
 
-=M-x fin-dashboard= writes =view/dashboard.html= and opens it.  Static, no JS.  Plain terminal look (monospace, lowercase labels, =$= prompt, aqua accent; no panel headings, the status bar names the current one).  One panel at a time, at most 640px wide and centered, picked from a tmux-like status bar at the bottom (=1:cockpit 2:wealth 3:stats 4:ir=, current marked =*=); each is a =#id= anchor shown with CSS =:target= (objectives when none), so the URL keeps the view and each number is also its =accesskey=; dark by default, light with =data-theme="light"= on =<html>=: every color is a theme role in =fin-dashboard--palette= (light and dark value), emitted as CSS custom properties and referenced as =var(--role)= in markup and SVG.  Values follow a validated data-viz palette with the financial convention: green for in / positive / on target, red for out / negative / off target (direction and position also encode it: above vs below the baseline, signed gaps), a neutral graphite accent, a fixed categorical order for shares without green or red (past six slices a neutral "other").  Hover text comes from SVG =<title>=.
+=M-x fin-dashboard= writes =view/dashboard.html=: one panel at a time, picked from a status bar (=1:cockpit 2:wealth 3:spending 4:ir=, each number its =accesskey=).  Dark by default, light with =data-theme="light"=; colors are roles in =fin-dashboard--palette=.
 
-Four panels:
-- *Cockpit*: tiles (this month: the bank balance, personal account + PJ, from the latest statements' =LEDGERBAL=, recorded at each import, with in / out / saved — saved is what the personal account moved into the =fin-accounts-derived= savings (caixinhas, treasury, ETF, crypto) net of withdrawals, as the bank shows it; red when ledger in − out − saved is negative; savings, the accounts total; runway), the fixed and variable goal rows (=domain/goals.el=, below), and /to do/ (=tools/health.el=), a to-do list that reads ✓ in sync or ⚠ N to do: statements to export (an account whose latest statement ends before last month's end; open card bills count as current), =fin-bank-fix= to run (bank rows imported after its last run, or a dry run with changes pending; every run records itself in =bank_fix_run=), large recent bank rows it could only report (≥ =fin-bank-fix-flag-min= in the last =fin-bank-fix-flag-days=, stored in =bank_fix_flag=; mute rows the ledger books elsewhere with =fin-bank-fix-flag-ignore-regexps=), complete months whose ledger spending is off the bank's by more than =fin-health-gap-share= (10%), counted as =fin-bank-fix= counts (normalized), rows paid outside the bank (the entries' =via= column, e.g. =cash= someone gave) left out, and this month or the last when ledger in − out − saved is off the cash all bank accounts gained (card bill payments left out) by more than =fin-health-cash-slack= (R$ 100): a flow the ledger misses or books twice.  The same list, titled /To do/, also carries every open IR risk; documents =fin-health-expected-docs= expects in =infra/inbox/= and key files (=fin-health-key-file-regexp=) that must leave it; and open items kept by hand in =fin-health-todo=.  Only lines that need doing are listed (the title reads ✓ all clear otherwise); the IR panel's /risks/ and /watch/ likewise list open lines only and disappear when none are open.
-- *Wealth*: accounts (rebuilt from the bank, see =accounts=; basis in the hover; total), patrimony (register, total), then the yearly drilldown (the current year counts actual months; the plan forecast of the months left shows apart, dimmed, beside its liquid; /saved/, per year and month, is what the bank moved into the =fin-accounts-derived= savings net of withdrawals, flows on or before an account's =:since= left out): year → month → category → leaf (=item= · =date= · =amount=), years folded.
-- *Stats*: the records table (net worth, best/worst month (the current month excluded), biggest income/purchase, best/avg yearly save (income-weighted), recurring share, since, months), the all-time flow bar chart and, stacked, the line trends (net worth, rolling save %, income-vs-expense MA, Pareto, yearly save %, spend heatmap), the share donuts (category, income) and the recurring tables (by months, all time).
-- *IR* (=domain/ir.el=, =view/irpf.el=): imposto de renda for every year with a known pró-labore that has rules in =fin-ir-rules= (2020 on, each value with its IN RFB or table source).  The tab and its to do lines show only when such a year exists or =fin-duty-since= is set.  its risks (listed in the cockpit's /to do/, not on the tab): debts Receita notified (=fin-ir-open-debts=), returns due but missing or late (=fin-ir-filed=, fine at least R$ 165,74), exempt profit per DEFIS (=fin-ir-defis-exempt=), DIRPF (=fin-ir-declared-exempt=, the return's code 13 records), the payers' informes (=isento= in =ir/fontes-pagadoras/=, when non-zero) and bank side by side, profit over the presumed one (=fin-ir-presumption= × PGDAS-D revenue − DAS; the excess is taxable unless =fin-ir-full-books= is =verified=, with the extra tax shown), PGDAS-D months off the NFS-e (split: rectify the PGDAS-D when it is also off the bank's received revenue, =fin-ir-bank-revenue=; fix the NFS-e when the PGDAS-D matches the bank) and months whose DAS rate strays from the year's median, Receita payments matching no record (bank rows found by the =fin-pj-tax-items= regexps of =fin-ir-receita-items=, case-sensitive: "das" is also a word in shop names), taxes paid from the wrong account (bank tax rows are named by the Receita payment they match: 3333/0055 das, 1410/4444 inss, 0211/5320 the partner's IRPF); the tab shows /Yearly/: one row per year, newest first — revenue (hover: the bank's received and NFS-e issued when they differ), DAS, accountant, pró-labore (=MEI= for MEI years), INSS, tax (hover: taxable and exempt, the limit from books or presumed, DEFIS, deductions, profit paid and kept) and the DIRPF delivered (date, /late/, or – when not required), ⚠ when the year needs action; a year expands into its months (revenue, DAS, accountant, pró-labore, INSS, ⚠ on what is late or off); /Rules/: a ✓/⚠ checklist (DIRPF filed, notified debts paid, exempt profit within the limit, DEFIS and DIRPF agreeing, PGDAS-D matching the NFS-e, the Anexo III DAS rate, payments with a Receita record and from the company account, 11% INSS, carnê-leão, and this year's Lei 15.270/2025 limits), hover a status for its detail; /Inputs/: what the estimate still needs.  Pró-labore is annual cents or =(:monthly CENTS)= over the completed months, 11% INSS; profit is deposits to the CPF (=fin-conv-salary-regexps=) beyond the net pró-labore, less transfers back, plus the partner's taxes the company paid.  Source documents (DIRPF, DEFIS, PGDAS-D, payments, caixa postal) are kept in =infra/inbox/ir/=.
-- *Obligations* (=domain/duties.el=, IR panel and cockpit /to do/): per month from =fin-duty-since=, due the 20th of the next month — NFS-e, PGDAS-D, DAS paid (codes of its período de apuração; DAS-MEI alone up to =fin-duty-mei-until=), DCTFWeb (its last transmission must charge 11% of =fin-duty-pro-labore=) and INSS paid (DARFs; GPS from e-CAC's Extrato de Contribuições, =ir/gps-cnpj-*.csv=, else the company account's boletos for the month before; the partner's 1872 complements); per closed year — books (=ir/dre-cnpj-*-resumo.csv=) and DEFIS by 31/03, DIRPF when due; this year's company profit so far (revenue less company costs and the pró-labore) against what reached the partner; and stale inputs: situação fiscal older than =fin-duty-stale-days=, DCTFWeb or company payment exports saved before the last due date.
+- *Cockpit*: tiles (this month's balance with in / out / saved, savings, runway), All time flow, Fixed and Variable goals, To do (=tools/health.el=: ledger vs bank, IR risks, inbox, manual items).
+- *Wealth*: Income vs expense, Yearly (year → month → category → item), Rolling save %, Net worth, Accounts, Patrimony.
+- *Spending*: Records, Pareto, Spend heatmap, Category share, Income share, Recurring by months, Recurring all time.
+- *IR* (only when configured): tiles, Yearly (expands to months), Rules, Inputs.  Risks go to the cockpit to do; obligations come from =domain/duties.el=.
+- Empty ledger: the to do says how to start, the other panels wait.
 
-Goals (cockpit): One row per plan row and per child of =investments= (=domain/goals.el=): the current month so far beside the monthly plan; spending past the plan reads red (saving rows, =investments=, =retirement=, never do).  Children of a saving row are caixinhas, measured only by what goes into them: =out investments / GOAL= is money saved for GOAL, =in investments / GOAL= money taken back; spending (a car battery, a trip) is an expense, never a saving.  =patrimony= and its register classes (each against its monthly amortization) are savings goals, never red.  Actuals: spending rows, the same-named entry category; =investments= = every caixinha (contributions minus =reserve= withdrawals).  Rows other rows hang under (=investments=, =patrimony=) fold with a ▸ toggle, closed by default (a CSS-only checkbox).
+* Design
 
-Stats charts:
-- /Net worth/ — cumulative Σ(in − out) per month, savings moves excluded.
-- /Rolling save %/ — trailing 12-calendar-month save rate, up to the current month.
-- /Income vs expense (12mo MA)/ — smoothed in / out lines, reveals lifestyle creep.
-- /Pareto/ — top items by spend with cumulative % of total spending.
-- /Spend heatmap/ — year × month intensity (log-scaled).
-- /Yearly save %/ — discrete bars per year.
-- /Category share/, /Income share/ — donuts.
+- Static HTML, no JS, no server.
+- Money is BRL integer cents.
+- The ODS is canonical: =fin-bank-fix= edits =content.xml= as text, untouched rows stay byte-identical, and re-zips with =zip=.
+- =infra/finances.db= is regeneratable: ledger tables from the ODS, bank tables from the inbox.
+- Tests are ERT only.
 
-* Testing
-
-ERT-based, stdlib only.  Mirrors source layout under =tests/=.  Run:
+* Tests
 
 #+begin_src sh
 make test           # batch, exit code = pass/fail
 make test-verbose   # full trace on failures
 #+end_src
 
-Or directly:
-
-#+begin_src sh
-emacs -Q -batch \
-  -L . -L adapters -L domain -L tools -L view -L tests \
-  -l tests/all-tests.el \
-  -f ert-run-tests-batch-and-exit
-#+end_src
-
-Coverage scope:
-- Pure formatters (=view/fmt.el=): every fn × edge (nil, 0, neg, k-suffix).
-- Bank: OFX parsing (closed and bare SGML, cents without floats, encoding detection, statement period), inbox naming and re-export removal, idempotent import, matching buckets (exact, near, shifted, net, ignored), conventions (refunds, IOF, discounts, Pix via card, combined rows, savings nets, salary reports), ODS writer (row identity, date order, fail-loud on ambiguity, re-zip round trip), review buffer and TSV export.
-- ODS parser: cell-value precedence (=date-value= > =value= > text), =number-columns-repeated= / =number-rows-repeated= expansion + caps.
-- DB layer: schema rebuild idempotency, cents-as-integer storage, composite PK semantics.
-- Domain queries: each public fn against seeded fixtures, including =/0=, =NULL=, future-month, multi-year scenarios.
-- SVG charts: every renderer is empty-safe and emits expected structural tags.
-- Dashboard integration: full render parses as HTML via =libxml-parse-html-region= on empty + seeded DBs.
-- PJ and health: client payments and tax items against the ledger, covered months; inbox staleness, fix due, flags, gaps.
-- IR: annual tables per year, the Lei 15.270 reduction (zero and phase-out), simplified cap, position (pró-labore annual or monthly, INSS, profit net of it, presumed profit from declared revenue, full books and the taxable excess, health allow-list, PGBL cap), filing duty statuses with exclusive income and assets (on time, late, missing, not required, unknown), payment matching across accounts and years, monthly revenue and DAS-rate checks, fail-loud on unknown years and malformed pró-labore.
-
-Fixtures live in =tests/helpers.el= (=fin-test-with-db= macro, seed inserters, =fin-test-seed-minimal/multi-year/budget-tree= presets).  No external files needed; sync test stubs =fin-ods-parse= with an in-memory DOM.
-
-* Decisions
-
-- *ODS is canonical*, SQLite is a rebuildable mirror.  Edit in LibreOffice; refresh syncs.
-- *Cents storage*: all money fields are integers (BRL × 100); float drift eliminated for SUMs.
-- *Derived columns over stored*: share % for accounts/budget, monthly amortization for patrimony, fix-monthly for runway, investments amortization, future cashflow placeholders — all computed at query time.
-- *Zero external runtime deps*: Emacs 29 stdlib (=sqlite=, =libxml=, =dom=) + macOS =unzip= / =zip=.
-- *Static HTML dashboard*: no server, no JS, no port.  =M-x fin= opens the latest.
-- *BRL only*: no currency column; every amount is BRL cents.
-- =infra/finances.db= gitignored; ODS tables regeneratable from the ODS, bank tables from the bank folders in =infra/inbox/= (=fin-db-rebuild= leaves them alone).
-- *Bank fixes the ODS, the ODS stays canonical*: =fin-bank-fix= edits =content.xml= as text so untouched rows stay byte-identical, never touches the DB; =fin= then mirrors the fixed ODS.  It keeps no copy of its own.  It re-zips with =zip(1)=, the counterpart of the =unzip(1)= the reader uses.
-- *Tests are stdlib*: ERT only, no =buttercup= / =undercover= / external runners.  Keeps the zero-deps invariant honest.
+Suites mirror the source layout under =tests/=; fixtures in =tests/helpers.el=.
 
 * License
 

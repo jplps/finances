@@ -14,7 +14,7 @@
    ":root[data-theme=\"light\"]{color-scheme:light;" (fin-dashboard--css-tokens #'cadr) "}"))
 
 (defconst fin-dashboard--tabs
-  '(("cockpit" . "cockpit") ("wealth" . "wealth") ("stats" . "stats") ("ir" . "ir"))
+  '(("cockpit" . "cockpit") ("wealth" . "wealth") ("spending" . "spending") ("ir" . "ir"))
   "(SECTION-ID . BAR-LABEL) in status-bar order; the first is shown by default.")
 
 (defun fin-dashboard--tab-rules ()
@@ -134,7 +134,6 @@ table.goals td.cat label:has(input:checked)::before { transform: rotate(90deg); 
 /* ── charts ────────────────────────────────────────── */
 .chart       { display: block; width: 100%; height: auto; margin: 4px 0 8px; }
 .chart.flow  { height: 8rem; }
-.chart.bars  { height: 10rem; }
 .chart.pie   { max-width: 420px; margin-inline: auto; }
 .chart text  { fill: var(--text-2); font-family: inherit; }
 

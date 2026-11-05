@@ -20,7 +20,7 @@
       (should (string-match-p "To do"                     html))
       (should (string-search "no entries yet"             html))
       (should (string-search "<section id=\"wealth\""    html))
-      (should (string-search "<section id=\"stats\""     html))
+      (should (string-search "<section id=\"spending\""  html))
       (should (string-search "No entries yet"             html)))))
 
 (ert-deftest dashboard/parses-as-html-via-libxml ()

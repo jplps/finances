@@ -23,16 +23,6 @@
     (should (string-search (fin-dashboard--c 'other) out))
     (should (equal '(("b" . 5) ("other" . 3)) (fin-dashboard--fold-slices '(("a" . 1) ("b" . 5) ("c" . 2)) 1)))))
 
-(ert-deftest charts/bars-empty-no-crash ()
-  (let ((out (fin-dashboard--svg-bars nil)))
-    (should (string-match-p "<svg" out))))
-
-(ert-deftest charts/bars-positive-and-negative-poles ()
-  (let ((out (fin-dashboard--svg-bars '(("2024" 10) ("2025" -5)))))
-    (should (string-match-p "<rect" out))
-    (should (string-search (fin-dashboard--c 'pos) out))
-    (should (string-search (fin-dashboard--c 'neg) out))))
-
 (ert-deftest charts/flow-future-months-dimmed ()
   (let* ((future (format-time-string "9999-12"))
          (out    (fin-dashboard--svg-flow `(("2020-01" 100 80) (,future 0 0)))))
@@ -74,6 +64,12 @@
   (let* ((cells '((2024 1 1000) (2024 2 2000) (2025 1 3000)))
          (out   (fin-dashboard--svg-heatmap cells)))
     (should (= 3 (fin-test--substring-count "<rect" out)))))
+
+(ert-deftest charts/heatmap-spreads-opacity-by-rank ()
+  (let ((out (fin-dashboard--svg-heatmap '((2024 1 100000) (2024 2 101000) (2024 3 102000)))))
+    (should (string-search "opacity=\"0.10\"" out))
+    (should (string-search "opacity=\"0.55\"" out))
+    (should (string-search "opacity=\"1.00\"" out))))
 
 (provide 'test-charts)
 ;;; test-charts.el ends here

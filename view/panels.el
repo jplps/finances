@@ -56,22 +56,15 @@
                 (when first-e (list "since" (fin-dashboard--ym first-e)))
                 (when months (list "months" (format "%d" months)))))))
 
-(defun fin-dashboard--panel-stats ()
+(defun fin-dashboard--panel-spending ()
   (let* ((cats    (fin-report--cat-shares))
          (inc     (fin-report--income-shares))
          (rec     (fin-report--top-recurring 10 6))
          (rec-cnt (fin-report--top-by-count 10 3))
-         (saves   (fin-report--yearly-saves))
-         (netw    (fin-report--cumulative-networth))
-         (rsave   (fin-report--rolling-save-rate))
-         (rflow   (fin-report--rolling-flow))
          (pareto  (fin-report--pareto-spending 20))
          (heat    (fin-report--monthly-spend-grid))
          (cat-slices (mapcar (lambda (r) (cons (nth 0 r) (nth 1 r))) cats))
          (inc-slices (mapcar (lambda (r) (cons (nth 0 r) (nth 1 r))) inc))
-         (save-rows  (mapcar (lambda (r) (list (format "%d" (nth 0 r))
-                                               (or (nth 1 r) 0)))
-                             saves))
          (rec-rows   (mapcar (lambda (r) (list (nth 0 r) (nth 1 r)
                                                (fin-dashboard--k-cell (nth 2 r))
                                                (fin-dashboard--k-cell (nth 3 r)))) rec))
@@ -79,42 +72,16 @@
                                                   (fin-dashboard--k-cell (nth 2 r))
                                                   (fin-dashboard--k-cell (nth 3 r)))) rec-cnt)))
     (fin-dashboard--panel
-     "Stats" "stats" "Headline metrics across all tracked entries"
+     "Spending" "spending" "Records, where the money goes and what recurs"
      (fin-dashboard--block "Records" "Best and worst month exclude the current one"
                            (fin-dashboard--table '("" "") (fin-dashboard--records-rows (fin-report--records)
                                                                                        (fin-report--patrimony-total))))
-     (fin-dashboard--block "All time flow"
-                           "In and out per month; future months dimmed"
-                           (fin-dashboard--svg-flow (fin-report--monthly-flow))
-                           "flow")
      "<div class=\"stats-body\">"
      "<div class=\"stats-col\">"
-     (fin-dashboard--block "Net worth"
-                           "Cumulative in − out per month, savings moves excluded"
-                           (fin-dashboard--svg-line netw (fin-dashboard--c 'pos))
-                           "networth")
-     (fin-dashboard--block "Rolling save %"
-                           "Trailing 12-month save rate"
-                           (fin-dashboard--svg-line
-                            (mapcar (lambda (r) (list (nth 0 r) (or (nth 1 r) 0))) rsave)
-                            (fin-dashboard--c 'line-2))
-                           "rsave")
-     (fin-dashboard--block "Income vs expense"
-                           "12-month moving average of in and out"
-                           (fin-dashboard--svg-multiline
-                            (list (list "in"  (fin-dashboard--c 'pos)
-                                        (mapcar (lambda (r) (list (nth 0 r) (or (nth 1 r) 0))) rflow))
-                                  (list "out" (fin-dashboard--c 'neg)
-                                        (mapcar (lambda (r) (list (nth 0 r) (or (nth 2 r) 0))) rflow))))
-                           "rflow")
      (fin-dashboard--block "Pareto"
                            "Top 20 items by spend, cumulative share"
                            (fin-dashboard--svg-pareto pareto)
                            "pareto")
-     (fin-dashboard--block "Yearly save %"
-                           "(in − out) / in per year, savings moves excluded"
-                           (if save-rows (fin-dashboard--svg-bars save-rows) "")
-                           "yearly")
      (fin-dashboard--block "Spend heatmap"
                            "Spending per year and month"
                            (fin-dashboard--svg-heatmap heat)
@@ -326,11 +293,15 @@
          (rw (fin-report--runway)))
     (fin-dashboard--panel
      "Cockpit" "cockpit"
-     "This month, balance, savings, runway, plan targets and the to do list"
+     "This month, balance, savings, runway, all time flow, plan targets and the to do list"
      "<div class=\"kpis\">"
      (fin-dashboard--now-tiles year month)
      (fin-dashboard--kpi "runway" (format "%.1f mo" (nth 2 rw)) "reserve / fixed costs")
      "</div>"
+     (fin-dashboard--block "All time flow"
+                           "In and out per month; future months dimmed"
+                           (fin-dashboard--svg-flow (fin-report--monthly-flow))
+                           "flow")
      (fin-dashboard--block (format "Fixed <span class=\"dim\">%.1f%% / %d%%</span>" fix-pct fin-budget-fix-target)
                            "Fixed monthly outflows, driven by amount"
                            (fin-dashboard--goals-table (funcall kind-rows "fix")))
@@ -499,15 +470,36 @@ The current year's future months take `fin-report--planned-month'."
                                  (fin-dashboard--money-signed-cell (fin-report--bank-saved (number-to-string y)))
                                  sav)
                            (fin-dashboard--monthly-block y eff))))
-                 (reverse (fin-report--annual-sums)))))
+                 (reverse (fin-report--annual-sums))))
+         (netw  (fin-report--cumulative-networth))
+         (rsave (fin-report--rolling-save-rate))
+         (rflow (fin-report--rolling-flow)))
     (fin-dashboard--panel
      "Wealth" "wealth"
-     "Savings (accounts), patrimony, and the yearly cashflow"
-     (fin-dashboard--block-accounts)
-     (fin-dashboard--block-patrimony)
+     "Income vs expense, the yearly cashflow, save rate, net worth, savings (accounts) and patrimony"
+     (fin-dashboard--block "Income vs expense"
+                           "12-month moving average of in and out"
+                           (fin-dashboard--svg-multiline
+                            (list (list "in"  (fin-dashboard--c 'pos)
+                                        (mapcar (lambda (r) (list (nth 0 r) (or (nth 1 r) 0))) rflow))
+                                  (list "out" (fin-dashboard--c 'neg)
+                                        (mapcar (lambda (r) (list (nth 0 r) (or (nth 2 r) 0))) rflow))))
+                           "rflow")
      (fin-dashboard--block "Yearly" "Saved: what the bank moved into savings, net of withdrawals"
                            (fin-dashboard--alist '("year" "in" "out" "liquid" "saved" "%") rows)
-                           "register"))))
+                           "register")
+     (fin-dashboard--block "Rolling save %"
+                           "Trailing 12-month save rate"
+                           (fin-dashboard--svg-line
+                            (mapcar (lambda (r) (list (nth 0 r) (or (nth 1 r) 0))) rsave)
+                            (fin-dashboard--c 'line-2))
+                           "rsave")
+     (fin-dashboard--block "Net worth"
+                           "Cumulative in − out per month, savings moves excluded"
+                           (fin-dashboard--svg-line netw (fin-dashboard--c 'pos))
+                           "networth")
+     (fin-dashboard--block-accounts)
+     (fin-dashboard--block-patrimony))))
 
 (provide 'panels)
 ;;; panels.el ends here
