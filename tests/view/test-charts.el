@@ -4,8 +4,6 @@
 (require 'helpers)
 (require 'charts)
 
-;;; ── --svg-donut ────────────────────────────────────────────
-
 (ert-deftest charts/donut-empty-emits-svg-no-crash ()
   (let ((out (fin-dashboard--svg-donut nil)))
     (should (string-match-p "<svg" out))
@@ -25,8 +23,6 @@
     (should (string-search (fin-dashboard--c 'other) out))
     (should (equal '(("b" . 5) ("other" . 3)) (fin-dashboard--fold-slices '(("a" . 1) ("b" . 5) ("c" . 2)) 1)))))
 
-;;; ── --svg-bars ─────────────────────────────────────────────
-
 (ert-deftest charts/bars-empty-no-crash ()
   (let ((out (fin-dashboard--svg-bars nil)))
     (should (string-match-p "<svg" out))))
@@ -36,8 +32,6 @@
     (should (string-match-p "<rect" out))
     (should (string-search (fin-dashboard--c 'pos) out))
     (should (string-search (fin-dashboard--c 'neg) out))))
-
-;;; ── --svg-flow ─────────────────────────────────────────────
 
 (ert-deftest charts/flow-future-months-dimmed ()
   (let* ((future (format-time-string "9999-12"))
@@ -49,8 +43,6 @@
     (should (string-search "in 123.45" out))
     (should (string-search "out 67.89" out))))
 
-;;; ── --svg-line ─────────────────────────────────────────────
-
 (ert-deftest charts/line-emits-polyline ()
   (let ((out (fin-dashboard--svg-line '(("a" 10) ("b" 20) ("c" 15)))))
     (should (string-match-p "<polyline" out))
@@ -60,10 +52,7 @@
   (let ((out (fin-dashboard--svg-line '(("a" -10) ("b" 20)))))
     (should (string-match-p "<line " out))))
 
-;;; ── --svg-multiline ────────────────────────────────────────
-
 (defun fin-test--substring-count (needle hay)
-  "Count occurrences of NEEDLE substring in HAY."
   (- (length (split-string hay (regexp-quote needle))) 1))
 
 (ert-deftest charts/multiline-emits-one-polyline-per-series ()
@@ -72,14 +61,10 @@
          (out (fin-dashboard--svg-multiline (list s1 s2))))
     (should (= 2 (fin-test--substring-count "<polyline" out)))))
 
-;;; ── --svg-pareto ───────────────────────────────────────────
-
 (ert-deftest charts/pareto-emits-rects-and-cumulative-line ()
   (let ((out (fin-dashboard--svg-pareto '(("a" 5000 50.0) ("b" 3000 80.0) ("c" 2000 100.0)))))
     (should (string-match-p "<rect" out))
     (should (string-match-p "<polyline" out))))
-
-;;; ── --svg-heatmap ──────────────────────────────────────────
 
 (ert-deftest charts/heatmap-empty-no-crash ()
   (let ((out (fin-dashboard--svg-heatmap nil)))

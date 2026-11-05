@@ -24,9 +24,9 @@
            (food (funcall get "food"))
            (ret  (funcall get "retirement")))
       (should (= 300000 (plist-get food :target)))
-      (should (= 50000  (plist-get food :mtd)))     ; February ignored
+      (should (= 50000  (plist-get food :mtd)))
       (should (eq 'within (plist-get food :status)))
-      (should (= 100000 (plist-get ret :target)))   ; 10% of liquid 10000
+      (should (= 100000 (plist-get ret :target)))
       (should (eq 'reached (plist-get ret :status)))
       (should (eq 'save (plist-get ret :direction))))))
 
@@ -42,20 +42,19 @@
     (let* ((rows (fin-goals 2026 1))
            (get (lambda (c) (cl-find c rows :key (lambda (r) (plist-get r :category)) :test #'equal))))
       (should (equal "investments" (plist-get (funcall get "emergency") :parent)))
-      (should (= 50000 (plist-get (funcall get "emergency") :mtd)))   ; 800 in, 300 back
-      (should (= 0 (plist-get (funcall get "family") :mtd)))            ; spending is no saving
-      ;; Holds every caixinha: 800 contributed - 300 withdrawn.
+      (should (= 50000 (plist-get (funcall get "emergency") :mtd)))
+      (should (= 0 (plist-get (funcall get "family") :mtd)))
       (should (= 50000 (plist-get (funcall get "investments") :mtd))))))
 
 (ert-deftest goals/patrimony-splits-into-register-classes ()
   (fin-test-with-db
     (fin-test-insert-budget "brute" nil "income" 1000000 nil)
     (fin-test-insert-budget "investments" nil "var" nil 0.2)
-    (fin-test-insert-patrimony "car" "tires" 120000 12)        ; 10000/mo
-    (fin-test-insert-patrimony "accessory" "skateboard" 120000 24) ; 5000/mo
+    (fin-test-insert-patrimony "car" "tires" 120000 12)
+    (fin-test-insert-patrimony "accessory" "skateboard" 120000 24)
     (fin-test-insert-entry "2026-03-02" "out" "investments" 3000 "car")
     (fin-test-insert-entry "2026-03-03" "out" "investments" 5000 "accessory")
-    (fin-test-insert-entry "2026-03-04" "out" "patrimony" 4000 "skate")      ; a purchase, not saving
+    (fin-test-insert-entry "2026-03-04" "out" "patrimony" 4000 "skate")
     (let* ((rows (fin-goals 2026 3))
            (get (lambda (c) (cl-find c rows :key (lambda (r) (plist-get r :category)) :test #'equal))))
       (should (= 3000 (plist-get (funcall get "car") :mtd)))
@@ -64,7 +63,6 @@
       (should (eq 'reached (plist-get (funcall get "accessory") :status)))
       (should (= 2 (plist-get (funcall get "accessory") :depth)))
       (should (= 8000 (plist-get (funcall get "patrimony") :mtd)))
-      ;; Classes sit right after their parent row.
       (should (equal '("patrimony" "car" "accessory")
                      (seq-take (member "patrimony" (mapcar (lambda (r) (plist-get r :category)) rows)) 3))))))
 
@@ -74,13 +72,12 @@
     (fin-test-insert-budget "investments" nil "var" nil 0.2)
     (fin-test-insert-budget "family" "investments" "var" nil 0.5)
     (fin-test-insert-patrimony "car" "tires" 120000 12)
-    (fin-test-insert-entry "2026-03-05" "out" "investments" 10000 "car")      ; car caixinha
-    (fin-test-insert-entry "2026-03-10" "in"  "investments" 4000 "car")       ; taken back...
-    (fin-test-insert-entry "2026-03-10" "out" "car" 4000 "revisão")           ; ...for a repair
+    (fin-test-insert-entry "2026-03-05" "out" "investments" 10000 "car")
+    (fin-test-insert-entry "2026-03-10" "in"  "investments" 4000 "car")
+    (fin-test-insert-entry "2026-03-10" "out" "car" 4000 "revisão")
     (fin-test-insert-entry "2026-03-05" "out" "investments" 27900 "family")
     (let* ((rows (fin-goals 2026 3))
            (get (lambda (c) (cl-find c rows :key (lambda (r) (plist-get r :category)) :test #'equal))))
-      ;; 100 saved, 40 taken back; the repair is a car expense, not counted.
       (should (= 6000 (plist-get (funcall get "car") :mtd)))
       (should (eq 'pending (plist-get (funcall get "car") :status)))
       (should (= 27900 (plist-get (funcall get "family") :mtd)))

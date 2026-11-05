@@ -9,14 +9,13 @@
     (fin-test-insert-entry "2025-06-30" "in" "salary" 100000 nil)
     (let ((rows (fin-report--year-months 2025)))
       (should (= 12 (length rows)))
-      ;; June (m=6) has data; rest nil.
       (should (equal 6 (car (nth 5 rows))))
       (should (= 100000 (nth 1 (nth 5 rows))))
-      (should (null (nth 1 (nth 0 rows)))))))    ; Jan empty
+      (should (null (nth 1 (nth 0 rows)))))))
 
 (ert-deftest cashflow/month-items-returns-all-out-rows ()
   (fin-test-with-db
-    (fin-test-insert-entry "2025-06-10" "out" "food" 100 nil)       ; un-itemized lump → labelled by category
+    (fin-test-insert-entry "2025-06-10" "out" "food" 100 nil)
     (fin-test-insert-entry "2025-06-15" "out" "food" 200 "bread")
     (fin-test-insert-entry "2025-06-20" "out" "food" 300 "butter")
     (let ((rows (fin-report--month-items 2025 6)))
@@ -50,8 +49,6 @@
     (fin-test-insert-entry "2025-02-28" "in" "salary" 200 nil)
     (let ((yms (mapcar #'car (fin-report--monthly-flow))))
       (should (equal '("2025-01" "2025-02" "2025-03") yms)))))
-
-;;; ── transfers (savings moves) ───────────────────────────────
 
 (defun fin-test--seed-transfers ()
   "Jan 2025: income 1000, spending 400; 300 + 100 saved, 50 withdrawn."

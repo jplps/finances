@@ -63,14 +63,14 @@
 
 (defconst fin-db--tables
   '("entry" "budget" "patrimony" "refresh_log")
-  "Logical tables — order irrelevant for DROP IF EXISTS.")
+  "Tables `fin-db-rebuild' drops.")
 
 (defun fin-db-available-p ()
   "Non-nil if this Emacs build has SQLite support."
   (and (fboundp 'sqlite-available-p) (sqlite-available-p)))
 
 (defun fin-db-open ()
-  "Open (or reuse) the DB connection. Auto-creates parent dir."
+  "Return the DB connection, opening it (and its directory) if needed."
   (unless (fin-db-available-p)
     (user-error "Emacs lacks SQLite support — need Emacs 29+ built with sqlite3"))
   (unless fin-db--conn
@@ -87,20 +87,19 @@
     (setq fin-db--conn nil)))
 
 (defun fin-db-rebuild ()
-  "Drop every table and recreate from `fin-db--ddl'. Destructive."
+  "Drop every table and recreate from `fin-db--ddl'."
   (interactive)
   (let ((db (fin-db-open)))
     (with-sqlite-transaction db
       (dolist (tbl fin-db--tables)
         (sqlite-execute db (format "DROP TABLE IF EXISTS %s" tbl)))
-      ;; Stale view from an older schema; nothing creates it any more.
       (sqlite-execute db "DROP VIEW IF EXISTS leaf")
       (dolist (stmt fin-db--ddl)
         (sqlite-execute db stmt)))
     (message "fin-db: rebuilt at %s" fin-db-path)))
 
 (defun fin-db-query (sql &optional values)
-  "Run SELECT SQL with optional VALUES (vector or list). Return rows."
+  "Rows of SELECT SQL with optional VALUES (vector or list)."
   (sqlite-select (fin-db-open) sql values))
 
 (defun fin-db-exec (sql &optional values)
@@ -108,8 +107,7 @@
   (sqlite-execute (fin-db-open) sql values))
 
 (defun fin-db-bulk-insert (table cols rows)
-  "Insert ROWS into TABLE (COLS is a list of column names).
-ROWS is a list of value lists matching COLS order. Single transaction."
+  "Insert ROWS, value lists in COLS order, into TABLE in one transaction."
   (when rows
     (let* ((db   (fin-db-open))
            (phs  (mapconcat (lambda (_) "?") cols ","))

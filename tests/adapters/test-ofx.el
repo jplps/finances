@@ -104,7 +104,6 @@ ENCODING:UTF-8
         (progn
           (let ((coding-system-for-write 'utf-8))
             (write-region "ENCODING:UTF-8\n<MEMO>débito" nil utf8)
-            ;; Nubank card bills: header claims 1252, bytes are UTF-8.
             (write-region "ENCODING:USASCII\nCHARSET:1252\n<MEMO>débito" nil liar))
           (let ((coding-system-for-write 'windows-1252))
             (write-region "ENCODING:USASCII\nCHARSET:1252\n<MEMO>débito" nil latin))

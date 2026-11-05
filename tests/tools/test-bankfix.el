@@ -112,9 +112,9 @@
 (ert-deftest bankfix/installment-continues-its-series ()
   (fin-test-with-db
     (fin-test-insert-entry "2026-09-06" "out" "car" 5090 "bateria" 6 10)
-    (fin-test-insert-entry "2026-09-06" "out" "food" 5090 "other thing")       ; no installment
+    (fin-test-insert-entry "2026-09-06" "out" "food" 5090 "other thing")
     (fin-test-insert-entry "2026-09-07" "out" "health" 2990 "otica sol" 4 10)
-    (fin-test-insert-entry "2026-09-06" "out" "house" 1500 "sofa" 2 3)       ; another merchant's
+    (fin-test-insert-entry "2026-09-06" "out" "house" 1500 "sofa" 2 3)
     (fin-bankdb-insert '(("p6" "t" "card" "2026-09-06" "out" 5090 "Propig *Center Car Com - Parcela 6/10")
                          ("s2" "t" "card" "2026-09-06" "out" 1500 "Loja Movel - Parcela 2/3")))
     (let ((acts (fin-bank-fix--continue-series
@@ -122,12 +122,11 @@
                    (:add ("2026-10-06" "out" "free" "otica" 2990 5 10) "Otica Sol - Parcela 5/10")
                    (:add ("2026-10-06" "out" "free" "farmacia" 1500 3 3) "Farmacia Lua - Parcela 3/3")
                    (:add ("2026-10-06" "out" "free" "ifood" 5952 nil nil) "iFood")))))
-      ;; Booked under another name: the bank's 6/10 of the merchant beside it tells.
       (should (equal '(:add ("2026-10-06" "out" "car" "bateria" 5090 7 10)
                             "Propig *Center Car Com - Parcela 7/10" "p7")
                      (nth 0 acts)))
-      (should (equal "health" (nth 2 (cadr (nth 1 acts)))))      ; item names the payee
-      (should (equal "free" (nth 2 (cadr (nth 2 acts)))))        ; 2/3 is another merchant's
+      (should (equal "health" (nth 2 (cadr (nth 1 acts)))))
+      (should (equal "free" (nth 2 (cadr (nth 2 acts)))))
       (should (equal "ifood" (nth 3 (cadr (nth 3 acts))))))))
 
 (ert-deftest bankfix/changes-take-adds-carrying-a-bank-id ()

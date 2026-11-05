@@ -6,12 +6,11 @@
 
 (ert-deftest ir/table-tax-by-band ()
   (should (= 0 (fin-ir-table-tax 2025 2846720)))
-  (should (= 132097 (fin-ir-table-tax 2025 4000000)))      ; 15% − 4.679,03
-  (should (= 274503 (fin-ir-tax 2025 6000000 1200000))))   ; no 2025 reduction
+  (should (= 132097 (fin-ir-table-tax 2025 4000000)))
+  (should (= 274503 (fin-ir-tax 2025 6000000 1200000))))
 
 (ert-deftest ir/2026-reduction-zeroes-and-phases-out ()
   (should (= 0 (fin-ir-tax 2026 6000000 (fin-ir-simplified 2026 6000000))))
-  ;; 8.429,73 − 0,095575 × 70.000 = 1.739,48 off 27,5% × 56.000 − 10.904,66.
   (should (= 275586 (fin-ir-tax 2026 7000000 1400000)))
   (should (= (fin-ir-table-tax 2026 7000000) (fin-ir-tax 2026 9000000 2000000))))
 
@@ -27,7 +26,6 @@
   (fin-db-exec "INSERT INTO bank_txn (id, source, account, date, type, amount, description)
                 VALUES (?,'test',?,?,?,?,?)" (list id account date type amount desc)))
 
-;; Positions take their CSV inputs from CTX, so no test reads infra/inbox.
 (defun test-ir--ctx (&rest kv)
   "Position context of KV (:payments :simples :invoices), Receita rows matched now."
   (list :receita (fin-ir-receita-matches (plist-get kv :payments))
@@ -68,11 +66,11 @@
     (should (equal '(("das" . 60000)) (plist-get p :taxes)))
     (should (= 1700000 (plist-get p :drawn)))
     (should (= 900000 (plist-get p :peak-month)))
-    (should (= 632000 (plist-get p :profit)))     ; 17.000 − (12 × 1.000 − 1.320)
-    (should (= 580000 (plist-get p :presumed)))   ; 32% × 20.000 − 600
+    (should (= 632000 (plist-get p :profit)))
+    (should (= 580000 (plist-get p :presumed)))
     (should (= 52000 (plist-get p :excess)))
     (should (= 580000 (plist-get p :exempt)))
-    (should (= 1252000 (plist-get p :taxable)))   ; 12.000 + the excess
+    (should (= 1252000 (plist-get p :taxable)))
     (should (= 132000 (plist-get p :inss)))
     (should (= 20000 (plist-get p :health)))
     (should (= 100000 (plist-get p :pgbl)))
@@ -87,14 +85,12 @@
 
 (ert-deftest ir/book-profit-raises-the-exempt-limit-of-its-year ()
   (let ((fin-ir-book-profit '((2025 . 600000))))
-    ;; Books cover 6.000 of the 6.320 profit; the claim no longer applies.
     (test-ir--with-2025 'yes
       (should (= 600000 (plist-get p :book-profit)))
       (should (= 32000 (plist-get p :excess)))
       (should (= 600000 (plist-get p :exempt)))
       (should (= 1232000 (plist-get p :taxable)))))
   (let ((fin-ir-book-profit '((2025 . 100000))))
-    ;; Books below the presumed profit leave the presumed limit.
     (test-ir--with-2025 nil
       (should (= 52000 (plist-get p :excess)))
       (should (= 580000 (plist-get p :exempt))))))
@@ -107,7 +103,6 @@
     (should (equal '("DEFIS") (car (fin-dashboard--ir-exempt-gap p)))))
   (let ((p '(:year 2025 :exempt 600000 :defis-exempt 850000)))
     (should (equal '("DEFIS") (car (fin-dashboard--ir-exempt-gap p)))))
-  ;; The payer's informe is checked like the declarations.
   (let ((p '(:year 2021 :exempt 1529163 :defis-exempt 1529163 :declared-exempt 1529163
              :reported-exempt 3240000)))
     (should (equal '("informe") (car (fin-dashboard--ir-exempt-gap p))))
@@ -126,9 +121,7 @@
     (should (string-search "2022: R$ 6,000.00 over books R$ 5,000.00" (cadr line)))
     (should-not (string-search "2023" (cadr line))))
   (let ((fin-ir-full-books 'yes))
-    ;; Under R$ 1.000 over is no line; the open year alone is not a warning.
     (should-not (fin-dashboard--ir-profit-line '((:year 2023 :profit 100 :presumed 0 :excess 99999))))
-    ;; A filed return that taxed the excess (exempt declared at the limit) settles it.
     (should-not (fin-dashboard--ir-profit-line
                  '((:year 2021 :profit 3307826 :presumed 1529163 :excess 1778663
                     :exempt 1529163 :declared-exempt 1531065))))
@@ -146,12 +139,13 @@
     (should (string-search "simplified model<br>before IRRF withheld" html))))
 
 (ert-deftest ir/return-cell-shows-the-status ()
-  (should (equal '(:raw "<span class=\"neg\">late</span>")
+  (should (equal '(:raw "<span class=\"neg\" title=\"filed 07/10/2026\">late</span>")
                  (fin-dashboard--ir-return-cell '(:status late :filed "2026-10-07"))))
+  (should (equal '(:raw "05/05/2025") (fin-dashboard--ir-return-cell '(:status on-time :filed "2025-05-05"))))
   (should (equal '(:raw "<span class=\"neg\">missing</span>")
                  (fin-dashboard--ir-return-cell '(:status missing))))
   (should (equal '(:raw "–") (fin-dashboard--ir-return-cell '(:status not-required))))
-  (should (equal '(:raw "–") (fin-dashboard--ir-return-cell nil)))
+  (should (equal '(:raw "") (fin-dashboard--ir-return-cell nil)))
   (should (equal '(:raw "?") (fin-dashboard--ir-return-cell '(:status odd)))))
 
 (ert-deftest ir/bad-full-books-fails-loud ()
@@ -160,7 +154,6 @@
 
 (ert-deftest ir/excess-tax-is-the-difference ()
   (let ((fin-ir-retirement-plan nil))
-    ;; 50.000 − 20% = 40.000 → 1.320,97; 30.000 − 20% = 24.000 → 0.
     (should (= 132097 (fin-ir--excess-tax 2025 3000000 2000000 0 0 0)))
     (should (= 0 (fin-ir--excess-tax 2025 3000000 0 0 0 0)))))
 
@@ -180,7 +173,7 @@
            (fin-ir-full-books 'verified)
            (p (fin-ir-position 2025 (test-ir--ctx))))
       (should (= 2400000 (plist-get p :taxable)))
-      (should (= 266000 (plist-get p :profit))))))   ; 8.000 − (6.000 − 660)
+      (should (= 266000 (plist-get p :profit))))))
 
 (ert-deftest ir/profit-nets-returns-and-adds-partner-taxes ()
   (fin-test-with-db
@@ -198,7 +191,7 @@
       (should (= 100000 (plist-get p :returned)))
       (should (= 38239 (plist-get p :partner-taxes)))
       (should-not (plist-get p :taxes))
-      (should (= 738239 (plist-get p :drawn)))           ; 8.000 − 1.000 + 382,39
+      (should (= 738239 (plist-get p :drawn)))
       (should (= 204239 (plist-get p :profit))))))
 
 (ert-deftest ir/company-spending-for-the-partner-counts-as-drawn ()
@@ -215,7 +208,7 @@
       (should (= 0 (fin-ir-partner-paid 2024)))
       (let ((p (fin-ir-position 2025 (test-ir--ctx))))
         (should (= 1200000 (plist-get p :partner-paid)))
-        (should (= 2000000 (plist-get p :drawn)))))))   ; 8.000 + 12.000
+        (should (= 2000000 (plist-get p :drawn)))))))
 
 (ert-deftest ir/annual-pro-labore-and-declared-revenue ()
   (fin-test-with-db
@@ -231,11 +224,11 @@
       (should (= 1200000 (plist-get p :taxable)))
       (should (= 100000 (plist-get p :pro-labore)))
       (should (= 132000 (plist-get p :inss)))
-      (should (= 3932000 (plist-get p :profit)))            ; 50.000 − (12.000 − 1.320)
+      (should (= 3932000 (plist-get p :profit)))
       (should (= 10000000 (plist-get p :declared-revenue)))
       (should (equal "2022-02" (plist-get p :declared-through)))
-      (should (= 0 (plist-get p :invoiced-through)))         ; the March invoice comes after
-      (should (= 2600000 (plist-get p :presumed))))))       ; 32% × 100.000 − 6.000
+      (should (= 0 (plist-get p :invoiced-through)))
+      (should (= 2600000 (plist-get p :presumed))))))
 
 (ert-deftest ir/pro-labore-from-receita-files ()
   (let* ((dir (make-temp-file "fin-ir-" t))
@@ -252,7 +245,7 @@
                     "02/2026;x;Geral;eSocial;Original;Ativa;330.00;330.00\n"
                     "01/2026;x;Geral;eSocial;Original;Ativa;330.00;330.00\n"
                     "12/2024;x;Geral;eSocial;Original;Ativa;999.00;999.00\n"))
-          (should (equal '(1630000 135833 179300) (fin-ir--pro-labore 2024 12)))   ; payer file wins
+          (should (equal '(1630000 135833 179300) (fin-ir--pro-labore 2024 12)))
           (should (equal '(600000 300000 66000) (fin-ir--pro-labore 2026 2)))
           (should-not (fin-ir--pro-labore 2025 12))
           (should (equal '((2024 . 25000)) (fin-ir-other-payers)))
@@ -296,9 +289,9 @@
                (write-region "" nil (expand-file-name "defis/defis-cnpj-2021.pdf" dir))
                (write-region "" nil (expand-file-name "defis/defis-cnpj-2023-retificadora-002.pdf" dir))
                (should (equal 0 (fin-ir--defis-exempt ctx 2021)))
-               (should (equal 500 (fin-ir--defis-exempt ctx 2022)))      ; override wins
-               (should (equal 0 (fin-ir--defis-exempt ctx 2023)))        ; a retificadora is filed too
-               (should (equal 700 (fin-ir--defis-exempt ctx 2024)))      ; the summary
+               (should (equal 500 (fin-ir--defis-exempt ctx 2022)))
+               (should (equal 0 (fin-ir--defis-exempt ctx 2023)))
+               (should (equal 700 (fin-ir--defis-exempt ctx 2024)))
                (should-not (fin-ir--defis-exempt ctx 2025)))
       (delete-directory dir t))))
 
@@ -306,7 +299,7 @@
   (let* ((dir (make-temp-file "fin-ir-" t)) (fin-ir-payments-dir dir))
     (unwind-protect
         (progn
-          (should-not (fin-ir-defis-files))                              ; no defis/ folder
+          (should-not (fin-ir-defis-files))
           (make-directory (expand-file-name "defis" dir))
           (with-temp-file (expand-file-name "defis/defis-cnpj-2021_2025-resumo.csv" dir)
             (insert "ano,declaracao,isento\n2021,retificadora-002,15291.63\n2025,retificadora-002,85000.00\n"))
@@ -317,10 +310,10 @@
           (should (equal '((2024 . 8727764)) (fin-ir-book-files)))
           (with-temp-file (expand-file-name "dre-cnpj-2024b-resumo.csv" dir)
             (insert "ano,arquivo,lucro\n2024,y.pdf,1.00\n"))
-          (should-error (fin-ir-book-files))                             ; a year twice
+          (should-error (fin-ir-book-files))
           (with-temp-file (expand-file-name "dre-cnpj-2024b-resumo.csv" dir)
             (insert "ano,arquivo,lucro\nx,y.pdf,1.00\n"))
-          (should-error (fin-ir-book-files)))                            ; bad line
+          (should-error (fin-ir-book-files)))
       (delete-directory dir t))))
 
 (ert-deftest ir/book-summary-sets-the-limit-unless-overridden ()
@@ -352,7 +345,7 @@
           (with-temp-file (expand-file-name "fontes-pagadoras/fontes.csv" dir)
             (insert "ano,fonte,rendimento_tributavel,prev_oficial,irrf,isento,processado\n"
                     "2021,A,15600.00,1716.00\n"))
-          (should-error (fin-ir-reported-exempt)))                       ; no isento column
+          (should-error (fin-ir-reported-exempt)))
       (delete-directory dir t))))
 
 (defun test-ir--dec (exercise fields &optional len exempt)
@@ -380,26 +373,24 @@ per EXEMPT (CODE . CENTS)."
     (should (= 7343061 (plist-get p :assets)))
     (should (= 2864756 (plist-get p :assets-before)))
     (should (= 1800000 (plist-get p :other-taxable))))
-  ;; The filed 2023 return (ano 2022): same columns, shorter record.
   (let ((p (fin-ir-dec-totals (test-ir--dec 2023 '((274 . 148650) (300 . 5542153) (326 . 10932)) 718
                                             '(("0013" . 5540933))))))
     (should (= 2023 (plist-get p :exercise)))
-    (should (= 5540933 (plist-get p :exempt)))           ; code 13, not the exempt total
+    (should (= 5540933 (plist-get p :exempt)))
     (should (= 10932 (plist-get p :exclusive)))
     (should (= 148650 (plist-get p :assets-before)))
     (should (= 0 (plist-get p :assets))))
-  ;; The filed 2022 return (ano 2021): same layout as 2023.
   (let ((p (fin-ir-dec-totals (test-ir--dec 2022 '((287 . 148650) (300 . 1531065) (326 . 564)) 718))))
-    (should (= 0 (plist-get p :exempt)))                 ; no code 13 record
+    (should (= 0 (plist-get p :exempt)))
     (should (= 2022 (plist-get p :exercise)))
     (should (= 564 (plist-get p :exclusive)))
     (should (= 148650 (plist-get p :assets))))
-  (should-error (fin-ir-dec-totals (test-ir--dec 2023 nil)))          ; 2023 is 718 long
-  (should-error (fin-ir-dec-totals                                     ; exempt value not numeric
+  (should-error (fin-ir-dec-totals (test-ir--dec 2023 nil)))
+  (should-error (fin-ir-dec-totals
                  (replace-regexp-in-string "0000009540000" "00000095400x0"
                                            (test-ir--dec 2026 nil nil '(("0013" . 9540000))))))
-  (should-error (fin-ir-dec-totals (test-ir--dec 2027 nil)))          ; unknown layout
-  (should-error (fin-ir-dec-totals (test-ir--dec 2026 nil 700))))     ; layout changed
+  (should-error (fin-ir-dec-totals (test-ir--dec 2027 nil)))
+  (should-error (fin-ir-dec-totals (test-ir--dec 2026 nil 700))))
 
 (ert-deftest ir/declared-field-falls-back-to-next-return-for-assets ()
   (let ((ctx '(:dirpf ((2025 :assets 7343061 :assets-before 2864756 :exempt 9540000)))))
@@ -409,7 +400,7 @@ per EXEMPT (CODE . CENTS)."
     (should-not (fin-ir--declared-field ctx 2024 :exempt nil))))
 
 (ert-deftest ir/duty-statuses ()
-  (let ((fin-ir-payments-dir nil)              ; no inbox receipts
+  (let ((fin-ir-payments-dir nil)
         (fin-ir-filed '((2025 . "2026-10-07") (2024 . "2025-04-01"))))
     (should (eq 'missing (plist-get (fin-ir-duty '(:year 2022 :taxable 1439018 :exempt 6052500)) :status)))
     (should (eq 'not-required (plist-get (fin-ir-duty '(:year 2023 :taxable 1584000 :exempt 7355400)) :status)))
@@ -419,8 +410,7 @@ per EXEMPT (CODE . CENTS)."
     (should-error (fin-ir-duty '(:year 2026 :taxable 0 :exempt 0)))))
 
 (ert-deftest ir/duty-counts-exclusive-exempt-income-and-assets ()
-  ;; 2022 exempt limit 40.000: 30.000 profit + 6.000 yields + 5.000 from individuals.
-  (let* ((fin-ir-payments-dir nil)             ; no inbox receipts
+  (let* ((fin-ir-payments-dir nil)
          (d (fin-ir-duty '(:year 2022 :taxable 0 :exempt 3000000 :exclusive 600000 :individuals-exempt 500000))))
     (should (eq 'missing (plist-get d :status)))
     (should (= 4100000 (plist-get d :exempt-total)))
@@ -450,17 +440,18 @@ per EXEMPT (CODE . CENTS)."
 (ert-deftest ir/receita-rows-are-the-tax-items-paid-to-receita ()
   (fin-test-with-db
     (fin-bankdb-ensure)
+    (test-ir--bank "s1" "pj" "2025-02-12" "out" 50 "DAS - Simples Nacional")
     (test-ir--bank "g1" "pj" "2025-02-13" "out" 100 "GPS - INSS")
     (test-ir--bank "c1" "pj" "2025-02-14" "out" 200 "Pix - TEVES ASSESSORIA")
     (test-ir--bank "d1" "account" "2025-02-15" "out" 300 "Pix - das flores")
     (let ((fin-pj-tax-items '(("\\bDAS\\b" . "das") ("\\bGPS\\b" . "gps") ("TEVES ASSESSORIA" . "contabilidade"))))
-      (should (equal '("g1") (mapcar #'car (fin-ir--receita-rows)))))))
+      (should (equal '("s1") (mapcar #'car (fin-ir--receita-rows)))))))
 
 (ert-deftest ir/receita-codes-name-the-payer ()
   (should (equal '("das" pj) (fin-ir-code "3333")))
   (should (equal '("inss complement" cpf) (fin-ir-code "1872")))
   (should (equal '("irpf fine" cpf) (fin-ir-code "5320")))
-  (should (equal '("9999" pj) (fin-ir-code "9999"))))   ; unknown: the company's
+  (should (equal '("9999" pj) (fin-ir-code "9999"))))
 
 (ert-deftest ir/third-party-darf-is-no-tax-of-either ()
   (fin-test-with-db

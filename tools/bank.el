@@ -1,16 +1,5 @@
 ;;; bank.el --- Reconcile staged bank rows against the ODS ledger  -*- lexical-binding: t; -*-
 
-;; The review buffer shows differences and `fin-bank-copy-missing' puts
-;; paste-ready rows on the kill ring; `fin-bank-fix' (bankfix.el) writes
-;; the fixes to the ODS.
-;;
-;; Statements copied into `fin-bank-inbox' are imported with
-;; `fin-bank-import': files are renamed to `nubank-<kind>-<start>_<end>.ofx'
-;; (kind account, card, pj or pj-card, see `fin-bank-pj-accounts') first,
-;; a re-export of a statement already there is removed, and each file is
-;; imported once, keyed by content hash.  Card rows from the PDF bills of
-;; 2020–2023 stay in the bank DB as imported then; their reader is gone.
-
 (require 'cl-lib)
 (require 'db)
 (require 'bankdb)
@@ -33,20 +22,14 @@
     "\\`Estorno de pagamento"
     "\\`Ajuste a crédito" "\\`Encerramento de dívida"
     "\\`Depósito de Confiança" "\\`Reversão do Crédito de Confiança")
-  "Bank descriptions excluded from reconciliation.
-Moves with no ledger counterpart: the card bill payment, seen as paid on
-the account and received on the card, would double-count purchases
-already reconciled from the card statement; card credit moved to the
-account for a Pix, and back; cent-level debt adjustments; a dispute's
-provisional deposit and its reversal, which cancel out.  Investment
-moves are not listed: bankfix.el skips them as savings.  Rows stay
-stored; only reconciliation skips them."
+  "Bank descriptions of moves with no ledger counterpart, skipped by
+reconciliation: card bill payments, card credit moved for a Pix and back,
+cent debt adjustments, dispute deposits and their reversals."
   :type '(repeat regexp) :group 'fin)
 
 (defcustom fin-bank-own-regexps nil
-  "Bank descriptions of transfers between your own accounts: your name,
-your company.  Ignored like `fin-bank-ignore-regexps', except salary
-deposits matching `fin-conv-salary-regexps'."
+  "Bank descriptions of transfers between own accounts (name, company).
+Ignored like `fin-bank-ignore-regexps', except `fin-conv-salary-regexps'."
   :type '(repeat regexp) :group 'fin)
 
 (defcustom fin-bank-name "nubank"
@@ -56,8 +39,7 @@ deposits matching `fin-conv-salary-regexps'."
 (defvar fin-conv-salary-regexps)
 
 (defcustom fin-bank-pj-accounts nil
-  "ACCTIDs of company (PJ) accounts: the checking account imports as
-`pj', the company card as `pj-card'."
+  "ACCTIDs of company accounts: checking imports as `pj', card as `pj-card'."
   :type '(repeat string) :group 'fin)
 
 (defun fin-bank--kind (text)
@@ -76,11 +58,9 @@ deposits matching `fin-conv-salary-regexps'."
                (not (any (bound-and-true-p fin-conv-salary-regexps))))))))
 
 (defun fin-bank--txn-id (fitid date cents memo seen)
-  "Stable id for one OFX transaction.
-Nubank reuses a FITID across installments of one purchase and for a
-refund of it, so the id also hashes DATE, CENTS and MEMO.  The same
-transaction listed again in an overlapping statement keeps its id.
-SEEN counts ids within one file; repeats get an ordinal suffix."
+  "Stable id hashing FITID, DATE, CENTS and MEMO: Nubank reuses a FITID
+across installments and refunds.  SEEN counts ids within one file;
+repeats get an ordinal suffix."
   (let* ((base (format "nu:%s:%s" fitid
                        (substring (secure-hash 'sha1 (format "%s|%d|%s" date cents memo))
                                   0 12)))
@@ -105,7 +85,6 @@ SEEN counts ids within one file; repeats get an ordinal suffix."
                 rows))))
     (cons (nreverse rows) dropped)))
 
-;;;###autoload
 (defun fin-bank-import-file (path)
   "Import the OFX statement at PATH.  Return rows inserted, or nil if the
 file was already imported."
@@ -141,7 +120,7 @@ file was already imported."
 
 (defun fin-bank--supersede (text)
   "Drop bank rows of the statement period that OFX TEXT, a later export of
-it, no longer lists (an open bill re-dates installments as it closes)."
+it, no longer lists."
   (pcase-let* ((`(,_ ,start ,end) (fin-ofx-period text))
                (ids (mapcar #'car (car (fin-bank--ofx-rows text))))
                (n (fin-bankdb-drop-superseded (fin-bank--kind text) start end ids)))
@@ -150,11 +129,9 @@ it, no longer lists (an open bill re-dates installments as it closes)."
     n))
 
 (defun fin-bank--normalize-file (path)
-  "Rename PATH inside the inbox to its canonical name.
-Delete it when the canonical file holds the same statement.  When both
-differ, the later export replaces the earlier (an open card bill gains
-rows until it closes); without telling export times apart, signal.
-Return the resulting path or nil."
+  "Rename PATH inside the inbox to its canonical name; delete it when the
+canonical file holds the same statement.  Otherwise the later export wins;
+signal when export times do not tell.  Return the resulting path or nil."
   (let* ((text (fin-ofx-read-file path))
          (dst (expand-file-name (fin-bank--canonical-name text) fin-bank-inbox)))
     (cond ((string= (expand-file-name path) dst) dst)
@@ -177,16 +154,13 @@ Return the resulting path or nil."
                      (t (user-error "fin-bank: %s and %s cover the same period but differ"
                                     (file-name-nondirectory path) (file-name-nondirectory dst)))))))))
 
-;;;###autoload
 (defun fin-bank-import ()
-  "Name, then import, every .ofx file in `fin-bank-inbox' not imported
-yet.  Other files there (old PDF card bills) are kept as documents."
+  "Name, then import, every .ofx file in `fin-bank-inbox' not imported yet."
   (interactive)
   (unless (file-directory-p fin-bank-inbox)
     (user-error "fin-bank: inbox missing: %s" fin-bank-inbox))
   (dolist (f (directory-files fin-bank-inbox t "\\.[oO][fF][xX]\\'"))
     (fin-bank--normalize-file f))
-  ;; Balances of every statement, imported or not: idempotent.
   (dolist (f (directory-files fin-bank-inbox t "\\.[oO][fF][xX]\\'"))
     (let* ((text (fin-ofx-read-file f)) (bal (fin-ofx-balance text)))
       (when bal (fin-bankdb-record-balance (fin-bank--kind text) (car bal) (cdr bal)))))
@@ -209,10 +183,8 @@ yet.  Other files there (old PDF card bills) are kept as documents."
             (cl-reduce (lambda (a b) (if (string< a b) b a)) dates)))))
 
 (defun fin-bank--ledger-span (span &optional pad-days)
-  "Ledger rows within SPAN (FIRST . LAST) widened by PAD-DAYS, default
-`fin-reconcile-window'.  Ledger outside the bank's coverage cannot match,
-so it is not compared.  Future-dated rows are plan placeholders and never
-reach a bank."
+  "Ledger rows up to today within SPAN (FIRST . LAST) widened by PAD-DAYS,
+default `fin-reconcile-window'."
   (when span
     (let* ((days (or pad-days fin-reconcile-window))
            (pad (format "%+d days" days)))
@@ -246,9 +218,8 @@ reach a bank."
   (format "%s%d.%02d" (if (< n 0) "-" "") (/ (abs n) 100) (% (abs n) 100)))
 
 (defun fin-bank--tsv-row (bank-row)
-  "BANK-ROW as one TSV line in ODS entries column order.
-Category is left empty for the user to fill; installments come from
-the bank's \"Parcela k/n\"."
+  "BANK-ROW as one TSV line in ODS entries column order, category empty.
+Installments come from the bank's \"Parcela k/n\"."
   (pcase-let ((`(,_id ,date ,type ,amount ,desc) bank-row))
     (mapconcat #'identity
                (append (list date type "" (downcase (string-trim desc))
@@ -288,7 +259,6 @@ the bank's \"Parcela k/n\"."
     (format "  %s %-3s %10s  %s / %s"
             date type (fin-bank--cents amount) cat (or item "-"))))
 
-;;;###autoload
 (defun fin-bank-reconcile (year)
   "Show bank vs ledger differences for YEAR in a review buffer."
   (interactive (fin-bank--read-year))
@@ -317,7 +287,6 @@ the bank's \"Parcela k/n\"."
       (special-mode))
     (pop-to-buffer buf)))
 
-;;;###autoload
 (defun fin-bank-copy-missing (year)
   "Copy YEAR's bank-only rows to the kill ring as TSV for the ODS entries sheet."
   (interactive (fin-bank--read-year))

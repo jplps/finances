@@ -59,6 +59,7 @@ h1 { font-size: var(--font); color: var(--text); white-space: nowrap; }
 h1::before { content: '$ '; color: var(--accent-2); }
 h3 { font-size: var(--font-sm); margin: 18px 0 6px; color: var(--text-2); }
 h3::before { content: '# '; color: var(--muted); }
+.muted { color: var(--muted); }
 th { font-size: var(--font-xs); color: var(--muted); border-bottom: 1px solid var(--grid); }
 
 /* ── panes: one panel at a time, picked from the status bar ── */

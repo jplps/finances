@@ -5,22 +5,17 @@
 (require 'bankdb)
 
 (defcustom fin-accounts-derived nil
-  "Accounts rebuilt from the bank statements, the source of truth for
-balances.  Each is a plist: :name, :reserve t when it counts toward the
-emergency reserve (runway), and either :balance (a bank account kind whose
-latest LEDGERBAL is the balance) or :into and :out-of (regexps of
-personal-account descriptions moving money into and out of it), counted
-after :since (ISO date of a known balance; default: every statement) on
-top of :opening (cents on that date; default 0).  :closed t
-marks an account emptied for good: its balance is 0 and the note gives the
-result (money taken out less money put in, a gain or a loss).  :yield
-\(cents) adds the earnings the statements never show, as the bank app or
-the yearly informe gives them."
+  "Account plists rebuilt from bank statements.
+:name; :reserve t counts toward the emergency reserve; either :balance (a
+bank account kind whose latest LEDGERBAL is the balance) or :into and
+:out-of (regexps of personal-account descriptions moving money in and
+out), counted after :since (ISO date; default all) on top of :opening
+\(cents; default 0).  :closed t: balance 0, the note gives the gain or
+loss.  :yield (cents) adds earnings the statements never show."
   :type '(repeat plist) :group 'fin)
 
 (defvar fin-report--accounts-memo nil
-  "A cons whose car caches `fin-report--accounts-derived' while bound, as
-for one dashboard render; nil recomputes on every call.")
+  "When a cons, its car caches `fin-report--accounts-derived'.")
 
 (defun fin-report--bank-sum (type regexps since)
   "Cents of personal-account bank rows of TYPE after SINCE matching REGEXPS."
@@ -40,7 +35,7 @@ for one dashboard render; nil recomputes on every call.")
                                         (list since)))))
 
 (defun fin-report--derived-balance (spec)
-  "(CENTS . AS-OF) of derived account SPEC."
+  "(CENTS . NOTE) of account SPEC, NOTE stating the basis."
   (let ((kind (plist-get spec :balance))
         (since (or (plist-get spec :since) ""))
         (opening (or (plist-get spec :opening) 0)))
@@ -66,9 +61,9 @@ for one dashboard render; nil recomputes on every call.")
                                (if (string-empty-p since) "the first statement" since))))))))
 
 (defun fin-report--bank-saved (period)
-  "Cents the personal account moved into the accounts of `fin-accounts-derived'
-in PERIOD (\"YYYY\" or \"YYYY-MM\"), net of what it took out of them; flows on
-or before an account's :since are not its own."
+  "Cents moved into `fin-accounts-derived' accounts in PERIOD, net.
+PERIOD is \"YYYY\" or \"YYYY-MM\"; flows on or before an account's :since
+are excluded."
   (cl-assert (string-match-p "\\`[0-9]\\{4\\}\\(-[0-9]\\{2\\}\\)?\\'" period) nil
              "fin-accounts: bad period %S" period)
   (fin-bankdb-ensure)
@@ -86,16 +81,15 @@ or before an account's :since are not its own."
           (cl-incf total (if (equal type "out") amount (- amount))))))))
 
 (defun fin-report--accounts-derived ()
-  "Plist per `fin-accounts-derived': :name, :cents, :note (the basis),
-:cash (a bank account kind's balance), :reserve and :closed.  Cached in
-`fin-report--accounts-memo' while it is bound."
+  "Plists :name :cents :note :cash :reserve :closed per account.
+Cached in `fin-report--accounts-memo' when bound."
   (or (car fin-report--accounts-memo)
       (let ((rows (fin-report--accounts-compute)))
         (when fin-report--accounts-memo (setcar fin-report--accounts-memo rows))
         rows)))
 
 (defun fin-report--accounts-compute ()
-  "Rows of `fin-report--accounts-derived', computed from the bank."
+  "Uncached `fin-report--accounts-derived'."
   (fin-bankdb-ensure)
   (mapcar (lambda (spec)
             (cl-assert (stringp (plist-get spec :name)) nil "fin-accounts: bad spec %S" spec)
@@ -106,7 +100,7 @@ or before an account's :since are not its own."
           fin-accounts-derived))
 
 (defun fin-report--accounts-total (&optional key)
-  "Cents across `fin-report--accounts-derived', only rows with KEY when given."
+  "Cents across accounts, only those with KEY when given."
   (apply #'+ (mapcar (lambda (a) (if (or (null key) (plist-get a key)) (plist-get a :cents) 0))
                      (fin-report--accounts-derived))))
 

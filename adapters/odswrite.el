@@ -1,13 +1,5 @@
 ;;; odswrite.el --- Edit the ODS entries and patrimony sheets in place  -*- lexical-binding: t; -*-
 
-;; The entries and patrimony sheets are edited as text inside content.xml,
-;; so every row, style and sheet not touched stays byte-identical.  Entries
-;; are identified by their values (date type category item amount) and new
-;; ones inserted in the sheet's newest-first order; patrimony rows by
-;; (category item), new ones after the last row of their category.  Each
-;; edit or delete must hit exactly one row.  Saving re-zips content.xml with
-;; zip(1), the counterpart of the unzip(1) the reader uses.
-
 (require 'cl-lib)
 (require 'xml)
 (require 'parser)
@@ -21,8 +13,6 @@
         (unless (zerop (call-process "unzip" nil t nil "-p" p "content.xml"))
           (user-error "unzip failed on %s" p)))
       (buffer-string))))
-
-;;; ── Rows and cells ─────────────────────────────────────────
 
 (defun fin-odsw--sheet-bounds (content &optional sheet)
   "(START . END) of SHEET (default \"entries\") in CONTENT."
@@ -66,15 +56,13 @@ Return (FIRST LAST ROWS): rows must be contiguous."
 
 (defun fin-odsw--row-values (row)
   "(date type category item amount installment installments via) of ROW;
-\"\" for empty.  VIA names how a row was paid when not through the bank
-statements (cash, bb)."
+\"\" for empty.  VIA: how a row was paid outside the bank (cash, bb)."
   (fin-odsw--cells row 8))
 
 (defun fin-odsw--cells (row n)
   "The first N cell values of ROW, \"\" for empty."
   (let ((pos 0) vals)
     (while (and (< (length vals) n) (string-match fin-odsw--cell-re row pos))
-      ;; Capture before `fin-odsw--attr' clobbers the match data.
       (let* ((attrs (match-string 1 row)) (body (match-string 2 row)) (end (match-end 0))
              (rep (string-to-number (or (fin-odsw--attr "table:number-columns-repeated" attrs) "1")))
              (v (fin-odsw--cell-value attrs body)))
@@ -125,8 +113,6 @@ VIA nil, or how it was paid outside the bank statements."
     (fin-odsw-row-xml date type cat item amount
                       (and (integerp k) k) (and (integerp n) n)
                       (and via (not (string-empty-p via)) via))))
-
-;;; ── Apply ──────────────────────────────────────────────────
 
 (defun fin-odsw--find-all (keys key n)
   "Indexes of the N rows of KEYS equal to KEY: N deletes of identical rows
@@ -181,8 +167,6 @@ key hit exactly as many rows."
     (dolist (c changes)
       (pcase c
         (`(:edit ,key ,new)
-         ;; Identical rows (installments aside) are interchangeable for an
-         ;; amount edit: take the first one not yet edited.
          (let ((i (or (cl-loop for k in (cdr keys) for i from 1
                                when (and (equal k key) (not (gethash i gone)) (not (gethash i edited)))
                                return i)
@@ -209,8 +193,6 @@ key hit exactly as many rows."
               (aref rowv 0)
               (apply #'concat (fin-odsw--merge data adds))
               (substring content last)))))
-
-;;; ── Patrimony ──────────────────────────────────────────────
 
 (defun fin-odsw-patrimony-row-xml (category item amount lifespan)
   "Patrimony row in the sheet's own cell format.  AMOUNT in cents,
@@ -269,8 +251,6 @@ last row of their category, or end the sheet."
                                               collect (apply #'fin-odsw-patrimony-row-xml a))))
               (substring content last)))))
 
-;;; ── Save ───────────────────────────────────────────────────
-
 (defun fin-odsw-save (path content)
   "Replace content.xml of the ODS at PATH with CONTENT; no copy is kept.
 CONTENT must be well-formed; the result must read back.  Return PATH."
@@ -291,8 +271,6 @@ CONTENT must be well-formed; the result must read back.  Return PATH."
                 (error "fin-odsw: zip failed")))
             (unless (fin-ods-sheet (fin-ods-parse new) "entries")
               (error "fin-odsw: rewritten ODS lost its entries sheet"))
-            ;; Copy next to PATH, then rename over it: a failed copy leaves
-            ;; PATH whole.
             (let ((staged (concat path ".fin-new")))
               (copy-file new staged t)
               (rename-file staged path t))

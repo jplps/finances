@@ -1,16 +1,5 @@
 ;;; goals.el --- Plan targets vs actual entries  -*- lexical-binding: t; -*-
 
-;; Each plan row (and each child of `investments') gets its monthly target
-;; from budget.el and the current month so far from entries.  Spending rows
-;; go `over' past the target, else stay `within'; saving rows (contributions)
-;; are `reached' at the target, else `pending'.
-;;
-;; Variable goals are caixinhas, measured by what goes into them: `out
-;; investments / GOAL' is money saved for GOAL, `in investments / GOAL' money
-;; taken back.  Spending (a car battery, a family trip) is an expense, never
-;; a saving.  The `patrimony' child splits into the register's classes,
-;; each against its monthly amortization.
-
 (require 'cl-lib)
 (require 'calendar)
 (require 'db)
@@ -24,12 +13,10 @@
     ("vacations"   save ("investments" . "vacations"))
     ("family"      save ("investments" . "family"))
     ("patrimony"   save))
-  "Plan row -> (DIRECTION SOURCE...).  A SOURCE is (CATEGORY) or
-\(CATEGORY . ITEM); its net is outflows minus inflows.  Rows not listed are
-spending, measured by the entry category of the same name.  `investments'
-holds every caixinha, so its actual is their sum.  `patrimony' takes each
-register class's caixinha (see `fin-goals--spec'); `reserve' rows are
-withdrawals from the emergency reserve.")
+  "Plan row -> (DIRECTION SOURCE...), SOURCE (CATEGORY) or (CATEGORY . ITEM).
+A source nets outflows minus inflows.  Unlisted rows are spending in the
+same-named category; `patrimony' also takes each register class's
+caixinha; `reserve' rows are emergency reserve withdrawals.")
 
 (defun fin-goals--classes ()
   "Patrimony register classes."
@@ -76,8 +63,7 @@ withdrawals from the emergency reserve.")
             :direction dir :target target :mtd mtd :status (fin-goals-status dir target mtd)))))
 
 (defun fin-goals--patrimony-rows (kind year month)
-  "Rows per register class under `patrimony': its caixinha this month
-against its monthly amortization."
+  "Rows per register class: its caixinha this month vs its amortization."
   (let ((range (fin-goals--month-range year month)))
     (mapcar (lambda (s)
               (let ((saved (apply #'fin-goals--net (list (cons "investments" (nth 0 s))) range))
@@ -88,9 +74,9 @@ against its monthly amortization."
             (fin-report--patrimony-summary))))
 
 (defun fin-goals (year month)
-  "Goal rows for MONTH of YEAR: plan rows then their children.
-Each is a plist (:category :kind :parent :depth :direction :target :mtd
-:status); `patrimony' is followed by its classes at depth 2."
+  "Goal plists for MONTH of YEAR, each plan row followed by its children.
+Keys :category :kind :parent :depth :direction :target :mtd :status;
+`patrimony' is followed by its classes at depth 2."
   (cl-assert (and (integerp year) (<= 1 month 12)))
   (let (out)
     (dolist (b (fin-report--budget-share year))

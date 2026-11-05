@@ -1,14 +1,5 @@
 ;;; bankfix.el --- Fix the ODS ledger from imported bank rows  -*- lexical-binding: t; -*-
 
-;; `fin-bank-fix' reconciles every bank row since `fin-bank-fix--from'
-;; (by default the first day of last month: the month in progress and the
-;; one before, whose card bill may still post) against the ledger, turns
-;; the differences into ledger changes per conventions.el, writes them to
-;; the ODS and shows what it did.  A ledger row it added goes again when a
-;; later export of the statement no longer lists its bank row (a dropped
-;; card authorization).  It never touches the ledger DB: run `fin'
-;; afterwards.  Running it again changes nothing.
-
 (require 'cl-lib)
 (require 'db)
 (require 'bankdb)
@@ -21,9 +12,7 @@
 (defvar fin-ods-path)
 
 (defcustom fin-bank-fix-from nil
-  "First date fixed from the bank, ISO; nil for the first day of last
-month, so older, settled history is never touched.  Set a date only to
-re-fix older months once."
+  "First ISO date fixed from the bank; nil for the first day of last month."
   :type '(choice (const nil) string) :group 'fin)
 
 (defun fin-bank-fix--from ()
@@ -58,8 +47,7 @@ carry a bank id."
                      (list (nth 3 a) date type cat (or item "") amount))))
 
 (defcustom fin-bank-fix-unspent-categories '("investments" "retirement" "reserve" "cnpj")
-  "Ledger categories that are not Nubank spending: savings goals, withheld
-tax.  Left out when comparing a month's ledger with the bank."
+  "Ledger categories left out when comparing a month's ledger with the bank."
   :type '(repeat string) :group 'fin)
 
 (defun fin-bank-fix--ledger-out (from)
@@ -110,12 +98,11 @@ after ISO FROM, where the bank rows start."
     (unless (string< (cdr span) first) (fin-pj-months first (cdr span)))))
 
 (defun fin-bank-fix--pj-split (bank raw from)
-  "Split BANK rows since FROM and RAW ledger rows for the PJ account (pj.el).
+  "Split BANK rows since FROM and RAW ledger rows for the PJ account.
 Return plist :bank and :raw (left to the general match) and :pj (actions).
-In the months a PJ statement fully covers, client payments and tax
-payments reconcile against income and `cnpj' rows there, transfers from
-the company stop counting as salary, and PJ rows outside those months are
-dropped (a partial month cannot be judged)."
+In months a PJ statement fully covers, client and tax payments match
+income and `cnpj' rows and company transfers stop counting as salary;
+PJ rows of other months are dropped."
   (pcase-let* ((`(,ids . ,span) (fin-bankdb-account-rows "pj")))
     (if (null span)
         (list :bank bank :raw raw :pj nil)
@@ -131,7 +118,6 @@ dropped (a partial month cannot be judged)."
                                  bank))
              (cats (delete-dups (mapcar #'cdr fin-pj-income-payers)))
              (items (delete-dups (mapcar #'cdr fin-pj-tax-items)))
-             ;; An income row with an item (a bonus) has another source.
              (led-in (cl-remove-if-not (lambda (l) (and (funcall cov l) (equal (nth 2 l) "in") (null (nth 4 l))
                                                         (member (nth 3 l) cats)))
                                        raw))
@@ -176,8 +162,7 @@ dropped (a partial month cannot be judged)."
   :type 'integer :group 'fin)
 
 (defcustom fin-bank-fix-flag-ignore-regexps nil
-  "Descriptions of reported bank rows the cockpit should not flag: rows the
-ledger books under another name or date, checked once."
+  "Descriptions of reported bank rows the cockpit does not flag."
   :type '(repeat regexp) :group 'fin)
 
 (defun fin-bank-fix--flags (actions)
@@ -262,7 +247,6 @@ edit and one delete.  Deletes of distinct identical rows all stay."
            (push (list :delete (fin-bank-fix--key l)) out)))
         (`(,(or :report :skip) . ,_) nil)
         (_ (error "fin-bank: bad action %S" a))))
-    ;; Adds and deletes are already one per charge and per ledger row.
     (nreverse out)))
 
 (defun fin-bank-fix--insert-section (title items fmt)
@@ -297,7 +281,7 @@ nothing to change).  QUIET fills the buffer without showing it."
                                  (money (nth 5 l)) (caddr a)))))
           (fin-bank-fix--insert-section
            "Needs a look" (of :report)
-           (lambda (a) (let ((r (cadr a)))   ; bank row (5) or ledger row (7)
+           (lambda (a) (let ((r (cadr a)))
                          (format "%s %s  %s" (nth 1 r) (money (nth (if (= (length r) 5) 3 5) r))
                                  (caddr a)))))
           (let ((why (make-hash-table :test #'equal))
@@ -310,11 +294,10 @@ nothing to change).  QUIET fills the buffer without showing it."
         (special-mode)))
     (unless quiet (pop-to-buffer buf))))
 
-;;;###autoload
 (defun fin-bank-fix (&optional dry-run quiet)
   "Fix the ODS ledger from bank rows since `fin-bank-fix--from', then report.
 With prefix arg DRY-RUN, only report.  QUIET shows the report only when
-something changed.  Run `fin' afterwards (or let `fin' run this)."
+something changed."
   (interactive "P")
   (fin-bank-fix--check-closed fin-ods-path)
   (let* ((r (fin-bank-fix--reconcile (fin-bank-fix--from)))
@@ -344,8 +327,7 @@ something changed.  Run `fin' afterwards (or let `fin' run this)."
 
 (defun fin-bank-fix-settle (refresh)
   "Run `fin-bank-fix' quietly, then REFRESH the DB, until a pass changes
-nothing: each pass decides from the DB, which only REFRESH updates.  Fail
-after `fin-bank-fix-passes' passes that all changed something."
+nothing.  Fail after `fin-bank-fix-passes' passes that all changed."
   (cl-assert (functionp refresh))
   (cl-loop for pass from 1
            for changes = (fin-bank-fix nil t)

@@ -4,7 +4,7 @@
 (require 'fmt)
 
 (defun fin-dashboard--fold-slices (slices n)
-  "SLICES largest first, the N largest kept and the rest summed as \"other\"."
+  "Positive SLICES largest first, past the N largest summed as \"other\"."
   (let* ((sorted (sort (cl-remove-if-not (lambda (s) (and (cdr s) (> (cdr s) 0))) (copy-sequence slices))
                        (lambda (a b) (> (cdr a) (cdr b)))))
          (rest (nthcdr n sorted)))
@@ -12,8 +12,7 @@
       (append (seq-take sorted n) (list (cons "other" (apply #'+ (mapcar #'cdr rest))))))))
 
 (defun fin-dashboard--svg-donut (slices)
-  "Pie chart with leader-line labels.  SLICES = ((label . value) ...).
-Categorical slots in fixed order; past them one neutral \"other\" slice."
+  "Pie of SLICES ((LABEL . VALUE) ...) with leader-line labels."
   (let* ((slices   (fin-dashboard--fold-slices slices (length fin-dashboard--chart-palette)))
          (g        fin-dashboard--pie-geom)
          (w        (fin-dashboard--g g :w))
@@ -63,8 +62,7 @@ Categorical slots in fixed order; past them one neutral \"other\" slice."
     (mapconcat #'identity (nreverse paths) "")))
 
 (defun fin-dashboard--svg-bars (rows)
-  "Mini bar chart from baseline.  ROWS = (label value).
-Positive: green up; negative: red down."
+  "Bars of ROWS (LABEL PERCENT), negatives below the baseline."
   (let* ((n      (length rows))
          (vw     200) (vh 80)
          (pad-x  4) (pad-y 8)
@@ -98,8 +96,8 @@ Positive: green up; negative: red down."
      "</svg>")))
 
 (defun fin-dashboard--svg-flow (months)
-  "Bar chart of monthly in (green up) + out (red down) from zero baseline.
-MONTHS = (ym in out).  Months past current month rendered dimmed."
+  "Bars of MONTHS (YM IN OUT) in cents, out below the baseline.
+Months after the current one are dimmed."
   (let* ((n      (length months))
          (vw     1200) (vh 120)
          (pad-x  8) (pad-y 4)
@@ -142,7 +140,7 @@ MONTHS = (ym in out).  Months past current month rendered dimmed."
      "</svg>")))
 
 (defun fin-dashboard--svg-line (points &optional color)
-  "Single-series line.  POINTS = (label value)."
+  "Line of POINTS (LABEL VALUE)."
   (let* ((vw 600) (vh 120) (pad-x 8) (pad-y 8)
          (n (length points))
          (vals (mapcar (lambda (p) (or (nth 1 p) 0)) points))
@@ -173,7 +171,7 @@ MONTHS = (ym in out).  Months past current month rendered dimmed."
      "</svg>")))
 
 (defun fin-dashboard--svg-multiline (series)
-  "Multiple lines.  SERIES = ((name color points) ...) with points = (label value)."
+  "Lines of SERIES ((NAME COLOR POINTS) ...), POINTS as (LABEL VALUE)."
   (let* ((vw 600) (vh 120) (pad-x 8) (pad-y 8)
          (all-vals (apply #'append
                           (mapcar (lambda (s)
@@ -205,7 +203,7 @@ MONTHS = (ym in out).  Months past current month rendered dimmed."
      "</svg>")))
 
 (defun fin-dashboard--svg-pareto (rows)
-  "Bars (per-item spend) + cumulative % line.  ROWS = (item value cum-pct)."
+  "Bars of ROWS (ITEM CENTS CUMULATIVE-PERCENT) under the cumulative line."
   (let* ((n (length rows))
          (vw 600) (vh 120) (pad-x 8) (pad-y 8)
          (max-v (max 1.0 (apply #'max 0.0
@@ -244,8 +242,7 @@ MONTHS = (ym in out).  Months past current month rendered dimmed."
      "</svg>")))
 
 (defun fin-dashboard--svg-heatmap (cells)
-  "Year × month grid colored by spend intensity.  CELLS = (year month value).
-Spend magnitude: the out hue, light to dark."
+  "Year by month grid of CELLS (YEAR MONTH CENTS), opacity log-scaled."
   (let* ((years (sort (delete-dups (mapcar (lambda (c) (nth 0 c)) cells)) #'<))
          (ny (max 1 (length years)))
          (pad 12) (cell-h 14) (cell-gap 2)

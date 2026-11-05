@@ -7,7 +7,6 @@
 
 (require 'helpers)
 
-;; Mirror app layout: tests/<layer>/test-<file>.el provides `test-<file>`.
 (require 'test-db)
 (require 'test-parser)
 (require 'test-budget)
@@ -24,6 +23,7 @@
 (require 'test-goals)
 (require 'test-pj)
 (require 'test-ir)
+(require 'test-duties)
 (require 'test-bank)
 (require 'test-bankfix)
 (require 'test-health)

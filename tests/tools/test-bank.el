@@ -23,10 +23,10 @@
 
 (ert-deftest bank/ledger-span-pads-by-window-and-excludes-future ()
   (fin-test-with-db
-    (fin-test-insert-entry "2025-06-06" "out" "food" 100 nil) ; 4d before
-    (fin-test-insert-entry "2025-06-07" "out" "food" 100 nil) ; 3d before
-    (fin-test-insert-entry "2025-06-23" "out" "food" 100 nil) ; 3d after
-    (fin-test-insert-entry "2025-06-24" "out" "food" 100 nil) ; 4d after
+    (fin-test-insert-entry "2025-06-06" "out" "food" 100 nil)
+    (fin-test-insert-entry "2025-06-07" "out" "food" 100 nil)
+    (fin-test-insert-entry "2025-06-23" "out" "food" 100 nil)
+    (fin-test-insert-entry "2025-06-24" "out" "food" 100 nil)
     (fin-test-insert-entry "2099-06-10" "out" "food" 100 nil)
     (let ((fin-reconcile-window 3))
       (should (equal '("2025-06-07" "2025-06-23")
@@ -86,8 +86,6 @@
         (should (string-match-p "426.64 vs     426.44 (Δ 0.20)" (buffer-string)))
         (kill-buffer)))))
 
-;;; ── Import ─────────────────────────────────────────────────
-
 (defmacro test-bank--with-ofx (var text &rest body)
   "Bind VAR to a temp .ofx file holding TEXT while running BODY."
   (declare (indent 2))
@@ -136,7 +134,6 @@ the last two rows are a genuine double charge.")
       (should (= 7 (fin-bank-import-file f))))))
 
 (ert-deftest bank/overlapping-statement-reuses-ids ()
-  ;; Same transactions in a re-export (different file hash) add nothing.
   (fin-test-with-db
     (test-bank--with-ofx f test-bank--shared-fitid
       (fin-bank-import-file f))
@@ -184,7 +181,6 @@ the last two rows are a genuine double charge.")
             (should-error (fin-bank-import) :type 'user-error)
             (should (file-exists-p (expand-file-name "c.ofx" fin-bank-inbox)))
             (delete-file (expand-file-name "c.ofx" fin-bank-inbox))
-            ;; A later export of the period (an open bill grew) replaces it.
             (put "d.ofx" (replace-regexp-in-string
                           "20261002101930" "20261009000000"
                           (replace-regexp-in-string "Padaria" "Mercado" test-bank--ofx)))
@@ -207,8 +203,6 @@ the last two rows are a genuine double charge.")
                         "<STMTTRN><DTPOSTED>20261006</DTPOSTED><TRNAMT>-2.00</TRNAMT><FITID>L</FITID>"
                         "<MEMO>Loja - Parcela 8/12</MEMO></STMTTRN></BANKTRANLIST>")))
       (should (= 2 (fin-bank--supersede text)))
-      ;; A bill is [start, end): its closing day opens the next bill, which
-      ;; keeps its rows, as do the previous bill and other accounts.
       (should (equal '("next-bill" "old-before" "other-acct")
                      (mapcar #'car (fin-db-query "SELECT id FROM bank_txn ORDER BY id")))))))
 

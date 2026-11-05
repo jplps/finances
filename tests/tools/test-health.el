@@ -13,16 +13,16 @@
            (fin-pj-tax-items '(("\\bDAS\\b" . "das"))))
       (fin-bankdb-insert
        (list (list "a" "nubank-ofx" "account" day "out" 10000 "Compra no débito - Padaria")
-             (list "b" "nubank-ofx" "account" day "out" 50000 "Pagamento da fatura - Cartão Nubank") ; ignored
-             (list "c" "nubank-ofx" "account" day "out" 30000 "Aplicação RDB")                       ; savings
-             (list "d" "nubank-ofx" "pj" day "out" 20000 "Pagamento de boleto efetuado - DAS")       ; tax
+             (list "b" "nubank-ofx" "account" day "out" 50000 "Pagamento da fatura - Cartão Nubank")
+             (list "c" "nubank-ofx" "account" day "out" 30000 "Aplicação RDB")
+             (list "d" "nubank-ofx" "pj" day "out" 20000 "Pagamento de boleto efetuado - DAS")
              (list "e" "nubank-ofx" "account" day "in" 90000 "Pix recebido")
              (list "f" "nubank-ofx" "account" day "out" 700 "Compra no débito - Casarao das Ferragens")
-             (list "g" "nubank-ofx" "account" day "out" 200 "Pagamento de boleto efetuado - DAS")     ; not the PJ's
-             (list "h" "nubank-ofx" "card" day "out" 4000 "Loja")                                    ; refunded
+             (list "g" "nubank-ofx" "account" day "out" 200 "Pagamento de boleto efetuado - DAS")
+             (list "h" "nubank-ofx" "card" day "out" 4000 "Loja")
              (list "i" "nubank-ofx" "card" day "in" 4000 "Estorno de \"Loja\"")))
       (fin-test-insert-entry day "out" "food" 12000 "padaria")
-      (fin-test-insert-entry day "out" "cnpj" 20000 "das")                                           ; unspent
+      (fin-test-insert-entry day "out" "cnpj" 20000 "das")
       (let ((m (car (last (fin-health-months 3)))))
         (should (equal (list ym 10900 12000) m)))
       (should (= 3 (length (fin-health-months 3)))))))
@@ -36,11 +36,11 @@
        (list (list "a" "nubank-ofx" "account" "2026-10-01" "in" 500000 "Pix recebido")
              (list "b" "nubank-ofx" "account" "2026-10-02" "out" 300000 "Aplicação RDB")
              (list "c" "nubank-ofx" "card" "2026-10-03" "out" 80000 "Loja")
-             (list "d" "nubank-ofx" "account" "2026-10-04" "out" 50000 "Pagamento de fatura") ; ignored
-             (list "e" "nubank-ofx" "card" "2026-10-04" "in" 50000 "Pagamento recebido")))    ; ignored
+             (list "d" "nubank-ofx" "account" "2026-10-04" "out" 50000 "Pagamento de fatura")
+             (list "e" "nubank-ofx" "card" "2026-10-04" "in" 50000 "Pagamento recebido")))
       (fin-test-insert-entry "2026-10-01" "in" "salary" 500000)
       (fin-test-insert-entry "2026-10-03" "out" "food" 80000)
-      (fin-test-insert-entry "2026-10-02" "out" "investments" 100000 "car")   ; allocation, not counted
+      (fin-test-insert-entry "2026-10-02" "out" "investments" 100000 "car")
       (should (equal '(120000 120000) (fin-health-cash 2026 10)))
       (fin-test-insert-entry "2026-10-05" "out" "food" 20000)
       (should (equal '(100000 120000) (fin-health-cash 2026 10))))))
@@ -62,7 +62,7 @@
     (let ((need (fin-health--last-month-end)))
       (fin-bankdb-record-balance "account" need 100)
       (fin-bankdb-record-balance "card" "2020-01-06" -100)
-      (fin-bankdb-record-balance "pj-card" "2099-01-06" 0)      ; open bill, future closing
+      (fin-bankdb-record-balance "pj-card" "2099-01-06" 0)
       (should (equal (list (list "account" need t) (list "card" "2020-01-06" nil)
                            (list "pj-card" "2099-01-06" t))
                      (fin-health-inbox))))))
@@ -74,7 +74,7 @@
     (should (plist-get (fin-health-fix) :ok))
     (sleep-for 0.01)
     (fin-bankdb-record-fix-run 3 t nil)
-    (should-not (plist-get (fin-health-fix) :ok))              ; dry run with changes pending
+    (should-not (plist-get (fin-health-fix) :ok))
     (fin-db-exec "DELETE FROM bank_fix_run")
     (fin-db-exec "INSERT INTO bank_fix_run (run_at, changes, dry) VALUES ('2000-01-01T00:00:00.000', 0, 0)")
     (fin-bankdb-insert (list (list "x" "nubank-ofx" "account" "2026-10-01" "out" 100 "Padaria")))

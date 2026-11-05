@@ -1,10 +1,5 @@
 ;;; bankdb.el --- Bank transaction staging tables  -*- lexical-binding: t; -*-
 
-;; Bank rows live in the same SQLite file as the ODS mirror, but outside
-;; `fin-db--tables', so `fin-db-rebuild' and `fin-sync-refresh' never touch
-;; them.  They are re-derivable from the files in the inbox: imports are
-;; idempotent by transaction id and by file hash.
-
 (require 'cl-lib)
 (require 'db)
 
@@ -50,7 +45,7 @@
        category    TEXT NOT NULL,
        item        TEXT NOT NULL,
        amount      INTEGER NOT NULL)")
-  "Bank staging schema.  Idempotent: safe to run on every open.")
+  "Bank staging schema, idempotent.")
 
 (defconst fin-bankdb--txn-cols
   '("id" "source" "account" "date" "type" "amount" "description"))
@@ -84,9 +79,8 @@
       (error "fin-bankdb: amount must be positive integer cents: %S" amount))))
 
 (defun fin-bankdb-insert (rows)
-  "Insert ROWS into bank_txn, skipping ids already present.
-Each row follows `fin-bankdb--txn-cols'.  Every row is validated before
-any write.  Return the number of rows actually inserted."
+  "Insert ROWS (`fin-bankdb--txn-cols') into bank_txn, skipping known ids.
+All rows are validated before any write.  Return the number inserted."
   (mapc #'fin-bankdb--check-row rows)
   (let ((db  (fin-bankdb-ensure))
         (sql (format "INSERT OR IGNORE INTO bank_txn (%s) VALUES (%s)"
@@ -145,10 +139,9 @@ any write.  Return the number of rows actually inserted."
     (and r (cons (car r) (cadr r)))))
 
 (defun fin-bankdb-drop-superseded (account start end keep)
-  "Delete ACCOUNT rows of the statement period ISO START .. END whose id is
-not in KEEP: a later export of the statement no longer lists them.  A card
-bill's period is [START, END), its closing day the next bill's first; an
-account statement's is [START, END].  Return the number deleted."
+  "Delete ACCOUNT rows of the ISO period START .. END whose id is not in KEEP.
+A card bill's period is [START, END), an account's [START, END].
+Return the number deleted."
   (unless (and (string-match-p fin-bankdb--date-re start) (string-match-p fin-bankdb--date-re end))
     (error "fin-bankdb: bad period %S %S" start end))
   (let* ((db (fin-bankdb-ensure))
@@ -161,9 +154,8 @@ account statement's is [START, END].  Return the number deleted."
     (length gone)))
 
 (defun fin-bankdb-record-fix-run (changes dry flags)
-  "Record a `fin-bank-fix' run: CHANGES count, DRY (non-nil for a dry run),
-and FLAGS, the (id date amount description reason) bank rows it only
-reported, replacing the previous run's."
+  "Record a `fin-bank-fix' run, replacing the previous one.
+FLAGS are the (id date amount description reason) rows it only reported."
   (cl-assert (natnump changes))
   (let ((db (fin-bankdb-ensure)))
     (with-sqlite-transaction db
@@ -175,8 +167,7 @@ reported, replacing the previous run's."
                             VALUES (?,?,?,?,?)" f)))))
 
 (defun fin-bankdb-record-fix-adds (adds)
-  "Remember ADDS, (bank-id date type category item amount) each: the ledger
-rows `fin-bank-fix' wrote and the bank row each came from."
+  "Remember ADDS, each (bank-id date type category item amount)."
   (let ((db (fin-bankdb-ensure)))
     (with-sqlite-transaction db
       (dolist (a adds)
@@ -185,8 +176,8 @@ rows `fin-bank-fix' wrote and the bank row each came from."
                             VALUES (?,?,?,?,?,?)" a)))))
 
 (defun fin-bankdb-vanished-adds ()
-  "(bank-id date type category item amount) of ledger rows `fin-bank-fix'
-added from bank rows a later export no longer lists."
+  "(bank-id date type category item amount) of remembered adds whose bank
+row a later export no longer lists."
   (fin-bankdb-ensure)
   (fin-db-query "SELECT bank_id, date, type, category, item, amount FROM bank_fix_added
                   WHERE bank_id NOT IN (SELECT id FROM bank_txn)"))
@@ -208,14 +199,13 @@ added from bank rows a later export no longer lists."
   (fin-db-query "SELECT date, amount, description, reason FROM bank_fix_flag ORDER BY date DESC"))
 
 (defun fin-bankdb-imported-since (stamp)
-  "Bank rows imported after timestamp STAMP (UTC, as SQLite writes it)."
+  "Count of bank rows imported after STAMP (UTC, as SQLite writes it)."
   (fin-bankdb-ensure)
   (caar (fin-db-query "SELECT COUNT(*) FROM bank_txn WHERE imported_at > ?" (list stamp))))
 
 (defun fin-bankdb-account-rows (account)
-  "Ids and (FIRST . LAST) dates of ACCOUNT's rows: (IDS . SPAN), SPAN nil if none.
-LAST is the later of the last row and the last statement balance: a
-statement can run past its last transaction."
+  "(IDS . SPAN) of ACCOUNT's rows, SPAN (FIRST . LAST) dates or nil.
+LAST is the later of the last row and the last statement balance."
   (fin-bankdb-ensure)
   (let ((ids (mapcar #'car (fin-db-query "SELECT id FROM bank_txn WHERE account = ?" (list account))))
         (span (car (fin-db-query "SELECT MIN(date),
@@ -227,7 +217,7 @@ statement can run past its last transaction."
 
 (defun fin-bankdb-year (year)
   "Bank rows of YEAR up to today as (id date type amount description), by date.
-Open card bills list future installments not charged yet; they are skipped."
+Future installments listed on open card bills are skipped."
   (fin-bankdb-ensure)
   (fin-db-query
    "SELECT id, date, type, amount, description

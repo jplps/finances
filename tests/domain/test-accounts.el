@@ -10,7 +10,7 @@
     (cl-flet ((bank (id date type amount desc)
                 (fin-db-exec "INSERT INTO bank_txn (id, source, account, date, type, amount, description)
                               VALUES (?,'t','account',?,?,?,?)" (list id date type amount desc))))
-      (bank "a" "2025-12-31" "out" 99999 "Aplicação RDB")          ; on the anchor day: already counted
+      (bank "a" "2025-12-31" "out" 99999 "Aplicação RDB")
       (bank "b" "2026-01-10" "out" 100000 "Aplicação RDB")
       (bank "c" "2026-02-10" "in" 30000 "Resgate RDB")
       (bank "d" "2026-02-11" "out" 5000 "Compra no débito - Loja"))
@@ -75,7 +75,7 @@
       (should (= 89000 (fin-report--bank-saved "2026-10")))
       (should (= 9000 (fin-report--bank-saved "2026-09")))
       (should (= 98000 (fin-report--bank-saved "2026")))
-      (should (= 0 (fin-report--bank-saved "2023")))            ; before bb's :since
+      (should (= 0 (fin-report--bank-saved "2023")))
       (should (= 6000 (fin-report--bank-saved "2024")))
       (should-error (fin-report--bank-saved "2026-1")))))
 

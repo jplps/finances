@@ -25,8 +25,6 @@
 (require 'goals)
 (require 'dashboard)
 
-;; Personal settings (own accounts, salary payer, payee aliases) stay out of
-;; the repo, in the gitignored infra/.
 (defun fin--load-config ()
   "Load infra/config.el when present."
   (let ((config (expand-file-name "infra/config.el" fin--root)))
@@ -35,8 +33,7 @@
 (fin--load-config)
 
 (defun fin-reload ()
-  "Reload every project source file and infra/config.el so `fin' picks up
-edits without restart."
+  "Reload every project source file and infra/config.el."
   (interactive)
   (load (expand-file-name "core.el" fin--root) nil t)
   (dolist (sub '("adapters" "tools" "domain" "view"))
@@ -44,19 +41,15 @@ edits without restart."
       (load f nil t)))
   (fin--load-config))
 
-;;;###autoload
 (defun fin (&optional no-reload)
-  "The whole routine: reload sources, import new bank statements from the
-inbox, fix the ODS ledger from them (its report shows only when something
-changed), refresh the DB from the ODS, regenerate and open the dashboard.
-With prefix arg NO-RELOAD, skip the reload (use the already-loaded code)."
+  "Reload, import the inbox, fix the ODS from the bank, refresh the DB and
+open the dashboard.  With prefix arg NO-RELOAD, skip the reload."
   (interactive "P")
   (unless no-reload (fin-reload))
   (fin-bank-import)
   (fin-bank-fix-settle #'fin-sync-refresh)
   (fin-dashboard))
 
-;;;###autoload
 (defun fin-open-ods ()
   "Open the source ODS in the system default application."
   (interactive)

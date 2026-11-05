@@ -4,8 +4,7 @@
 (require 'fmt)
 
 (defun fin-dashboard--panel (name class-suffix title &rest body)
-  "<section id=SUFFIX class=SUFFIX> labelled NAME, described by TITLE.
-No visible heading: the status bar names the current panel."
+  "<section> CLASS-SUFFIX of BODY, aria-labelled NAME, described by TITLE."
   (concat (format "<section id=\"%s\" class=\"%s\" aria-label=\"%s\" aria-description=\"%s\">"
                   class-suffix class-suffix
                   (fin-dashboard--esc name)
@@ -14,9 +13,7 @@ No visible heading: the status bar names the current panel."
           "</section>"))
 
 (defun fin-dashboard--block (name title body &optional cls)
-  "Stat-block <div> with H3 NAME (HTML-allowed, callers must pre-escape user
-data).  TITLE → hover tooltip.  Optional CLS appended to class list (for
-grid-area mapping)."
+  "Stat block headed NAME, raw HTML the caller escapes; TITLE its tooltip."
   (format "<div class=\"stat-block%s\"><h3 title=\"%s\">%s</h3>%s</div>"
           (if cls (concat " " cls) "")
           (fin-dashboard--esc title)
@@ -24,15 +21,14 @@ grid-area mapping)."
           body))
 
 (defun fin-dashboard--thead (header)
-  "<thead> of the column labels HEADER; none when every label is empty, as
-for a table nested under a row that already names its column."
+  "<thead> of the labels HEADER, empty when every label is empty."
   (if (cl-every #'string-empty-p header) ""
     (concat "<thead><tr>"
             (mapconcat (lambda (h) (format "<th>%s</th>" (fin-dashboard--esc h))) header "")
             "</tr></thead>")))
 
 (defun fin-dashboard--table (header rows &optional class row-class-fn)
-  "Render <table> with thead + per-row <tr.row[ even][ EXTRA]> + zebra index."
+  "<table> of ROWS; ROW-CLASS-FN gives a row its extra class."
   (let ((i 0))
     (concat
      (if class (format "<table class=\"%s\">" class) "<table>")
@@ -52,10 +48,8 @@ for a table nested under a row that already names its column."
      "</tbody></table>")))
 
 (defun fin-dashboard--alist (header rows &optional foot)
-  "Accordion <table>.  HEADER = column labels.
-ROWS = list of (LABEL CELLS BODY &optional CLASS); <details> start closed.
-BODY non-nil wraps LABEL in <details>; a <tr.body> follows in a colspan'd <td>.
-FOOT, when non-nil, is a (LABEL . CELLS) totals row in <tfoot>."
+  "Accordion <table> of ROWS, each (LABEL CELLS BODY &optional CLASS).
+A non-nil BODY folds under its LABEL.  FOOT is a (LABEL . CELLS) totals row."
   (cl-assert (or (null foot) (= (length foot) (length header))))
   (let ((ncols (length header))
         (i 0))

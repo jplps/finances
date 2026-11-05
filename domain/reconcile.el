@@ -1,24 +1,5 @@
 ;;; reconcile.el --- Match bank transactions against ledger entries  -*- lexical-binding: t; -*-
 
-;; Pure functions over row lists; no DB access.
-;;
-;; Bank row:   (id date type amount description)
-;; Ledger row: (id date type category item amount "k/n"-or-nil)
-;;
-;; A bank row matches a ledger row with the same type and amount whose date
-;; lies within `fin-reconcile-window' days.  Each ledger row matches at most
-;; once; closest pairs are taken first, ties by bank date then ledger order.
-;;
-;; Leftovers then pair as near matches: same type, within the window, amounts
-;; differing by at most `fin-reconcile-near-ratio', and either a word shared
-;; by bank description and ledger item or a gap within
-;; `fin-reconcile-near-close-ratio'.  Closest amount wins.  Likely typos,
-;; shown for review, never auto-fixed.
-;;
-;; Before matching, `fin-reconcile-net' folds each month's gross income and
-;; its withheld deductions (item-less rows) into one net row, since the bank
-;; only sees the net.  A deduction with an item was paid on its own.
-
 (require 'cl-lib)
 (require 'calendar)
 (require 'ucs-normalize)
@@ -41,7 +22,7 @@ The bank receives income minus deductions as one deposit."
   :type '(alist :key-type string :value-type string) :group 'fin)
 
 (defun fin-reconcile--day (date)
-  "Absolute day number of ISO DATE (YYYY-MM-DD)."
+  "Absolute day number of ISO DATE."
   (unless (and (stringp date)
                (string-match "\\`\\([0-9]\\{4\\}\\)-\\([0-9]\\{2\\}\\)-\\([0-9]\\{2\\}\\)\\'"
                              date))
@@ -59,9 +40,9 @@ The bank receives income minus deductions as one deposit."
     idx))
 
 (defun fin-reconcile--best (bank-row candidates used window score)
-  "Unused row of CANDIDATES within WINDOW days of BANK-ROW with the lowest
-SCORE, or nil.  SCORE takes (bank-row ledger-row day-distance), returns a
-number or nil to reject.  Ties keep the earlier candidate."
+  "Unused CANDIDATES row within WINDOW days of BANK-ROW with lowest SCORE.
+SCORE takes (BANK-ROW ROW DAYS), returns a number or nil to reject.  Ties
+keep the earlier candidate."
   (let ((day (fin-reconcile--day (nth 1 bank-row)))
         best best-score)
     (dolist (row candidates)
@@ -90,9 +71,8 @@ Mark paired ledger ids in USED.  Return (PAIRS . UNPAIRED-BANK)."
   dist)
 
 (defun fin-reconcile--pair-closest (bank idx keyfn used window)
-  "Exact pairs of BANK in IDX by rising day distance, 0 up to WINDOW, so an
-earlier bank row never takes the ledger row of a later, closer one.
-Return (PAIRS . UNPAIRED-BANK), pairs in BANK order."
+  "Return (PAIRS . UNPAIRED-BANK) of BANK in IDX, closest days first.
+An earlier bank row never takes the ledger row of a later, closer one."
   (let ((pairs nil) (rest bank))
     (dotimes (d (1+ window))
       (let ((step (fin-reconcile--pair rest idx keyfn used d #'fin-reconcile--exact-score)))
@@ -128,13 +108,12 @@ Gaps beyond CLOSE also need a word shared by description and item."
            gap))))
 
 (defun fin-reconcile-match (bank ledger &optional window)
-  "Match BANK rows against LEDGER rows.
-WINDOW defaults to `fin-reconcile-window'.  Return a plist:
-  :matched     list of (bank-row . ledger-row), same amount
-  :near        list of (bank-row . ledger-row), amounts differ
-  :bank-only   bank rows with no ledger match (missing in the ODS)
-  :entry-only  ledger rows with no bank match (cash, other banks, typos)
-Every input row lands in exactly one bucket."
+  "Match BANK rows against LEDGER rows within WINDOW days.
+Return a plist, each input row in exactly one bucket:
+  :matched     (bank-row . ledger-row) pairs, same amount
+  :near        (bank-row . ledger-row) pairs, amounts differ
+  :bank-only   unmatched bank rows
+  :entry-only  unmatched ledger rows"
   (let* ((window (or window fin-reconcile-window))
          (ratio  fin-reconcile-near-ratio)
          (close  fin-reconcile-near-close-ratio)
@@ -202,9 +181,8 @@ not positive.  Dated at the first income; id is a list, never a DB id."
             (car rule) (format "net of %s" (cdr rule)) net nil))))
 
 (defun fin-reconcile-net (ledger &optional rules)
-  "LEDGER with each month's income and deduction rows per RULES replaced
-by one net income row, in place of the first income row.  RULES default
-to `fin-reconcile-net-rules'.  Months whose net is not positive stay as is."
+  "LEDGER with each month's RULES income and deductions as one net row.
+The net row replaces the first income; non-positive months stay as is."
   (let* ((rules (or rules fin-reconcile-net-rules))
          (groups (fin-reconcile--net-groups ledger rules))
          (first  (make-hash-table :test #'equal))
@@ -250,12 +228,9 @@ to `fin-reconcile-net-rules'.  Months whose net is not positive stay as is."
     (format "%s/%s" (match-string 1 s) (match-string 2 s))))
 
 (defun fin-reconcile--shift-pick (b entries used related)
-  "First unused row of ENTRIES that is the same transaction as bank row B.
-Either the amounts are equal and distinct within the exact window; or the
-same installment k/n within the exact window; or they differ by at most
-`fin-reconcile-near-close-ratio' within the shift window and RELATED holds
-for (B row).  The ledger names installments after the item bought, the bank
-after the merchant, and dates the first one at purchase, the bank at bill."
+  "First unused ENTRIES row that is the same transaction as bank row B.
+Within the exact window: equal distinct amounts, or the same installment
+k/n; within the shift window: a close amount and RELATED holding."
   (let ((day (fin-reconcile--day (nth 1 b))) (a (nth 3 b))
         (inst (fin-reconcile-installment (nth 4 b))))
     (cl-find-if
@@ -275,10 +250,9 @@ after the merchant, and dates the first one at purchase, the bank at bill."
      entries)))
 
 (defun fin-reconcile-shifted (bank-only entry-only related)
-  "Pair leftovers whose ledger date differs from the bank's.
-BANK-ONLY and ENTRY-ONLY are the leftovers of `fin-reconcile-match'.
-RELATED is a predicate on (bank-row ledger-row).  Return a plist with
-:shifted (pairs), :bank-only and :entry-only."
+  "Pair `fin-reconcile-match' leftovers dated apart.
+RELATED is a predicate on (BANK-ROW LEDGER-ROW).  Return a plist
+:shifted (pairs), :bank-only, :entry-only."
   (cl-assert (functionp related))
   (let ((used (make-hash-table :test #'equal)) pairs rest)
     (dolist (b bank-only)
@@ -292,9 +266,7 @@ RELATED is a predicate on (bank-row ledger-row).  Return a plist with
           :entry-only (cl-remove-if (lambda (l) (gethash (car l) used)) entry-only))))
 
 (defun fin-reconcile-month-totals (bank ledger)
-  "Per (month, type) sums of BANK and LEDGER amounts.
-Return sorted rows (YYYY-MM type bank-sum ledger-sum).  Meaningful where
-the ledger holds monthly lumps instead of single purchases."
+  "Sorted rows (YYYY-MM TYPE BANK-SUM LEDGER-SUM) of BANK and LEDGER."
   (let ((sums (make-hash-table :test #'equal))
         rows)
     (dolist (b bank)

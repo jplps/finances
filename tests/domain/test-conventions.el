@@ -12,8 +12,6 @@
   '(("food" "komprão" 40) ("food" "imperatriz" 114) ("free" "youtube premium" 18)
     ("house" "aluguel" 60) ("patrimony" "decathlon" 5)))
 
-;;; ── Words and categories ───────────────────────────────────
-
 (ert-deftest conv/suggest-uses-history-words-prefixes-and-aliases ()
   (should (equal '("food" . "komprão")
                  (fin-conv-suggest "Compra no débito - KOMPRAO KOCH ATACADIST" test-conv--history)))
@@ -34,15 +32,12 @@
 
 (ert-deftest conv/add-reuses-an-item-only-for-the-same-payee ()
   (let ((hist '(("free" "uber sk8" 30) ("food" "imperatriz" 114))))
-    ;; One shared word picks the category, not the item.
     (should (equal '("2023-05-03" "out" "free" "uber" 2492 nil nil)
                    (cadr (fin-conv--add-action '("b" "2023-05-03" "out" 2492 "Uber *Uber *Trip") hist))))
-    ;; Every item word names the payee, a truncated bank word included: reused.
     (should (equal "imperatriz"
                    (nth 3 (cadr (fin-conv--add-action '("b" "2023-05-03" "out" 990 "Super Imperatriz Lj") hist)))))
     (should (equal "imperatriz"
                    (nth 3 (cadr (fin-conv--add-action '("b" "2023-05-03" "out" 990 "Supermercados Imperatr") hist)))))
-    ;; An item word that only prefixes the bank's names another place.
     (should (equal "pizzaria don dani"
                    (nth 3 (cadr (fin-conv--add-action '("b" "2021-01-07" "out" 6490 "Pizzaria Don Dani")
                                                       '(("free" "go pizza" 9)))))))))
@@ -51,7 +46,6 @@
   (dolist (d '("Uberbr Uber * Pending" "Uber *Trip Help.Uber.C" "Uber * Pending" "Uber *Uber *Trip"))
     (should (equal "uber" (fin-conv-item d))))
   (should (equal "mercado sol" (fin-conv-item "Mercado Sol")))
-  ;; An installment paid early names its merchant, not the anticipation.
   (should (equal (fin-conv-item "Mercpago*Mercadol - Parcela 1/12")
                  (fin-conv-item "Antecipada - Mercpago*Mercadol - Parcela 3/12"))))
 
@@ -73,8 +67,6 @@
     (should-not (funcall rel b (test-conv--l 3 "2025-05-10" "out" "car" "seguro" 100)))
     (should (funcall rel (test-conv--b "i" "2025-05-06" "out" 100 "Compra no débito via NuPay - iFood")
                      (test-conv--l 4 "2025-05-10" "out" "food" "go pizza" 100)))))
-
-;;; ── Normalize ──────────────────────────────────────────────
 
 (ert-deftest conv/normalize-cancels-refund-pairs ()
   (let ((res (fin-conv-normalize
@@ -128,7 +120,6 @@
     (should (= 3 (length (plist-get two :rows))))))
 
 (ert-deftest conv/normalize-iof-follows-its-purchase-fitid ()
-  ;; Several purchases that day, but the IOF shares the Linode FITID.
   (let ((res (fin-conv-normalize
               (list (test-conv--b "nu:F1:aaa" "2026-10-02" "out" 2708 "Linode . Akamai")
                     (test-conv--b "nu:F2:bbb" "2026-10-02" "out" 11089 "Ifood *Ifd")
@@ -143,7 +134,6 @@
     (should (equal '("f" "c") (mapcar #'car (plist-get res :rows))))))
 
 (ert-deftest conv/normalize-refund-of-whole-installment-series ()
-  ;; Refund equals installment 1 plus the anticipated rest of one purchase.
   (let* ((rows (append (list (test-conv--b "i1" "2025-01-28" "out" 19162 "Mp *Lgelectronics - Parcela 1/12")
                              (test-conv--b "x" "2025-03-24" "out" 19158 "Mp *Outra - Parcela 3/12"))
                        (mapcar (lambda (k) (test-conv--b (format "i%d" k) "2025-03-24" "out" 19158
@@ -163,11 +153,8 @@
                     (test-conv--b "r" "2025-03-27" "in" 229900 "Estorno de \"Mp *Lgelectronics\"")
                     (test-conv--b "h" "2024-09-19" "out" 3990 "Dm*Helpmaxcom")
                     (test-conv--b "k" "2024-09-19" "in" 3990 "Crédito de Confiança de \"Dm*Helpmaxcom\"")))))
-    ;; The refund no longer cancels the reversal; an unreversed credit still refunds.
     (should (equal '("r") (mapcar #'car (plist-get res :rows))))
     (should (= 3 (cl-count "dispute credit reversed" (plist-get res :notes) :key #'cdr :test #'equal)))))
-
-;;; ── Plan ───────────────────────────────────────────────────
 
 (defun test-conv--plan (&rest args)
   (apply #'fin-conv-plan :history test-conv--history
@@ -194,7 +181,7 @@
                               :months '(("2024-03" 800000 795000) ("2024-04" 600000 500000)))))
     (should (equal '(:report :report :add) (mapcar #'car acts)))
     (should (string-match-p "2024-03: ledger 7950.00 \\+ bank-only 61.00 > bank 8000.00" (caddr (car acts))))
-    (should (equal '("a" "b") (mapcar (lambda (a) (car (cadr a))) (seq-take acts 2))))   ; bank ids kept
+    (should (equal '("a" "b") (mapcar (lambda (a) (car (cadr a))) (seq-take acts 2))))
     (should (equal "c" (nth 3 (nth 2 acts))))))
 
 (ert-deftest conv/plan-refund-deletes-matched-purchase ()

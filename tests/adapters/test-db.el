@@ -23,7 +23,7 @@
     (fin-test-insert-entry "2025-01-01" "in" "salary" 100 nil)
     (should (= 1 (fin-db-count "entry")))
     (fin-db-rebuild)
-    (should (= 0 (fin-db-count "entry"))))) ; rebuild wipes
+    (should (= 0 (fin-db-count "entry")))))
 
 (ert-deftest db/entry-amount-is-integer-cents ()
   (fin-test-with-db
@@ -33,16 +33,13 @@
       (should (= 12345 (car row))))))
 
 (ert-deftest db/budget-composite-pk-allows-same-cat-different-parent ()
-  "Composite PRIMARY KEY (category, parent) lets `house' exist top-level AND under another."
   (fin-test-with-db
     (fin-test-insert-budget "house" nil "fix" 100000 nil)
     (fin-test-insert-budget "house" "investments" "var" 10000 nil)
     (should (= 2 (fin-db-count "budget")))))
 
 (ert-deftest db/budget-duplicate-non-null-parent-errors ()
-  "Composite PK rejects duplicates when both (category, parent) are non-NULL.
-SQLite treats NULL parents as distinct, so the constraint only fires when both
-parts are actual values."
+  "SQLite treats NULL parents as distinct; only non-NULL pairs collide."
   (fin-test-with-db
     (fin-test-insert-budget "retirement" "investments" "var" 100000 nil)
     (should-error

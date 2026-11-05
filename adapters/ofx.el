@@ -1,22 +1,17 @@
 ;;; ofx.el --- OFX 1.x (SGML) / 2.x statement parser  -*- lexical-binding: t; -*-
 
-;; Reads only what reconciliation needs: account kind and the STMTTRN list.
-;; Values are taken up to the next tag, so both closed (<X>v</X>) and bare
-;; SGML (<X>v) elements parse.  Amounts become integer cents without floats.
-
 (require 'cl-lib)
 
 (defun fin-ofx--decode (raw)
   "Decode unibyte RAW as UTF-8 when valid, else as windows-1252.
-Headers are not trusted: Nubank card bills declare CHARSET:1252 but are
-UTF-8.  Invalid UTF-8 decodes to eight-bit raw bytes, which flags it."
+The header is ignored: Nubank card bills declare CHARSET:1252 but are UTF-8."
   (let ((utf8 (decode-coding-string raw 'utf-8)))
     (if (cl-some (lambda (c) (eq (char-charset c) 'eight-bit)) utf8)
         (decode-coding-string raw 'windows-1252)
       utf8)))
 
 (defun fin-ofx-read-file (path)
-  "Return the decoded contents of OFX file at PATH."
+  "Decoded contents of OFX file at PATH."
   (unless (file-readable-p path)
     (error "fin-ofx: cannot read %s" path))
   (with-temp-buffer
@@ -86,9 +81,6 @@ UTF-8.  Invalid UTF-8 decodes to eight-bit raw bytes, which flags it."
         txns)
     (while (string-match "<STMTTRN>\\(\\(?:.\\|\n\\)*?\\)\\(?:</STMTTRN>\\|<STMTTRN>\\|</BANKTRANLIST>\\)"
                          text pos)
-      ;; Capture before `fin-ofx--txn' clobbers the match data.  Resume at
-      ;; the end of the body, so a bare next <STMTTRN> is seen; that end is
-      ;; strictly past the opening tag, so the loop always advances.
       (let ((body (match-string 1 text))
             (end  (match-end 1)))
         (cl-assert (> end pos))

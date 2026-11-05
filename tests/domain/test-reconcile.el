@@ -51,7 +51,7 @@
     (should (= 1 (length (plist-get res :entry-only))))))
 
 (ert-deftest reconcile/type-and-amount-must-agree ()
-  (let* ((fin-reconcile-near-ratio 0)   ; exact pass only
+  (let* ((fin-reconcile-near-ratio 0)
          (fin-reconcile-near-close-ratio 0)
          (res (fin-reconcile-match
                (list (test-reconcile--bank "b1" "2025-06-10" "out" 1000)
@@ -64,7 +64,6 @@
     (should (= 2 (length (plist-get res :entry-only))))))
 
 (ert-deftest reconcile/ledger-row-matches-once ()
-  ;; Two identical bank charges, one ledger row: second charge is missing.
   (let ((res (fin-reconcile-match
               (list (test-reconcile--bank "b1" "2025-06-10" "out" 1000)
                     (test-reconcile--bank "b2" "2025-06-10" "out" 1000))
@@ -118,9 +117,9 @@
   (let* ((fin-reconcile-near-ratio 0.1)
          (res (fin-reconcile-match
                (list (test-reconcile--bank "b1" "2025-06-10" "out" 1000))
-               (list (test-reconcile--ledger 1 "2025-06-10" "out" 1200)  ; 16.7% gap
-                     (test-reconcile--ledger 2 "2025-06-20" "out" 1010)  ; too far
-                     (test-reconcile--ledger 3 "2025-06-10" "in"  1010)) ; other type
+               (list (test-reconcile--ledger 1 "2025-06-10" "out" 1200)
+                     (test-reconcile--ledger 2 "2025-06-20" "out" 1010)
+                     (test-reconcile--ledger 3 "2025-06-10" "in"  1010))
                3)))
     (should (null (plist-get res :near)))
     (should (= 1 (length (plist-get res :bank-only))))
@@ -132,9 +131,9 @@
          (res (fin-reconcile-match
                (list (test-reconcile--bank "b1" "2025-06-10" "out" 1000)
                      (test-reconcile--bank "b2" "2025-06-10" "out" 2000))
-               (list (test-reconcile--ledger 1 "2025-06-10" "out" 1000)  ; exact b1
+               (list (test-reconcile--ledger 1 "2025-06-10" "out" 1000)
                      (test-reconcile--ledger 2 "2025-06-10" "out" 1900)
-                     (test-reconcile--ledger 3 "2025-06-10" "out" 2050)) ; closer to b2
+                     (test-reconcile--ledger 3 "2025-06-10" "out" 2050))
                3)))
     (should (equal '(("b1" . 1)) (mapcar (lambda (p) (cons (caar p) (cadr p)))
                                          (plist-get res :matched))))
@@ -156,7 +155,7 @@
   (let ((fin-reconcile-near-ratio 2))
     (should-error (fin-reconcile-match nil nil 3)))
   (let ((fin-reconcile-near-ratio 0.05)
-        (fin-reconcile-near-close-ratio 0.1))   ; close beyond near
+        (fin-reconcile-near-close-ratio 0.1))
     (should-error (fin-reconcile-match nil nil 3))))
 
 (ert-deftest reconcile/words-fold-case-and-accents ()
@@ -174,7 +173,6 @@
                (list (test-reconcile--ledger 1 "2025-05-10" "out" 2500 "free" "recarga vivo")
                      (test-reconcile--ledger 2 "2025-05-11" "out" 24980 "personal" "escola"))
                3)))
-    ;; b1: 4.4% gap, no shared word → rejected.  b2: 0.02% gap → close enough.
     (should (equal '(("b2" . 2)) (mapcar (lambda (p) (cons (caar p) (cadr p)))
                                          (plist-get res :near))))
     (should (equal '("b1") (mapcar #'car (plist-get res :bank-only))))))
@@ -188,7 +186,6 @@
               '(("bp" . "cnpj")))))
     (should (equal '(((net "2026-08" "bp") "2026-08-05" "in" "bp" "net of cnpj" 875600 nil)
                      (3 "2026-08-06" "out" "food" nil 5000 nil)
-                     ;; September has no deduction: left untouched.
                      (4 "2026-09-04" "in" "bp" nil 1015500 nil))
                    out))))
 

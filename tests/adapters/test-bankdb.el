@@ -75,7 +75,7 @@
     (should-not (fin-bankdb-latest-balance "account"))
     (fin-bankdb-record-balance "account" "2026-09-01" 1000)
     (fin-bankdb-record-balance "account" "2026-10-01" 145366)
-    (fin-bankdb-record-balance "account" "2026-10-01" 145366)   ; re-import: same row
+    (fin-bankdb-record-balance "account" "2026-10-01" 145366)
     (fin-bankdb-record-balance "pj" "2026-10-05" 0)
     (should (equal '("2026-10-01" . 145366) (fin-bankdb-latest-balance "account")))
     (should (equal '("2026-10-05" . 0) (fin-bankdb-latest-balance "pj")))
@@ -89,7 +89,6 @@
            (list "a0" "t" "account" "2025-03-01" "out" 1 "first day")
            (list "a1" "t" "account" "2025-03-31" "out" 1 "last day")
            (list "a2" "t" "account" "2025-04-01" "out" 1 "next month")))
-    ;; Card bills are [start, end); account statements [start, end].
     (should (= 1 (fin-bankdb-drop-superseded "pj-card" "2025-03-06" "2025-04-06" nil)))
     (should (= 2 (fin-bankdb-drop-superseded "account" "2025-03-01" "2025-03-31" nil)))
     (should (equal '("a2" "c1") (mapcar #'car (fin-db-query "SELECT id FROM bank_txn ORDER BY id"))))

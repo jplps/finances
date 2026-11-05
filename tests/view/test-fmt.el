@@ -4,15 +4,11 @@
 (require 'helpers)
 (require 'fmt)
 
-;;; ── --esc ───────────────────────────────────────────────────
-
 (ert-deftest fmt/esc-amp-lt-gt-quote-apos ()
   (should (equal (fin-dashboard--esc "a & b < c > d \" e ' f")
                  "a &amp; b &lt; c &gt; d &quot; e &#39; f"))
   (should (equal (fin-dashboard--esc "") ""))
   (should (equal (fin-dashboard--esc nil) "")))
-
-;;; ── --ym ────────────────────────────────────────────────────
 
 (ert-deftest fmt/ym-strips-day ()
   (should (equal (fin-dashboard--ym "2025-06-30") "2025-06")))
@@ -24,15 +20,11 @@
 (ert-deftest fmt/ym-nil-returns-empty-string ()
   (should (equal (fin-dashboard--ym nil) "")))
 
-;;; ── --money / --money-str (cents → R$) ─────────────────────
-
 (ert-deftest fmt/money-str-formats-cents ()
   (should (equal (fin-dashboard--money-str 100000)    "1,000.00"))
   (should (equal (fin-dashboard--money-str -123456789) "-1,234,567.89"))
   (should (equal (fin-dashboard--money-str 12345)     "123.45"))
   (should (equal (fin-dashboard--money-str 0)         "0.00")))
-
-;;; ── --k (compact) ──────────────────────────────────────────
 
 (ert-deftest fmt/k-empty-for-nil-and-zero ()
   (should (equal (fin-dashboard--k nil) ""))
@@ -47,8 +39,6 @@
     (should (string-match-p "class=\"neg\"" out))
     (should (string-match-p "-1,000.00" out))))
 
-;;; ── --k-signed (positives marked .pos) ─────────────────────
-
 (ert-deftest fmt/k-signed-positive-wraps-in-pos-span ()
   (let ((out (fin-dashboard--k-signed 100000)))
     (should (string-match-p "class=\"pos\"" out))
@@ -58,15 +48,11 @@
   (let ((out (fin-dashboard--k-signed -100000)))
     (should (string-match-p "class=\"neg\"" out))))
 
-;;; ── --pct-signed ────────────────────────────────────────────
-
 (ert-deftest fmt/pct-signed-handles-edges ()
   (should (equal (fin-dashboard--pct-signed nil) ""))
   (should (equal (fin-dashboard--pct-signed 0)   "0.0%"))
   (should (string-match-p "class=\"pos\".*12.3%" (fin-dashboard--pct-signed 12.3)))
   (should (string-match-p "class=\"neg\".*-4.5%" (fin-dashboard--pct-signed -4.5))))
-
-;;; ── --money-cell / --money-signed-cell (table cells) ───────
 
 (ert-deftest fmt/money-cell-returns-raw-plist ()
   (let ((c (fin-dashboard--money-cell 12345)))

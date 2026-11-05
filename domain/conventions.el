@@ -1,28 +1,5 @@
 ;;; conventions.el --- How bank rows become ledger fixes  -*- lexical-binding: t; -*-
 
-;; Pure functions over row lists; no DB or ODS access.  They encode how the
-;; ledger books bank activity:
-;;
-;; - A refund cancels the purchase it refunds, or all the installments of
-;;   one it returns whole; a refunded purchase already in the ledger is
-;;   deleted.  A dispute's provisional credits and their reversal cancel.
-;; - IOF and installment discounts fold into their purchase.
-;; - A Pix funded by "Pix no Crédito" counts once, on the card.
-;; - Salary is booked gross under `bp' with the tax under `cnpj'; a deposit
-;;   that differs from `bp' − `cnpj' is reported, never fixed: the tax
-;;   booked is a fact the bank cannot tell.
-;; - Savings moves are transfers between own accounts: the ledger books them
-;;   per goal (`investments', `retirement', `reserve'), never from the bank.
-;; - Money received from people is booked as income under
-;;   `fin-conv-inflow-category'.
-;; - A month never gets more outflows added than the bank spent beyond what
-;;   the ledger already holds; otherwise its bank-only rows are reported.
-;; - Anything else is added under the category its words suggest from the
-;;   ledger's history, else `fin-conv-default-category'.
-;;
-;; Bank row:   (id date type amount description)
-;; Ledger row: (id date type category item amount "k/n"-or-nil)
-
 (require 'cl-lib)
 (require 'reconcile)
 
@@ -47,16 +24,13 @@
   "Bank descriptions of salary deposits, checked against `bp' − `cnpj'."
   :type '(repeat regexp) :group 'fin)
 
-
-
 (defcustom fin-conv-aliases nil
   "Alist (BANK-WORD . LEDGER-WORD) relating payee names to ledger items,
 e.g. (\"veronica\" . \"aluguel\").  Words are lowercase without accents."
   :type '(alist :key-type string :value-type string) :group 'fin)
 
 (defcustom fin-conv-item-aliases '(("\\`Uber" . "uber"))
-  "Bank descriptions -> ledger item: list of (REGEXP . ITEM), first match
-wins.  For payees whose memos vary (`Uberbr Uber * Pending', `Uber *Trip')."
+  "Bank descriptions -> ledger item: list of (REGEXP . ITEM), first wins."
   :type '(alist :key-type regexp :value-type string) :group 'fin)
 
 (defcustom fin-conv-default-category "free"
@@ -81,15 +55,12 @@ wins.  For payees whose memos vary (`Uberbr Uber * Pending', `Uber *Trip')."
           "\\|Pagamento de boleto efetuado\\|Débito em conta\\|Antecipada\\)\\s-*-?\\s-*")
   "Bank boilerplate in front of the payee name.")
 
-;;; ── Words and categories ───────────────────────────────────
-
 (defun fin-conv--money (cents)
   "CENTS as a decimal string."
   (format "%s%d.%02d" (if (< cents 0) "-" "") (/ (abs cents) 100) (% (abs cents) 100)))
 
 (defun fin-conv--bank-words (desc)
-  "Meaningful words of the payee in DESC, plus their `fin-conv-aliases'.
-Only the payee counts: the rest names banks and agencies."
+  "Non-stopword payee words of DESC, plus their `fin-conv-aliases'."
   (let ((ws (cl-set-difference (fin-reconcile--words (fin-conv-item desc)) fin-conv--stopwords
                                :test #'string=)))
     (delete-dups (append ws (delq nil (mapcar (lambda (w) (cdr (assoc w fin-conv-aliases))) ws))))))
@@ -117,9 +88,9 @@ with at least 5 chars."
                                     (apply #'concat (fin-reconcile--words (fin-conv-item desc))))))))))
 
 (defun fin-conv-suggest (desc history)
-  "(CATEGORY . ITEM) most often booked for the payee of DESC, or nil.
-An item sharing a whole word with the payee beats a prefix or joined
-match.  HISTORY is a list of (category item count)."
+  "(CATEGORY . ITEM) most booked for the payee of DESC, or nil.
+HISTORY is (CATEGORY ITEM COUNT) rows; a whole shared word beats a prefix
+or joined match."
   (let ((bw (fin-conv--bank-words desc)) best best-score)
     (dolist (h history)
       (pcase-let ((`(,cat ,item ,n) h))
@@ -137,8 +108,7 @@ match.  HISTORY is a list of (category item count)."
     (and d (> d 0))))
 
 (defun fin-conv-related-fn (history)
-  "Predicate on (bank-row ledger-row): the ledger row books that payee.
-Shared word, alias, or the category the history suggests for the payee."
+  "Predicate on (BANK-ROW LEDGER-ROW): the ledger row books that payee."
   (lambda (b l)
     (let ((bw (fin-conv--bank-words (nth 4 b))))
       (or (and (nth 4 l) (fin-conv--item-hit-p (nth 4 b) bw (nth 4 l)))
@@ -168,8 +138,6 @@ payee name, lowercase."
       (list (string-to-number (match-string 1 desc)) (string-to-number (match-string 2 desc)))
     (list nil nil)))
 
-;;; ── Normalize: before matching ─────────────────────────────
-
 (defun fin-conv--match-p (re row) (string-match-p re (nth 4 row)))
 
 (defun fin-conv--savings-p (row)
@@ -191,8 +159,8 @@ payee name, lowercase."
   (and (string-match "\"\\([^\"]+\\)\"" desc) (match-string 1 desc)))
 
 (defun fin-conv--refunded-purchase (refund rows gone)
-  "Out row of ROWS, not in GONE, with REFUND's amount up to
-`fin-conv-refund-days' before it, the closest one."
+  "Closest out row of ROWS not in GONE with REFUND's amount, up to
+`fin-conv-refund-days' before it."
   (fin-conv--nearest-before
    refund #'identity
    (cl-remove-if-not (lambda (r)
@@ -303,7 +271,6 @@ a list of (row . reason) for every row removed."
         (delta (make-hash-table :test #'equal))
         notes)
     (cl-flet ((drop (r why) (puthash (car r) t gone) (push (cons r why) notes)))
-      ;; Pix paid with "Pix no Crédito": the card side counts, the account pass-through not.
       (dolist (f bank)
         (when (fin-conv--match-p "\\`Valor adicionado na conta por cartão" f)
           (let ((p (cl-find-if (lambda (r) (and (not (gethash (car r) gone))
@@ -312,7 +279,6 @@ a list of (row . reason) for every row removed."
                                                 (fin-conv--match-p "Pix" r)))
                                bank)))
             (when p (drop p "pass-through: paid via Pix no Crédito")))))
-      ;; A dispute's provisional credits and their reversal: cancel out.
       (dolist (v bank)
         (when (and (equal (nth 2 v) "out") (fin-conv--match-p fin-conv--reversal-re v)
                    (not (gethash (car v) gone)))
@@ -320,19 +286,16 @@ a list of (row . reason) for every row removed."
             (when cs
               (drop v "dispute credit reversed")
               (dolist (c cs) (drop c "dispute credit reversed"))))))
-      ;; Refund and refunded purchase both in the statement: cancel out.
       (dolist (r bank)
         (when (and (fin-conv--refund-p r) (not (gethash (car r) gone)))
           (let ((p (fin-conv--refunded-purchase r bank gone)))
             (when p (drop r "refund") (drop p "refunded purchase")))))
-      ;; Refund of a whole installment purchase (anticipated ones included).
       (dolist (r bank)
         (when (and (fin-conv--refund-p r) (not (gethash (car r) gone)))
           (let ((ps (fin-conv--refunded-series r bank gone)))
             (when ps
               (drop r "refund")
               (dolist (p ps) (drop p "refunded installment"))))))
-      ;; Partial refund: reduces the payee's larger purchase before it.
       (dolist (r bank)
         (when (and (fin-conv--refund-p r) (not (gethash (car r) gone)))
           (let* ((payee (cl-set-difference (fin-reconcile--words (nth 4 r)) fin-conv--stopwords
@@ -346,7 +309,6 @@ a list of (row . reason) for every row removed."
             (when p
               (puthash (car p) (- (gethash (car p) delta 0) (nth 3 r)) delta)
               (drop r "partial refund, netted into purchase")))))
-      ;; IOF adds to, discounts subtract from, their purchase.
       (dolist (f bank)
         (when (and (fin-conv--fee-p f) (not (gethash (car f) gone)))
           (let ((host (fin-conv--fee-host f bank gone))
@@ -361,8 +323,6 @@ a list of (row . reason) for every row removed."
                                           (append (seq-take r 3) (list (+ (nth 3 r) d)) (nthcdr 4 r))))))
                                   bank))
           :notes (nreverse notes))))
-
-;;; ── Plan: after matching ───────────────────────────────────
 
 (defun fin-conv--combined (bank-only entry-only)
   "Pairs of BANK-ONLY rows booked as one ENTRY-ONLY row: same type, within
@@ -384,7 +344,6 @@ Return (BOOKED-BANK-ROWS . USED-LEDGER-ROWS)."
                          (push a booked) (push c booked) (push l used)
                          (cl-return-from found))))))))
     (cons booked used)))
-
 
 (defun fin-conv--salary-p (row)
   (cl-some (lambda (re) (fin-conv--match-p re row)) fin-conv-salary-regexps))
@@ -438,8 +397,6 @@ names the payee; salary gaps are reported."
                               pairs))))
     (if p (list :delete (cdr p) (concat "refunded: " (nth 4 refund)))
       (list :report refund "refund with no purchase found"))))
-
-;;; ── Plan: adds within the month's room ─────────────────────
 
 (defun fin-conv--same-payee-p (desc item)
   "Non-nil if every word of ledger ITEM names the payee of bank DESC: equal

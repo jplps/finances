@@ -5,17 +5,15 @@
 (require 'accounts)
 
 (defconst fin-budget-fix-target 55
-  "Target share (%) of monthly liquid earmarked for fix outflows.
-Var target is the complement (100 - fix-target).")
+  "Target share (%) of monthly liquid for fix outflows.")
 
 (defconst fin-budget-var-target (- 100 fin-budget-fix-target)
-  "Target share (%) of monthly liquid for var outflows.
-Derived from `fin-budget-fix-target' so the two always sum to 100.")
+  "Target share (%) of monthly liquid for var outflows.")
 
 (defun fin-report--realized-income (year)
-  "Average monthly (BRUTE CNPJ) realized from entries for YEAR, in cents.
-Averages complete months only; falls back to every month carrying rows when
-YEAR has no complete month yet.  Withdrawals from savings are no income."
+  "Average monthly (BRUTE CNPJ) cents realized in YEAR.
+Complete months only, else every month with rows; savings withdrawals are
+not income."
   (or (car
        (fin-report--flow-query
         ", m AS (
@@ -37,9 +35,8 @@ YEAR has no complete month yet.  Withdrawals from savings are no income."
       (list 0 0)))
 
 (defun fin-report--monthly-income (year)
-  "Monthly (BRUTE CNPJ LIQUID SOURCE) for YEAR.  Money in cents.
-SOURCE is `plan' when the budget declares income rows (type='income',
-category `brute'/`cnpj'), else `actual' — averaged from realized entries."
+  "Monthly (BRUTE CNPJ LIQUID SOURCE) for YEAR, in cents.
+SOURCE is `plan' when the budget declares income rows, else `actual'."
   (let* ((plan  (car (fin-db-query
                       "SELECT COALESCE(SUM(CASE WHEN category='brute' THEN amount END), 0),
                               COALESCE(SUM(CASE WHEN category='cnpj'  THEN amount END), 0)
@@ -52,14 +49,12 @@ category `brute'/`cnpj'), else `actual' — averaged from realized entries."
     (list brute cnpj (- brute cnpj) (if declared 'plan 'actual))))
 
 (defun fin-report--monthly-liquid (year)
-  "Average monthly liquid (net in) for YEAR, in cents.
-Declared plan income wins; otherwise realized entries are averaged."
+  "Monthly liquid income for YEAR, in cents."
   (nth 2 (fin-report--monthly-income year)))
 
 (defun fin-report--budget-share (year)
-  "Top-level budget: (category, type, amount, share-of-liquid %) for YEAR.
-For fix rows: amount stored; share derived.  For var rows: share stored;
-amount derived."
+  "Top-level rows (CATEGORY TYPE AMOUNT SHARE-%) for YEAR.
+Fix rows store the amount, var rows the share of monthly liquid."
   (let ((liquid (fin-report--monthly-liquid year)))
     (fin-db-query
      "SELECT category, type,
@@ -73,11 +68,9 @@ amount derived."
      (list liquid))))
 
 (defun fin-report--budget-base (parent year)
-  "Return (PARENT-AMT BASE) for the PARENT budget category in YEAR, in cents.
-BASE is what PARENT's share-driven children divide: the parent amount less
-what is already committed \u2014 children carrying an explicit amount, plus the
-patrimony amortization injected into `investments'.  A negative BASE is
-returned as-is so an overrun surfaces instead of silently clamping."
+  "Return (PARENT-AMT BASE) in cents for budget category PARENT in YEAR.
+BASE, split by share-driven children, is PARENT-AMT less children with an
+amount and, for `investments', patrimony amortization; it may be negative."
   (or (car (fin-db-query
             "SELECT amt,
                     amt
@@ -92,12 +85,9 @@ returned as-is so an overrun surfaces instead of silently clamping."
       (list 0 0)))
 
 (defun fin-report--budget-children (parent year)
-  "Sub-rows (category, amount, % of parent) for PARENT budget category in YEAR.
-For the investments parent: UNION of ODS extras + per-category patrimony
-amortization.  Other parents: just ODS rows.
-Children are driven by amount or by share; a share resolves against the
-parent's uncommitted base (see `fin-report--budget-base'), so fixed draws are
-never double-counted.  Percentage column is share of the parent's amount."
+  "Rows (CATEGORY AMOUNT PCT-OF-PARENT) under PARENT in YEAR.
+Shares resolve against `fin-report--budget-base'; `investments' also gets
+a patrimony amortization row."
   (let* ((b          (fin-report--budget-base parent year))
          (parent-amt (nth 0 b))
          (base       (nth 1 b)))
@@ -120,11 +110,8 @@ never double-counted.  Percentage column is share of the parent's amount."
      (list base parent parent-amt))))
 
 (defun fin-report--var-total (year &optional spend-only)
-  "Sum of var leaves for YEAR, in cents.
-A parent with children contributes those children \u2014 investments' patrimony
-amortization among them; a childless parent contributes its own amount.
-SPEND-ONLY skips the rows that save, those named as `out' transfers in
-`fin-report-transfer-categories', with their children."
+  "Cents of var leaves for YEAR: a parent's children, else its own amount.
+SPEND-ONLY skips `out' transfer rows of `fin-report-transfer-categories'."
   (let ((saving (and spend-only (cdr (assoc "out" fin-report-transfer-categories))))
         (total 0))
     (dolist (row (fin-report--budget-share year) total)
@@ -137,10 +124,9 @@ SPEND-ONLY skips the rows that save, those named as `out' transfers in
                      (or (nth 2 row) 0)))))))))
 
 (defun fin-report--planned-month (year)
-  "Plan-derived monthly (in, out, liquid) placeholder for forecast months.
-Booked like actual months: in is the gross (brute) income, out the fix and
-spending var rows plus the company tax (cnpj); saving rows are left in
-liquid, as transfers are in `fin-report--year-months'."
+  "Plan-derived monthly (IN OUT LIQUID) in cents for forecast months.
+IN is brute income, OUT fix, spending var and cnpj; saving rows stay in
+LIQUID."
   (let* ((inc     (fin-report--monthly-income year))
          (in      (round (nth 0 inc)))
          (fix     (or (nth 1 (fin-report--runway)) 0))
@@ -149,7 +135,7 @@ liquid, as transfers are in `fin-report--year-months'."
     (list in out (- in out))))
 
 (defun fin-report--runway ()
-  "Return (RESERVE FIX-MONTHLY MONTHS)."
+  "Return (RESERVE FIX-MONTHLY MONTHS), money in cents."
   (let* ((reserve (fin-report--accounts-total :reserve))
          (fix     (or (caar (fin-db-query
                              "SELECT SUM(amount)

@@ -4,8 +4,6 @@
 (require 'helpers)
 (require 'budget)
 
-;;; ── --monthly-liquid ────────────────────────────────────────
-
 (ert-deftest budget/monthly-liquid-zero-when-empty ()
   (fin-test-with-db
     (should (= 0 (fin-report--monthly-liquid 2025)))))
@@ -13,7 +11,6 @@
 (ert-deftest budget/monthly-liquid-averages-monthly-in ()
   (fin-test-with-db
     (fin-test-insert-entry "2025-01-31" "in" "salary" 500000 nil)
-    ;; mid-month row in the same month — every row counts → Jan = 600000
     (fin-test-insert-entry "2025-01-15" "in" "salary" 100000 "bonus")
     (fin-test-insert-entry "2025-02-28" "in" "salary" 400000 nil)
     (should (= 500000 (fin-report--monthly-liquid 2025)))))
@@ -40,7 +37,6 @@
       (should (eq 'actual (nth 3 inc))))))
 
 (ert-deftest budget/monthly-liquid-excludes-current-partial-month ()
-  "The running month is incomplete; it must not drag the average down."
   (fin-test-with-db
     (let* ((now  (decode-time))
            (year (nth 5 now))
@@ -58,8 +54,6 @@
            (mon  (nth 4 now)))
       (fin-test-insert-entry (format "%d-%02d-05" year mon) "in" "salary" 300000 nil)
       (should (= 300000 (fin-report--monthly-liquid year))))))
-
-;;; ── --budget-share ──────────────────────────────────────────
 
 (ert-deftest budget/share-uses-amount-for-fix-and-derives-share ()
   (fin-test-with-db
@@ -88,8 +82,6 @@
       (should (equal "house" (nth 0 (car rows))))
       (should (= 20.0 (nth 3 (car rows)))))))
 
-;;; ── --runway ────────────────────────────────────────────────
-
 (ert-deftest budget/runway-zero-when-no-fix-budget ()
   (fin-test-with-db
     (cl-letf (((symbol-function 'fin-report--accounts-total) (lambda (&optional _) 500000)))
@@ -106,8 +98,6 @@
         (should (= 300000  (nth 1 rw)))
         (should (= 4.0     (nth 2 rw)))))))
 
-;;; ── --budget-children (investments parent unions patrimony) ─
-
 (ert-deftest budget/children-of-non-investments-parent ()
   (fin-test-with-db
     (fin-test-insert-entry "2025-01-31" "in" "salary" 1000000 nil)
@@ -115,41 +105,37 @@
     (fin-test-insert-budget "retirement" "investments" "var" 100000 nil)
     (fin-test-insert-budget "free"       "investments" "var" 50000 nil)
     (let ((kids (fin-report--budget-children "investments" 2025)))
-      ;; ODS extras present (no patrimony rows so no `patrimony' synthetic).
       (should (cl-find "retirement" kids :test (lambda (k r) (equal (nth 0 r) k))))
       (should (cl-find "free"       kids :test (lambda (k r) (equal (nth 0 r) k)))))))
 
 (ert-deftest budget/children-of-investments-includes-patrimony-rollup ()
-  "Investments children must include ONE synthetic `patrimony' leaf summing
-all per-row amortizations (amount / lifespan_months)."
+  "One synthetic `patrimony' leaf sums amount / lifespan_months of every row."
   (fin-test-with-db
     (fin-test-insert-entry "2025-01-31" "in" "salary" 1000000 nil)
     (fin-test-insert-budget "investments" nil "var" nil 0.4)
     (fin-test-insert-budget "retirement" "investments" "var" 100000 nil)
-    (fin-test-insert-patrimony "car"   "wheels"  1200000 60)   ; 20000/mo
-    (fin-test-insert-patrimony "house" "fridge"  240000 120)   ; 2000/mo
+    (fin-test-insert-patrimony "car"   "wheels"  1200000 60)
+    (fin-test-insert-patrimony "house" "fridge"  240000 120)
     (let* ((kids (fin-report--budget-children "investments" 2025))
            (patri (cl-find-if (lambda (r) (equal (nth 0 r) "patrimony")) kids)))
       (should patri)
       (should (= 22000 (nth 1 patri))))))
 
 (ert-deftest budget/children-skip-patrimony-rollup-on-zero-lifespan ()
-  "NULLIF(lifespan_months,0) guards against /0."
   (fin-test-with-db
     (fin-test-insert-entry "2025-01-31" "in" "salary" 1000000 nil)
     (fin-test-insert-budget "investments" nil "var" nil 0.4)
     (fin-test-insert-patrimony "junk" "x" 100000 0)
     (let* ((kids (fin-report--budget-children "investments" 2025))
            (patri (cl-find-if (lambda (r) (equal (nth 0 r) "patrimony")) kids)))
-      ;; SUM amortization becomes NULL → row may be missing or amt = nil; must NOT crash.
       (should (or (null patri) (null (nth 1 patri)) (zerop (nth 1 patri)))))))
 
 (ert-deftest budget/base-subtracts-fixed-draws-from-parent ()
   (fin-test-with-db
     (fin-test-insert-budget "brute" nil "income" 1160000 nil)
-    (fin-test-insert-budget "investments" nil "var" nil 0.2)      ; 232000
+    (fin-test-insert-budget "investments" nil "var" nil 0.2)
     (fin-test-insert-budget "family" "investments" "var" 20000 nil)
-    (fin-test-insert-patrimony "car" "wheels" 1200000 60)         ; 20000/mo
+    (fin-test-insert-patrimony "car" "wheels" 1200000 60)
     (should (equal (list 232000 192000)
                    (fin-report--budget-base "investments" 2026)))))
 
@@ -157,11 +143,11 @@ all per-row amortizations (amount / lifespan_months)."
   "Share children split what patrimony left behind, so they sum to the parent."
   (fin-test-with-db
     (fin-test-insert-budget "brute" nil "income" 1160000 nil)
-    (fin-test-insert-budget "investments" nil "var" nil 0.2)      ; 232000
+    (fin-test-insert-budget "investments" nil "var" nil 0.2)
     (fin-test-insert-budget "family"    "investments" "var" nil 0.5)
     (fin-test-insert-budget "emergency" "investments" "var" nil 0.25)
     (fin-test-insert-budget "vacations" "investments" "var" nil 0.25)
-    (fin-test-insert-patrimony "car" "wheels" 6781920 60)         ; 113032/mo
+    (fin-test-insert-patrimony "car" "wheels" 6781920 60)
     (let ((kids (fin-report--budget-children "investments" 2026)))
       (should (= 113032 (nth 1 (assoc "patrimony" kids))))
       (should (= 59484  (nth 1 (assoc "family" kids))))
@@ -169,14 +155,11 @@ all per-row amortizations (amount / lifespan_months)."
       (should (= 232000 (apply #'+ (mapcar (lambda (k) (nth 1 k)) kids)))))))
 
 (ert-deftest budget/base-goes-negative-when-fixed-draws-overrun ()
-  "An overrun is reported, not clamped \u2014 the panel renders it red."
   (fin-test-with-db
     (fin-test-insert-budget "brute" nil "income" 1160000 nil)
-    (fin-test-insert-budget "investments" nil "var" nil 0.2)      ; 232000
-    (fin-test-insert-patrimony "house" "roof" 30000000 60)        ; 500000/mo
+    (fin-test-insert-budget "investments" nil "var" nil 0.2)
+    (fin-test-insert-patrimony "house" "roof" 30000000 60)
     (should (= -268000 (nth 1 (fin-report--budget-base "investments" 2026))))))
-
-;;; ── --var-total ─────────────────────────────────────────────
 
 (ert-deftest budget/var-total-empty-is-zero ()
   (fin-test-with-db
@@ -187,21 +170,18 @@ all per-row amortizations (amount / lifespan_months)."
     (fin-test-insert-entry "2025-01-31" "in" "salary" 1000000 nil)
     (fin-test-insert-budget "investments" nil "var" nil 0.2)
     (fin-test-insert-budget "retirement" "investments" "var" 100000 nil)
-    (fin-test-insert-patrimony "car" "wheels" 1200000 60) ; 20000/mo
+    (fin-test-insert-patrimony "car" "wheels" 1200000 60)
     (let ((total (fin-report--var-total 2025)))
-      ;; expected = 100000 (retirement) + 20000 (car amortization)
       (should (= 120000 (round total))))))
 
 (ert-deftest budget/var-total-counts-children-over-parent ()
   "A parent with children contributes the children; a childless one, itself."
   (fin-test-with-db
     (fin-test-insert-budget "brute" nil "income" 1000000 nil)
-    (fin-test-insert-budget "investments" nil "var" nil 0.2)      ; 200000
+    (fin-test-insert-budget "investments" nil "var" nil 0.2)
     (fin-test-insert-budget "family" "investments" "var" nil 1.0)
-    (fin-test-insert-budget "free" nil "var" nil 0.1)             ; 100000, childless
+    (fin-test-insert-budget "free" nil "var" nil 0.1)
     (should (= 300000 (fin-report--var-total 2026)))))
-
-;;; ── --planned-month ─────────────────────────────────────────
 
 (ert-deftest budget/planned-month-books-like-actuals ()
   "In is gross; out is fix, spending var and the company tax; saving rows
@@ -212,18 +192,18 @@ stay in liquid."
     (fin-test-insert-budget "house" nil "fix" 200000 nil)
     (fin-test-insert-budget "investments" nil "var" nil 0.2)
     (fin-test-insert-budget "retirement" "investments" "var" 100000 nil)
-    (fin-test-insert-budget "free" nil "var" nil 0.1)            ; 10% of 900000
+    (fin-test-insert-budget "free" nil "var" nil 0.1)
     (let ((pm (fin-report--planned-month 2025)))
-      (should (= 1000000 (nth 0 pm)))           ; brute
-      (should (= 390000  (nth 1 pm)))           ; 200k fix + 90k free + 100k cnpj
+      (should (= 1000000 (nth 0 pm)))
+      (should (= 390000  (nth 1 pm)))
       (should (= 610000  (nth 2 pm))))))
 
 (ert-deftest budget/var-total-spend-only-skips-saving-rows ()
   (fin-test-with-db
     (fin-test-insert-budget "brute" nil "income" 1000000 nil)
-    (fin-test-insert-budget "investments" nil "var" nil 0.2)      ; 200000, saves
-    (fin-test-insert-budget "retirement" nil "var" nil 0.1)       ; 100000, saves
-    (fin-test-insert-budget "free" nil "var" nil 0.05)            ; 50000
+    (fin-test-insert-budget "investments" nil "var" nil 0.2)
+    (fin-test-insert-budget "retirement" nil "var" nil 0.1)
+    (fin-test-insert-budget "free" nil "var" nil 0.05)
     (should (= 350000 (fin-report--var-total 2026)))
     (should (= 50000 (fin-report--var-total 2026 t)))))
 

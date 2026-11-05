@@ -5,7 +5,6 @@
 (require 'fmt)
 (require 'html)
 (require 'charts)
-;; domain
 (require 'cashflow)
 (require 'budget)
 (require 'goals)
@@ -16,7 +15,7 @@
 (require 'stats)
 
 (defun fin-dashboard--group-by (rows key-idx)
-  "Return alist (KEY . ROWS) preserving first-seen order."
+  "Alist (KEY . ROWS) keyed by element KEY-IDX, in first-seen order."
   (let (out)
     (dolist (r rows)
       (let* ((k (nth key-idx r))
@@ -26,7 +25,7 @@
     (nreverse out)))
 
 (defun fin-dashboard--records-rows (recs nw)
-  "(LABEL CELL) rows of the headline RECS and net worth NW."
+  "(LABEL CELL) rows of records plist RECS and net worth NW."
   (let ((signed (lambda (text n) (list :raw (if (and (numberp n) (/= n 0))
                                                  (format "<span class=\"%s\">%s</span>" (if (> n 0) "pos" "neg") text)
                                                text))))
@@ -143,10 +142,8 @@
      "</div>"
      "</div>")))
 
-;;; ── objectives: plan targets vs this month ─────────────────
-
 (defun fin-dashboard--goal-ancestors (r parents)
-  "Categories above goal row R, outermost first; PARENTS maps category to parent."
+  "Categories above goal row R, outermost first, by the PARENTS table."
   (let ((out nil) (p (plist-get r :parent)) (guard 0))
     (while (and p (< guard 8))
       (push p out)
@@ -154,20 +151,18 @@
     out))
 
 (defun fin-dashboard--goal-cat (cat toggle)
-  "Category cell content; a TOGGLE row gets the checkbox that folds its children."
+  "CAT escaped; TOGGLE adds the checkbox that folds its children."
   (if toggle
       (format "<label><input type=\"checkbox\" id=\"goal-%s\">%s</label>"
               (fin-dashboard--esc cat) (fin-dashboard--esc cat))
     (fin-dashboard--esc cat)))
 
 (defun fin-dashboard--goal-row (r parents)
-  "Goal row R.  PARENTS maps category to parent: rows other rows hang under
-fold them, and each row names its ancestors so folding one hides it."
+  "<tr> of goal R; a parent in PARENTS folds, folding any ancestor hides it."
   (let* ((cat (plist-get r :category)) (target (plist-get r :target)) (mtd (plist-get r :mtd))
          (anc (fin-dashboard--goal-ancestors r parents))
          (toggle (cl-some (lambda (p) (equal p cat)) (hash-table-values parents)))
          (over (and (not (eq (plist-get r :direction) 'save)) (> mtd target)))
-         ;; Plan minus month: room left to spend, or what is still to save.
          (diff (- (round target) (round mtd))))
     (format "<tr class=\"goal%s\"%s><td class=\"cat\">%s</td><td class=\"num%s\">%s</td><td class=\"num dim\">%s</td><td class=\"num %s\">%s</td></tr>"
             (pcase (plist-get r :depth) (1 " child") (2 " child deep") (_ ""))
@@ -180,7 +175,7 @@ fold them, and each row names its ancestors so folding one hides it."
             (fin-dashboard--money-str diff))))
 
 (defun fin-dashboard--goals-fold-css (parents)
-  "Rules hiding the rows under each folded (unchecked) parent of PARENTS."
+  "<style> hiding the rows under each unchecked parent of PARENTS."
   (let ((ps (delete-dups (hash-table-values parents))))
     (when ps
       (concat "<style>"
@@ -211,7 +206,7 @@ fold them, and each row names its ancestors so folding one hides it."
   (if ok "<span class=\"pos\">✓</span>" "<span class=\"neg\">⚠</span>"))
 
 (defun fin-dashboard--health-line (ok text)
-  "One to-do line: a mark, then TEXT (HTML)."
+  "To-do line of TEXT (HTML), marked ✓ when OK else ⚠."
   (format "<div class=\"todo\">%s %s</div>" (fin-dashboard--health-mark ok) text))
 
 (defun fin-dashboard--health-inbox ()
@@ -280,7 +275,7 @@ fold them, and each row names its ancestors so folding one hides it."
 (declare-function fin-dashboard--ir-todo "irpf" ())
 
 (defun fin-dashboard--health-docs ()
-  "The missing-documents line, and one for key files when any."
+  "(OK HTML) for the missing inbox documents, and for key files left there."
   (let ((missing (fin-health-missing-docs)) (keys (fin-health-key-files)))
     (delq nil
           (list (if missing
@@ -294,13 +289,12 @@ fold them, and each row names its ancestors so folding one hides it."
                                          (fin-dashboard--esc (string-join keys " · "))))))))))
 
 (defun fin-dashboard--health-todo ()
-  "One line per open item kept by hand."
+  "(nil HTML) per entry of `fin-health-todo'."
   (mapcar (lambda (s) (list nil (fin-dashboard--health-line nil (fin-dashboard--esc s))))
           fin-health-todo))
 
 (defun fin-dashboard--health-block ()
-  "Everything that needs doing, ✓ when a line needs nothing: the ledger
-against the bank, taxes, the accounts sheet, the inbox, open items."
+  "To-do block listing only the lines not ok."
   (let* ((parts (delq nil (append (list (fin-dashboard--health-inbox) (fin-dashboard--health-fix)
                                         (fin-dashboard--health-flags) (fin-dashboard--health-gaps)
                                         (fin-dashboard--health-cash))
@@ -340,7 +334,7 @@ against the bank, taxes, the accounts sheet, the inbox, open items."
      (fin-dashboard--health-block))))
 
 (defun fin-dashboard--block-accounts ()
-  "Accounts rebuilt from the bank statements, the basis in each hover."
+  "Open accounts, each balance's basis as its tooltip."
   (let* ((accts (cl-remove-if (lambda (a) (plist-get a :closed)) (fin-report--accounts-derived)))
          (total (apply #'+ (mapcar (lambda (a) (plist-get a :cents)) accts))))
     (fin-dashboard--block
@@ -397,13 +391,13 @@ against the bank, taxes, the accounts sheet, the inbox, open items."
      "register")))
 
 (defun fin-dashboard--month-body (items)
-  "Category drilldown for a month's items."
+  "Category accordion of ITEMS (NAME CATEGORY CENTS DATE), largest first."
   (let* ((month-sum (apply #'+ (mapcar (lambda (r) (or (nth 2 r) 0)) items)))
          (groups    (fin-dashboard--group-by items 1))
          (ranked    (mapcar
                      (lambda (g)
                        (let* ((cat (car g))
-                              (rs  (cdr g))   ; query already date-ordered; group-by preserves it
+                              (rs  (cdr g))
                               (tot (apply #'+ (mapcar (lambda (r) (or (nth 2 r) 0)) rs))))
                          (list cat rs tot)))
                      groups))
@@ -427,9 +421,8 @@ against the bank, taxes, the accounts sheet, the inbox, open items."
     (fin-dashboard--alist '("category" "items" "out" "%") rows)))
 
 (defun fin-dashboard--year-effective-months (year now-y now-m)
-  "(M IN OUT LIQ FUTURE?) per month for YEAR.
-Future months of the current year use the objectives forecast
-\(`fin-report--planned-month'); all other months are actuals."
+  "(M IN OUT LIQ FUTURE?) per month of YEAR.
+The current year's future months take `fin-report--planned-month'."
   (let ((planned (and (= year now-y) (fin-report--planned-month year))))
     (mapcar
      (lambda (r)
@@ -441,8 +434,7 @@ Future months of the current year use the objectives forecast
      (fin-report--year-months year))))
 
 (defun fin-dashboard--monthly-block (year eff)
-  "Accordion <table> of YEAR's effective months EFF (see
-`fin-dashboard--year-effective-months')."
+  "Accordion of YEAR's months EFF (`fin-dashboard--year-effective-months')."
   (let ((rows (mapcar
                (lambda (e)
                  (let* ((m       (nth 0 e))
@@ -460,7 +452,7 @@ Future months of the current year use the objectives forecast
     (fin-dashboard--alist '("month" "in" "out" "liquid" "saved") rows)))
 
 (defun fin-dashboard--now-tiles (now-y now-m)
-  "KPI tiles: this month with the bank balance, the savings."
+  "KPI tiles: bank balance with this month's flows, then savings."
   (let* ((m (mapcar (lambda (v) (or v 0))
                    (seq-take (or (assoc now-m (fin-dashboard--year-effective-months now-y now-y now-m))
                                  (list now-m 0 0 0)) 4)))
@@ -486,8 +478,6 @@ Future months of the current year use the objectives forecast
                    (let* ((y    (nth 0 r))
                           (cur  (= y now-y))
                           (eff  (fin-dashboard--year-effective-months y now-y now-m))
-                          ;; The current year counts actual months only, so the
-                          ;; row never reads as money already saved.
                           (act  (cl-remove-if (lambda (e) (nth 4 e)) eff))
                           (in   (if cur (apply #'+ (mapcar (lambda (e) (or (nth 1 e) 0)) act)) (nth 1 r)))
                           (out  (if cur (apply #'+ (mapcar (lambda (e) (or (nth 2 e) 0)) act)) (nth 2 r)))
@@ -503,7 +493,7 @@ Future months of the current year use the objectives forecast
                                  (fin-dashboard--money-signed-cell (fin-report--bank-saved (number-to-string y)))
                                  sav)
                            (fin-dashboard--monthly-block y eff))))
-                 (reverse (fin-report--annual-sums)))))   ; newest year first
+                 (reverse (fin-report--annual-sums)))))
     (fin-dashboard--panel
      "Wealth" "wealth"
      "Savings (accounts), patrimony, and the yearly cashflow"

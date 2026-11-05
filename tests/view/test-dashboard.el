@@ -34,7 +34,6 @@
   (fin-test-with-db
     (fin-test-seed-multi-year)
     (let ((html (fin-test--render-html)))
-      ;; All panel titles emitted
       (dolist (panel '("Records" "Pareto" "Net worth" "Spend heatmap"))
         (should (string-match-p panel html))))))
 
@@ -43,7 +42,6 @@
     (fin-test-seed-multi-year)
     (fin-test-seed-budget-tree)
     (let ((html (fin-test--render-html)))
-      ;; Synthetic `patrimony' leaf must appear inside Var investments drilldown.
       (should (string-match-p "patrimony" html)))))
 
 (ert-deftest dashboard/status-bar-links-every-panel ()
@@ -52,8 +50,6 @@
       (dolist (n (mapcar #'car fin-dashboard--tabs))
         (should (string-search (format "<section id=\"%s\"" n) html))
         (should (string-search (format "href=\"#%s\"" n) html))))))
-
-;;; ── panels ─────────────────────────────────────────────────
 
 (ert-deftest dashboard/goal-row-shows-cents-and-signed-left ()
   (let ((none (make-hash-table :test #'equal)))

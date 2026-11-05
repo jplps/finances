@@ -4,8 +4,6 @@
 (require 'helpers)
 (require 'stats)
 
-;;; ── empty-db sanity ────────────────────────────────────────
-
 (ert-deftest stats/all-queries-no-crash-on-empty-db ()
   (fin-test-with-db
     (should (null (fin-report--cat-shares)))
@@ -18,39 +16,29 @@
     (should (null (fin-report--rolling-flow)))
     (should (null (fin-report--pareto-spending 5)))
     (should (null (fin-report--monthly-spend-grid)))
-    (should (fin-report--records))))      ; plist; values may be nil
-
-;;; ── --cat-shares / --income-shares (summary rows only) ────
+    (should (fin-report--records))))
 
 (ert-deftest stats/cat-shares-sums-all-out-rows ()
   (fin-test-with-db
-    (fin-test-insert-entry "2025-01-31" "out" "food" 100000 nil)     ; un-itemized lump
-    (fin-test-insert-entry "2025-01-31" "out" "food" 50000 "bread")  ; itemized — every row counts
+    (fin-test-insert-entry "2025-01-31" "out" "food" 100000 nil)
+    (fin-test-insert-entry "2025-01-31" "out" "food" 50000 "bread")
     (let ((row (car (fin-report--cat-shares))))
       (should (equal (nth 0 row) "food"))
       (should (= 150000 (nth 1 row))))))
-
-;;; ── --period (future months excluded) ─────────────────────
 
 (ert-deftest stats/period-excludes-future-months ()
   (fin-test-with-db
     (fin-test-insert-entry "2025-06-30" "in" "salary" 100000 nil)
     (fin-test-insert-entry "2099-12-31" "out" "food"  100000 nil)
     (let ((p (fin-report--period)))
-      ;; last date must NOT include the 2099 placeholder.
       (should (string< (nth 1 p) "2099-01-01")))))
-
-;;; ── --yearly-saves (NULLIF guards /0 when no income) ─────
 
 (ert-deftest stats/yearly-saves-skips-years-with-zero-income ()
   (fin-test-with-db
     (fin-test-insert-entry "2025-06-30" "out" "food" 50000 nil)
     (let ((rows (fin-report--yearly-saves)))
-      ;; year 2025 row exists but save rate is NULL → second col nil
       (should (= 1 (length rows)))
       (should (null (nth 1 (car rows)))))))
-
-;;; ── --top-by-count (raw entry count) ─────────────────────
 
 (ert-deftest stats/top-by-count-ranks-by-entry-count ()
   (fin-test-with-db
@@ -70,18 +58,14 @@
     (should (equal '("coffee") (mapcar #'car (fin-report--top-by-count 10 1))))
     (should (equal '(("food" 6000)) (fin-report--cat-shares)))))
 
-;;; ── --cumulative-networth (running sum) ───────────────────
-
 (ert-deftest stats/cumulative-networth-runs-monotonically ()
   (fin-test-with-db
     (fin-test-insert-entry "2025-01-31" "in"  "salary" 100000 nil)
     (fin-test-insert-entry "2025-02-28" "in"  "salary" 100000 nil)
     (fin-test-insert-entry "2025-02-28" "out" "food"    30000 nil)
     (let ((rows (fin-report--cumulative-networth)))
-      (should (= 100000 (nth 1 (nth 0 rows))))   ; Jan
-      (should (= 170000 (nth 1 (nth 1 rows))))))) ; Jan + Feb-net (70k)
-
-;;; ── --pareto-spending (cumulative %) ──────────────────────
+      (should (= 100000 (nth 1 (nth 0 rows))))
+      (should (= 170000 (nth 1 (nth 1 rows)))))))
 
 (ert-deftest stats/pareto-cumulative-pct-reaches-100 ()
   (fin-test-with-db
@@ -91,8 +75,6 @@
            (last (car (last rows))))
       (should (equal "a" (nth 0 (car rows))))
       (should (= 100.0 (nth 2 last))))))
-
-;;; ── --records (headline facts) ────────────────────────────
 
 (ert-deftest stats/records-biggest-out-and-in ()
   (fin-test-with-db
@@ -106,8 +88,6 @@
       (should (equal "salary" (nth 0 biggest-in)))
       (should (= 500000       (nth 1 biggest-in))))))
 
-;;; ── transfers (savings moves) ───────────────────────────────
-
 (ert-deftest stats/flow-metrics-exclude-transfers ()
   (fin-test-with-db
     (fin-test-insert-entry "2025-01-31" "in"  "salary"      1000 nil)
@@ -120,8 +100,6 @@
     (should (equal '(("2025-01" 600)) (fin-report--cumulative-networth)))
     (should (equal '((2025 1 400)) (fin-report--monthly-spend-grid)))))
 
-;;; ── rolling windows (calendar months) ──────────────────────
-
 (ert-deftest stats/rolling-windows-span-calendar-months ()
   "A year without entries still fills the 12-month window."
   (fin-test-with-db
@@ -131,8 +109,8 @@
     (let ((flow (fin-report--rolling-flow))
           (save (fin-report--rolling-save-rate)))
       (should (= 13 (length flow)))
-      (should (equal '("2024-12" 100 0) (nth 11 flow)))  ; Jan/24 + 11 empty
-      (should (equal '("2025-01" 100 50) (car (last flow)))) ; Feb/24..Jan/25
+      (should (equal '("2024-12" 100 0) (nth 11 flow)))
+      (should (equal '("2025-01" 100 50) (car (last flow))))
       (should (equal '("2025-01" 50.0) (car (last save)))))))
 
 (ert-deftest stats/rolling-stops-at-current-month ()
@@ -141,16 +119,12 @@
     (fin-test-insert-entry "2099-12-31" "in" "salary" 100 nil)
     (should (string< (caar (last (fin-report--rolling-flow))) "2099"))))
 
-;;; ── --pareto-spending (of total out) ───────────────────────
-
 (ert-deftest stats/pareto-pct-is-of-total-out ()
   (fin-test-with-db
     (fin-test-insert-entry "2025-01-01" "out" "food"        50  "a")
-    (fin-test-insert-entry "2025-01-01" "out" "food"        50  nil)      ; un-itemized
-    (fin-test-insert-entry "2025-01-01" "out" "investments" 900 "car")    ; transfer
+    (fin-test-insert-entry "2025-01-01" "out" "food"        50  nil)
+    (fin-test-insert-entry "2025-01-01" "out" "investments" 900 "car")
     (should (equal '(("a" 50 50.0)) (fin-report--pareto-spending 10)))))
-
-;;; ── --records (months, yearly save) ────────────────────────
 
 (ert-deftest stats/records-best-month-excludes-current ()
   (fin-test-with-db

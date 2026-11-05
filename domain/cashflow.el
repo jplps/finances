@@ -6,10 +6,9 @@
 (defcustom fin-report-transfer-categories
   '(("out" "investments" "retirement" "reserve")
     ("in"  "investments" "retirement" "reserve" "vacations"))
-  "Entry categories that move money between own accounts, by entry type:
-alist (TYPE CATEGORY...).  An `out' row listed here is a contribution to
-savings, an `in' row a withdrawal from them.  Flow metrics count neither as
-spending nor as income: see `fin-report--flow-query'."
+  "Alist (TYPE CATEGORY...) of transfers between own accounts.
+An `out' row is a savings contribution, an `in' row a withdrawal; flow
+metrics count neither as spending nor income."
   :type '(alist :key-type string :value-type (repeat string)) :group 'fin)
 
 (defun fin-report--sql-string (s)
@@ -18,7 +17,7 @@ spending nor as income: see `fin-report--flow-query'."
   (concat "'" (string-replace "'" "''" s) "'"))
 
 (defun fin-report--transfer-sql ()
-  "SQL condition over an `entry' row: true for a transfer."
+  "SQL condition true for a transfer `entry' row."
   (if (null fin-report-transfer-categories) "0"
     (mapconcat (lambda (e)
                  (cl-assert (and (member (car e) '("in" "out")) (cdr e)))
@@ -27,11 +26,10 @@ spending nor as income: see `fin-report--flow-query'."
                fin-report-transfer-categories " OR ")))
 
 (defun fin-report--flow-query (sql &optional values)
-  "Run SQL (with VALUES) after a `flow' CTE: `entry' with every transfer
-\(see `fin-report-transfer-categories') retyped `save', its amount signed:
-contributions positive, withdrawals negative.  So in flow, `in' is income,
-`out' spending, Σ in − Σ out what was left to save, and Σ save what moved
-into savings.  SQL is a SELECT, or `, NAME AS (...) SELECT' for more CTEs."
+  "Run SQL with VALUES after a `flow' CTE over `entry'.
+Transfers become type `save', contributions positive and withdrawals
+negative, so `in' is income and `out' spending.  SQL is a SELECT, or
+`, NAME AS (...) SELECT' to add CTEs."
   (let ((tr (fin-report--transfer-sql)))
     (fin-db-query
      (format "WITH flow AS (
@@ -49,9 +47,7 @@ into savings.  SQL is a SELECT, or `, NAME AS (...) SELECT' for more CTEs."
   (string-to-number (format-time-string "%m")))
 
 (defun fin-report--year-months (year)
-  "Per-month (m, in, out, liquid) for YEAR  12 rows.
-In is income and out spending, transfers to and from savings excluded (see
-`fin-report--flow-query'); liquid, in − out, is what the month left to save."
+  "Twelve rows (M IN OUT LIQUID) for YEAR; empty months carry nils."
   (let* ((raw (fin-report--flow-query
                "SELECT CAST(strftime('%m', date) AS INTEGER) AS m,
                        SUM(CASE WHEN type='in'  THEN amount ELSE 0 END),
@@ -69,8 +65,8 @@ In is income and out spending, transfers to and from savings excluded (see
                          (list m nil nil nil)))))
 
 (defun fin-report--month-items (year month)
-  "Spending rows for YEAR-MONTH, ordered by date.  Un-itemized lumps show a
-NULL item and surface under their category in the drilldown."
+  "Spending rows (ITEM CATEGORY AMOUNT DATE) of YEAR-MONTH by date.
+ITEM falls back to the category."
   (fin-report--flow-query
    "SELECT COALESCE(item, category), category, amount, date
       FROM flow
@@ -80,7 +76,7 @@ NULL item and surface under their category in the drilldown."
    (list year month)))
 
 (defun fin-report--annual-sums ()
-  "Per-year (year, in, out, liquid, savings %), transfers excluded."
+  "Rows (YEAR IN OUT LIQUID SAVE-%), nil SAVE-% without income."
   (fin-report--flow-query
    "SELECT CAST(strftime('%Y', date) AS INTEGER) AS y,
            SUM(CASE WHEN type='in'  THEN amount ELSE 0 END),
@@ -98,7 +94,7 @@ NULL item and surface under their category in the drilldown."
      ORDER BY y ASC"))
 
 (defun fin-report--monthly-flow ()
-  "All-time per-month (ym, in, out), transfers excluded."
+  "Rows (YYYY-MM IN OUT) for every month."
   (fin-report--flow-query
    "SELECT strftime('%Y-%m', date) AS ym,
            SUM(CASE WHEN type='in'  THEN amount ELSE 0 END),

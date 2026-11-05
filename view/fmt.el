@@ -1,12 +1,5 @@
 ;;; fmt.el --- Palette + string formatters (esc, money, k, fmt)  -*- lexical-binding: t; -*-
 
-;; Colors are theme tokens: each role has a light and a dark value, emitted as
-;; CSS custom properties, and markup refers to them as var(--role) so one
-;; stylesheet switch flips the whole page.  Dark is the default: a plain
-;; terminal look with the original pastel green/red for polarity (in /
-;; positive / on target vs out / negative / off target), an aqua accent for
-;; structure and a yellow prompt.
-;; Categorical slots follow the validated dataviz order, without green or red.
 (defconst fin-dashboard--palette
   '((page      "#f3f1ea" "#0c0c0c")
     (surface   "#fbfaf5" "#0c0c0c")
@@ -34,20 +27,19 @@
     (cat-4     "#eda100" "#c98500")
     (cat-5     "#e87ba4" "#d55181")
     (cat-6     "#2a78d6" "#3987e5"))
-  "Theme roles: (ROLE LIGHT DARK).  Single source of truth.")
+  "Theme roles: (ROLE LIGHT DARK).")
 
 (defconst fin-dashboard--month-names
   '("january" "february" "march" "april" "may" "june"
     "july" "august" "september" "october" "november" "december")
-  "Lowercase full month names indexed 0..11.")
+  "Lowercase month names, January first.")
 
 (defun fin-dashboard--month-name (m)
   (nth (1- m) fin-dashboard--month-names))
 
 (defconst fin-dashboard--chart-palette
   (mapcar (lambda (i) (format "var(--cat-%d)" i)) '(1 2 3 4 5 6))
-  "Categorical slots in fixed order.  Six named series at most: the rest
-fold into one neutral `other' slice, never a cycled hue.")
+  "Categorical slots; series past these fold into one neutral `other' slice.")
 
 (defconst fin-dashboard--pie-geom
   '(:w 400 :h 260 :cx 200 :cy 130 :r 100 :rl 120
@@ -61,7 +53,7 @@ fold into one neutral `other' slice, never a cycled hue.")
 (defun fin-dashboard--g (plist key) (plist-get plist key))
 
 (defun fin-dashboard--esc (s)
-  "HTML-escape S.  Handles & < > \" '."
+  "HTML-escape S; a non-string is printed, nil as empty."
   (if (stringp s)
       (replace-regexp-in-string
        "[&<>\"']"
@@ -78,14 +70,14 @@ fold into one neutral `other' slice, never a cycled hue.")
     (concat s out)))
 
 (defun fin-dashboard--money-str (cents)
-  "Plain string from CENTS (signed integer).  E.g., '1,234.56' or '-12.00'."
+  "CENTS as 1,234.56, signed."
   (let* ((neg (< cents 0))
          (a   (abs cents))
          (s   (format "%s.%02d" (fin-dashboard--group (/ a 100)) (mod a 100))))
     (if neg (concat "-" s) s)))
 
 (defun fin-dashboard--money (cents)
-  "HTML from CENTS.  Negatives wrapped in <span class=neg>."
+  "HTML of CENTS, empty for nil or zero, negatives in .neg."
   (if (or (null cents) (not (numberp cents)) (zerop cents))
       ""
     (let ((s (fin-dashboard--money-str cents)))
@@ -93,9 +85,8 @@ fold into one neutral `other' slice, never a cycled hue.")
           (format "<span class=\"neg\">%s</span>" s)
         s))))
 
-
 (defun fin-dashboard--k (cents)
-  "Format CENTS as full BRL, empty for nil or zero.  Negatives in .neg."
+  "HTML of CENTS, empty for nil or zero, negatives in .neg; else escaped."
   (cond ((null cents) "")
         ((not (numberp cents)) (fin-dashboard--esc cents))
         ((zerop cents) "")
@@ -108,24 +99,24 @@ fold into one neutral `other' slice, never a cycled hue.")
 (defun fin-dashboard--k-cell (v) (list :raw (fin-dashboard--k v)))
 
 (defun fin-dashboard--k-signed (cents)
-  "Like `fin-dashboard--k' but also wraps positives in `.pos'."
+  "Like `fin-dashboard--k', positives in .pos."
   (let ((s (fin-dashboard--k cents)))
     (if (and (numberp cents) (> cents 0))
         (format "<span class=\"pos\">%s</span>" s)
       s)))
 
 (defun fin-dashboard--ym (date)
-  "Strip day from ISO date (`YYYY-MM-DD' → `YYYY-MM').  Pass-through if shorter."
+  "YYYY-MM of ISO DATE; shorter strings pass through, nil as empty."
   (if (and (stringp date) (>= (length date) 7)) (substring date 0 7) (or date "")))
 
 (defun fin-dashboard--dm (date)
-  "Short day/month from ISO date (`YYYY-MM-DD' → `dd/mm').  Empty if malformed."
+  "ISO DATE as dd/mm, empty when shorter."
   (if (and (stringp date) (>= (length date) 10))
       (concat (substring date 8 10) "/" (substring date 5 7))
     ""))
 
 (defun fin-dashboard--pct-signed (v)
-  "Signed percentage HTML: `<span class=neg/pos>%.1f%%</span>'.  Nil/0 → bare."
+  "Percentage V to one decimal, in .neg or .pos by sign; nil as empty."
   (cond ((null v) "")
         ((not (numberp v)) (fin-dashboard--esc v))
         ((zerop v) (format "%.1f%%" v))
@@ -133,11 +124,10 @@ fold into one neutral `other' slice, never a cycled hue.")
         (t        (format "<span class=\"pos\">%.1f%%</span>" v))))
 
 (defun fin-dashboard--money-cell (cents)
-  "Cell wrapper for monetary CENTS."
   (list :raw (fin-dashboard--money cents)))
 
 (defun fin-dashboard--money-signed-cell (cents)
-  "Cell for signed CENTS: wraps neg in `.neg', pos in `.pos'."
+  "Cell of CENTS in .neg or .pos by sign, empty for nil or zero."
   (cond ((or (null cents) (not (numberp cents)) (zerop cents)) (list :raw ""))
         ((< cents 0) (list :raw (format "<span class=\"neg\">%s</span>"
                                         (fin-dashboard--money-str cents))))
@@ -145,7 +135,7 @@ fold into one neutral `other' slice, never a cycled hue.")
                               (fin-dashboard--money-str cents))))))
 
 (defun fin-dashboard--fmt (v)
-  "Generic cell formatter.  Numbers → string; :raw → unwrap; strings → escape."
+  "Cell HTML of V: (:raw HTML) as is, nil, zero and \"\" empty, else escaped."
   (cond ((null v) "")
         ((and (consp v) (eq (car v) :raw)) (cadr v))
         ((and (numberp v) (zerop v)) "")

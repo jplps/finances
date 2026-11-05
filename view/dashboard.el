@@ -15,7 +15,7 @@
   :type 'file :group 'fin)
 
 (defun fin-dashboard--ymd-diff (start end)
-  "Return calendar (Y M D) diff between two ISO date strings."
+  "Calendar (Y M D) from ISO date START to END; a borrowed month is 30 days."
   (let* ((s (decode-time (date-to-time (concat start "T00:00:00"))))
          (e (decode-time (date-to-time (concat end   "T00:00:00"))))
          (sy (nth 5 s)) (sm (nth 4 s)) (sd (nth 3 s))
@@ -26,7 +26,7 @@
     (list y m d)))
 
 (defun fin-dashboard--relative-time (ts)
-  "Human-readable relative time from TS (lisp timestamp) to now."
+  "Age of time TS as <1m, Nm, Nh or Nd; a week or older as its date."
   (let* ((d (float-time (time-subtract (current-time) ts))))
     (cond ((< d 60)    "<1m")
           ((< d 3600)  (format "%dm" (/ d 60)))
@@ -35,7 +35,7 @@
           (t (format-time-string "%Y-%m-%d %H:%M" ts)))))
 
 (defun fin-dashboard--status-bar ()
-  "tmux-like bar: one numbered link per panel (accesskey = its number)."
+  "Numbered link per panel, its number the accesskey, then the clock."
   (concat "<nav class=\"status\">"
           (mapconcat (lambda (i)
                        (pcase-let ((`(,id . ,label) (nth i fin-dashboard--tabs)))
@@ -46,7 +46,7 @@
                   (downcase (format-time-string "%H:%M %d-%b-%y")))))
 
 (defun fin-dashboard--render ()
-  (let* ((fin-report--accounts-memo (list nil))   ; one bank rebuild per render
+  (let* ((fin-report--accounts-memo (list nil))
          (ods-ts  (file-attribute-modification-time
                    (file-attributes (expand-file-name fin-ods-path))))
          (period  (fin-report--period))
@@ -76,7 +76,6 @@
      (fin-dashboard--status-bar)
      "</body></html>")))
 
-;;;###autoload
 (defun fin-dashboard ()
   "Regenerate the HTML dashboard and open it in the default browser."
   (interactive)

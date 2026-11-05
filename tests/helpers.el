@@ -3,7 +3,6 @@
 (require 'ert)
 (require 'cl-lib)
 
-;; Load app code. `core.el` wires load-path for subdirs and requires everything.
 (let ((root (file-name-directory
              (directory-file-name
               (file-name-directory (or load-file-name buffer-file-name))))))
@@ -33,11 +32,8 @@
 (require 'bank)
 (require 'bankfix)
 
-;;; ── DB fixture ──────────────────────────────────────────────
-
 (defmacro fin-test-with-db (&rest body)
-  "Run BODY with `fin-db-path' bound to a fresh temp sqlite, schema initialized,
-and no Receita payment lists.  Closes connection and deletes the file after."
+  "Run BODY on a fresh temp DB with no Receita payment lists, deleted after."
   (declare (indent 0))
   `(let* ((tmp (make-temp-file "fin-test-" nil ".db"))
           (fin-db-path tmp)
@@ -49,7 +45,7 @@ and no Receita payment lists.  Closes connection and deletes the file after."
        (ignore-errors (delete-file tmp)))))
 
 (defun fin-test-insert-entry (date type cat amount &optional item installment installments)
-  "Insert one row into entry. AMOUNT in cents."
+  "Insert an entry row; AMOUNT in cents."
   (fin-db-exec
    "INSERT INTO entry(date,type,category,item,amount,installment,installments)
     VALUES(?,?,?,?,?,?,?)"
@@ -64,8 +60,6 @@ and no Receita payment lists.  Closes connection and deletes the file after."
   (fin-db-exec
    "INSERT INTO patrimony(category,item,amount,lifespan_months) VALUES(?,?,?,?)"
    (list cat item amount lifespan)))
-
-;;; ── Seed presets ────────────────────────────────────────────
 
 (defun fin-test-seed-minimal ()
   "Tiny coherent dataset: 1 income, 1 outflow, 1 budget, 1 patrimony."
@@ -82,7 +76,6 @@ and no Receita payment lists.  Closes connection and deletes the file after."
   (fin-test-insert-entry "2024-06-30" "out" "food"   90000 nil)
   (fin-test-insert-entry "2025-06-30" "in"  "salary" 500000 nil)
   (fin-test-insert-entry "2025-06-30" "out" "food"  100000 nil)
-  ;; Future month — placeholder, must be excluded from period stats.
   (fin-test-insert-entry "2099-12-31" "out" "food"  100000 nil))
 
 (defun fin-test-seed-budget-tree ()
@@ -92,8 +85,8 @@ and no Receita payment lists.  Closes connection and deletes the file after."
   (fin-test-insert-budget "investments" nil "var" nil 0.25)
   (fin-test-insert-budget "retirement" "investments" "var" 80000 nil)
   (fin-test-insert-budget "free"       "investments" "var" 60000 nil)
-  (fin-test-insert-patrimony "car"   "wheels"  1200000 60) ; 20000/mo
-  (fin-test-insert-patrimony "house" "fridge"   240000 120)) ; 2000/mo
+  (fin-test-insert-patrimony "car"   "wheels"  1200000 60)
+  (fin-test-insert-patrimony "house" "fridge"   240000 120))
 
 (provide 'helpers)
 ;;; helpers.el ends here

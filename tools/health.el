@@ -1,27 +1,5 @@
 ;;; health.el --- Ledger health: what to do so the ODS matches the bank  -*- lexical-binding: t; -*-
 
-;; The cockpit's to-do list, from what the import and `fin-bank-fix' stored
-;; (no reconciliation runs here):
-;;
-;; - Inbox: an account whose latest statement ends before last month's last
-;;   day needs a new export.  An open card bill is dated at its next
-;;   closing, so it counts as current.
-;; - Fix: the last `fin-bank-fix' run; it is due again when bank rows were
-;;   imported after it, or when it was a dry run with changes pending.
-;; - Classify: large recent bank rows that run could only report.
-;; - Gaps: complete months where ledger spending is off the bank's by more
-;;   than `fin-health-gap-share', counted as `fin-bank-fix' counts room:
-;;   bank rows normalized (refunds, fees, Pix no Crédito), ignored rows,
-;;   savings moves and the PJ account's tax payments left out; ledger
-;;   savings, tax and company rows, and rows paid outside the bank
-;;   (their `via' column set: cash, bb), left out.
-;; - Cash: this month and the last, ledger income less spending less what
-;;   the bank moved into savings against the cash all bank accounts gained,
-;;   card bill payments left out; flagged past `fin-health-cash-slack'.
-;; - Documents: each `fin-health-expected-docs' entry no inbox file matches;
-;;   key files (certificates) that do not belong in the inbox.
-;; - Open items: `fin-health-todo', kept by hand.
-
 (require 'cl-lib)
 (require 'db)
 (require 'bankdb)
@@ -39,8 +17,7 @@
   :type 'number :group 'fin)
 
 (defun fin-health--offbank-out ()
-  "Alist YYYY-MM -> cents of ledger outflows paid outside the bank
-statements: rows whose `via' column says how (cash, bb)."
+  "Alist YYYY-MM -> cents of ledger outflows with a `via' (paid off-bank)."
   (mapcar (lambda (r) (cons (car r) (cadr r)))
           (fin-db-query "SELECT strftime('%Y-%m', date), SUM(amount) FROM entry
                           WHERE type = 'out' AND via IS NOT NULL AND via <> ''
@@ -136,7 +113,7 @@ ids of the company account's rows, whose tax payments are not spending."
 
 (defun fin-health--bank-cash (year month)
   "Signed cents all bank accounts gained in YEAR-MONTH, card bill payments
-left out: they only move money between the account and the card."
+left out."
   (let ((total 0))
     (dolist (r (fin-db-query "SELECT type, amount, description FROM bank_txn
                                WHERE strftime('%Y-%m', date) = printf('%04d-%02d', ?, ?)"

@@ -94,7 +94,6 @@
          (out (fin-odsw-apply dup '((:delete ("2026-01-01" "out" "food" "x" 100))
                                     (:delete ("2026-01-01" "out" "food" "x" 100))))))
     (should-not (string-search "<text:p>x</text:p>" out))
-    ;; An amount edit takes one of them; a second edit, the other.
     (let ((one (fin-odsw-apply dup '((:edit ("2026-01-01" "out" "food" "x" 100) 90)))))
       (should (equal '(90 100) (sort (mapcar (lambda (k) (nth 4 k)) (test-odsw--keys one)) #'<))))
     (should (fin-odsw-apply dup '((:edit ("2026-01-01" "out" "food" "x" 100) 90)
@@ -118,7 +117,7 @@
                  (written (fin-odsw-save ods new)))
             (should (equal ods written))
             (should (equal '("content.xml" "mimetype" "seeds.ods")
-                           (sort (directory-files dir nil "\\`[^.]") #'string<)))   ; no copy left
+                           (sort (directory-files dir nil "\\`[^.]") #'string<)))
             (should (equal new (fin-odsw-read ods)))
             (should (equal "2026-10-02" (car (nth 1 (fin-ods-rows (fin-ods-sheet (fin-ods-parse ods) "entries"))))))))
       (delete-directory dir t))))

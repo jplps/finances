@@ -64,7 +64,7 @@ Signals unless both are whole numbers with 1 <= K <= N."
   '("category" "item" "amount" "lifespan_months"))
 
 (defun fin-sync-refresh ()
-  "Mirror `fin-ods-path' into SQLite. Wipes derived tables and re-inserts."
+  "Mirror `fin-ods-path' into SQLite, wiping and refilling derived tables."
   (interactive)
   (let* ((dom     (fin-ods-parse fin-ods-path))
          (entries (fin-sync--entries dom))

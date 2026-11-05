@@ -5,8 +5,7 @@
 (require 'sync)
 
 (defun fin-test--sheet-dom (name rows)
-  "Synthesize an ODS-shaped <table> DOM for NAME with ROWS (lists of cell strings).
-Cells must be strings; numerics expressed as <table-cell value=\"X\">."
+  "ODS-shaped <table> DOM named NAME with ROWS, lists of cell strings."
   (with-temp-buffer
     (insert (format "<doc><table name=\"%s\">" name))
     (dolist (r rows)
@@ -25,8 +24,6 @@ Cells must be strings; numerics expressed as <table-cell value=\"X\">."
     (insert "</table></doc>")
     (libxml-parse-xml-region (point-min) (point-max))))
 
-;;; ── --entries row builder ──────────────────────────────────
-
 (ert-deftest sync/entries-builder-rounds-amount-reads-installments ()
   (let* ((dom (fin-test--sheet-dom
                "entries"
@@ -39,7 +36,7 @@ Cells must be strings; numerics expressed as <table-cell value=\"X\">."
     (should (equal "in"         (nth 1 out)))
     (should (equal "salary"     (nth 2 out)))
     (should (null              (nth 3 out)))
-    (should (= 5001            (nth 4 out)))   ; rounded
+    (should (= 5001            (nth 4 out)))
     (should (equal '(nil nil nil) (nthcdr 5 out)))))
 
 (ert-deftest sync/entries-builder-rejects-bad-installments ()
@@ -59,8 +56,6 @@ Cells must be strings; numerics expressed as <table-cell value=\"X\">."
                  ("2025-01-31" "in" "salary" nil 1000.0 nil nil)))))
     (should (= 1 (length (fin-sync--entries dom))))))
 
-;;; ── --plan row builder ─────────────────────────────────────
-
 (ert-deftest sync/plan-builder-amount-and-share-handled ()
   (let* ((dom (fin-test--sheet-dom
                "plan"
@@ -72,8 +67,6 @@ Cells must be strings; numerics expressed as <table-cell value=\"X\">."
     (should (= 200000 (nth 3 (car rows))))
     (should (equal 0.25 (nth 4 (cadr rows))))))
 
-;;; ── --patrimony row builder ──────────────────
-
 (ert-deftest sync/patrimony-builder-rounds-amount ()
   (let* ((dom (fin-test--sheet-dom
                "patrimony"
@@ -83,10 +76,7 @@ Cells must be strings; numerics expressed as <table-cell value=\"X\">."
     (should (= 1235 (nth 2 row)))
     (should (= 60   (nth 3 row)))))
 
-;;; ── full refresh: row-builder + bulk-insert + truncate path ─
-
 (ert-deftest sync/refresh-end-to-end-with-stubbed-dom ()
-  "Bypass file IO: stub `fin-ods-parse' with an in-memory DOM."
   (fin-test-with-db
     (let* ((dom (with-temp-buffer
                   (insert

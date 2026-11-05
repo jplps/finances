@@ -1,24 +1,5 @@
 ;;; pj.el --- Company (PJ) account: income and taxes  -*- lexical-binding: t; -*-
 
-;; Pure planning over row lists, like conventions.el.  Within the months a
-;; PJ statement covers fully, the company account is the truth for two
-;; kinds of ledger rows:
-;;
-;; - Income: client payments (`fin-pj-income-payers' names each payer's
-;;   income category) match the ledger's item-less income rows of that
-;;   category (an income row with an item, a bonus, has another source)
-;;   within `fin-pj-window' days: the payment's month first (the ledger
-;;   books it at that month's end), then an equal amount, then the
-;;   nearest.  A different amount is edited to the bank's; an unmatched
-;;   payment is added; a ledger income row the PJ never received is
-;;   reported, never deleted (a bonus may come from elsewhere).
-;; - Taxes: payments named by `fin-pj-tax-items' are `cnpj / ITEM' rows.
-;;   The ledger's item-less `cnpj' rows were monthly estimates of them, so
-;;   in covered months they give way: deleted, the real payments added.
-;;
-;; Bank rows: (id date type amount desc).  Ledger rows: (id date type
-;; category item amount k/n).
-
 (require 'cl-lib)
 (require 'calendar)
 (require 'reconcile)
@@ -37,8 +18,8 @@ Matched case-sensitively."
   :type 'integer :group 'fin)
 
 (defun fin-pj--lookup (alist desc fold)
-  "Value of the first (REGEXP . VALUE) in ALIST matching DESC, ignoring
-case when FOLD is non-nil."
+  "Value of the first (REGEXP . VALUE) of ALIST matching DESC.
+FOLD non-nil ignores case."
   (let ((case-fold-search fold))
     (cdr (cl-find-if (lambda (a) (string-match-p (car a) desc)) alist))))
 
@@ -66,10 +47,9 @@ tax, `das' a Portuguese word in shop names."
     (nreverse out)))
 
 (defun fin-pj--best (b ledger cat used)
-  "Unused ledger row of LEDGER in CAT for bank row B, within `fin-pj-window':
-its month first (the ledger books a payment at the end of the month it
-arrives), then an equal amount, then a row on or after B, then the
-nearest date."
+  "Best unused LEDGER row in CAT for bank row B within `fin-pj-window'.
+Ranks same month (payments are booked at month end), equal amount, on or
+after B, then nearest date."
   (let ((day (fin-reconcile--day (nth 1 b))) (ym (substring (nth 1 b) 0 7)) best best-key)
     (dolist (l ledger)
       (when (and (equal (nth 3 l) cat) (not (memq l used)))
@@ -107,10 +87,9 @@ nearest date."
   (and (equal (nth 3 l) "cnpj") (or (null (nth 4 l)) (member (nth 4 l) items))))
 
 (defun fin-pj-plan-taxes (rows ledger months)
-  "Actions for PJ tax payments ROWS against `cnpj' rows of LEDGER in MONTHS.
-A payment already booked (same date, amount and item) stays; others are
-added; item-less estimates are deleted; booked tax rows with no payment
-are reported."
+  "Actions for PJ tax payments ROWS against `cnpj' LEDGER rows in MONTHS.
+Booked payments stay, others are added, item-less estimates deleted,
+unpaid booked rows reported."
   (let* ((items (delete-dups (mapcar #'cdr fin-pj-tax-items)))
          (in-months (lambda (date) (member (substring date 0 7) months)))
          (cands (cl-remove-if-not (lambda (l) (and (funcall in-months (nth 1 l)) (fin-pj--tax-row-p l items)))

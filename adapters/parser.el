@@ -24,7 +24,7 @@
       (libxml-parse-xml-region (point-min) (point-max)))))
 
 (defun fin-ods-cell-text (cell)
-  "Recursively gather text inside CELL."
+  "All text inside CELL."
   (cond ((null cell) "")
         ((stringp cell) cell)
         (t (mapconcat #'fin-ods-cell-text (dom-children cell) ""))))
@@ -41,7 +41,7 @@ text, nil for empty."
           (t   txt))))
 
 (defun fin-ods-expand-row (row)
-  "Expand <table-cell number-columns-repeated=N> with `fin-ods-max-col' cap."
+  "Cells of ROW, `number-columns-repeated' expanded up to `fin-ods-max-col'."
   (let (out)
     (dolist (cell (dom-by-tag row 'table-cell))
       (let* ((rep (string-to-number (or (dom-attr cell 'number-columns-repeated) "1")))
