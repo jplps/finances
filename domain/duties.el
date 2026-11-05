@@ -15,11 +15,6 @@ capped at the year's INSS ceiling."
   "First month (YYYY-MM) whose obligations are tracked; nil: none."
   :type '(choice string (const nil)) :group 'fin)
 
-(defcustom fin-duty-mei-until nil
-  "Last month (YYYY-MM) the company was a MEI; nil: never.
-A MEI owes only the DAS-MEI: no PGDAS-D, pró-labore, books or DEFIS."
-  :type '(choice string (const nil)) :group 'fin)
-
 (defcustom fin-duty-known nil
   "Accepted gaps, no longer flagged: list of (YEAR LABEL).
 LABEL is a filing (\"books\" \"DEFIS\" \"DIRPF\") or a declaration whose exempt
@@ -70,9 +65,11 @@ profit is off the bank's (\"DEFIS\" \"DIRPF\" \"informe\")."
   (mapcar #'car (cl-remove-if-not (lambda (c) (and (equal (nth 1 c) item) (eq (nth 2 c) (or payer 'pj))))
                                   fin-ir-receita-codes)))
 
-(defun fin-duty-mei-p (month)
-  "Non-nil when MONTH is up to `fin-duty-mei-until'."
-  (and fin-duty-mei-until (not (string< fin-duty-mei-until month))))
+(defun fin-duty-mei-p (month ctx)
+  "Non-nil when MONTH is up to CTX's :mei-until, the last DAS-MEI período.
+A MEI owes only the DAS-MEI: no PGDAS-D, pró-labore, books or DEFIS."
+  (let ((until (plist-get ctx :mei-until)))
+    (and until (not (string< until month)))))
 
 (defun fin-duty--item-paid (item shift)
   "Alist MONTH -> cents the company account paid to `fin-pj-tax-items' ITEM,
@@ -148,15 +145,15 @@ ACCOUNTING (alist MONTH -> cents).  Amounts are nil when absent; :exported
 is nil when MONTH precedes every DCTFWeb export.  :inss-paid sums company
 DARFs, GPS and partner complements (1872); :pro-labore is the planned one."
   (let ((simples (assoc month (plist-get ctx :simples))))
-    (list :month month :due (fin-duty-due month) :mei (fin-duty-mei-p month)
+    (list :month month :due (fin-duty-due month) :mei (fin-duty-mei-p month ctx)
           :invoiced (cdr (assoc month (plist-get ctx :invoices)))
           :declared (nth 1 simples) :das (nth 2 simples)
           :das-paid (fin-duty--paid payments (fin-duty--codes "das") month)
           :dctfweb (cdr (assoc month dctfweb))
           :exported (cl-some (lambda (c) (not (string< month (car c)))) dctfweb)
-          :pro-labore (and (not (fin-duty-mei-p month)) (fin-duty-planned month))
+          :pro-labore (and (not (fin-duty-mei-p month ctx)) (fin-duty-planned month))
           :accounting (cdr (assoc month accounting))
-          :inss (and (not (fin-duty-mei-p month)) (fin-duty-expected-inss month))
+          :inss (and (not (fin-duty-mei-p month ctx)) (fin-duty-expected-inss month))
           :inss-paid (+ (fin-duty--paid payments (fin-duty--codes "inss") month)
                         (fin-duty--paid payments (fin-duty--codes "inss complement" 'cpf) month)
                         (or (cdr (assoc month gps)) 0)))))
@@ -183,7 +180,7 @@ DARFs, GPS and partner complements (1872); :pro-labore is the planned one."
 :books and :defis are nil when missing; :dirpf is the filing date, nil,
 `not-required', or `unknown' when DUTY is nil."
   (list :year year :due (format "%04d-03-31" (1+ year))
-        :mei (fin-duty-mei-p (format "%04d-12" year))
+        :mei (fin-duty-mei-p (format "%04d-12" year) ctx)
         :books (cdr (assq year (plist-get ctx :books)))
         :defis (fin-ir--defis-exempt ctx year)
         :dirpf-due (plist-get duty :deadline)

@@ -267,9 +267,7 @@ the PGDAS-D is within R$ 1 of the bank, else the PGDAS-D."
   "(OK HTML) per input the estimate still needs."
   (delq nil
         (list (unless fin-ir-retirement-plan
-                (list nil "retirement plan unknown: set <b>fin-ir-retirement-plan</b> (only pgbl deducts)"))
-              (unless fin-ir-full-books
-                (list nil "full books unknown: set <b>fin-ir-full-books</b> (verified once the balance sheet is on file)")))))
+                (list nil "retirement plan unknown: set <b>fin-ir-retirement-plan</b> (only pgbl deducts)")))))
 
 (defun fin-dashboard--ir-lines (name title lines)
   "Block NAME of the LINES (OK HTML) not ok, nil when all are ok."

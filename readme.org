@@ -107,7 +107,7 @@ Accounts are not a sheet: =fin-accounts-derived= rebuilds each balance from the 
 | =fin-ir-health-categories=, =fin-ir-retirement-categories= | deduction categories                     |
 | =fin-ir-pro-labore=, =fin-ir-filed=, =fin-ir-open-debts=  | IR overrides, notified debts             |
 | =fin-ir-full-books=, =fin-ir-retirement-plan=             | IR facts                                  |
-| =fin-duty-since=, =fin-duty-mei-until=, =fin-duty-pro-labore=, =fin-duty-known= | obligations tracking |
+| =fin-duty-since=, =fin-duty-pro-labore=, =fin-duty-known= | obligations tracking |
 
 * Dashboard
 

@@ -80,7 +80,8 @@ Overrides the .DEC."
   :type '(repeat (list string string integer string)) :group 'fin)
 
 (defcustom fin-ir-full-books nil
-  "Full books behind profit above the presumed.
+  "Full books behind profit above the presumed, for years with no books
+summary in the inbox (those use its profit).
 verified: exempt; yes: exempt, flagged; no or nil: the excess is taxable."
   :type '(choice (const verified) (const yes) (const no) (const nil)) :group 'fin)
 
@@ -571,12 +572,20 @@ Fields are 13-digit cents; an unlisted exercício fails loud.")
         (let ((totals (fin-ir-dec-totals (buffer-string))))
           (push (cons (1- (plist-get totals :exercise)) totals) out))))))
 
+(defun fin-ir--last-period (payments code)
+  "Latest PERIOD (YYYY-MM) of PAYMENTS paid with Receita CODE, or nil."
+  (car (sort (mapcar #'cadddr (cl-remove-if-not (lambda (p) (equal (nth 1 p) code)) payments))
+             (lambda (a b) (string< b a)))))
+
 (defun fin-ir-context ()
-  "Plist of the inputs every year's `fin-ir-position' shares."
-  (list :receita (fin-ir-receita-matches (fin-ir-payments))
-        :simples (fin-ir-simples) :invoices (fin-ir-invoices) :dirpf (fin-ir-dirpf-files)
-        :other-payers (fin-ir-other-payers) :reported-exempt (fin-ir-reported-exempt)
-        :defis (fin-ir-defis-files) :books (fin-ir-book-files)))
+  "Plist of the inputs every year's `fin-ir-position' shares.
+:mei-until is the last período paid with the DAS-MEI code 0055."
+  (let ((payments (fin-ir-payments)))
+    (list :receita (fin-ir-receita-matches payments)
+          :simples (fin-ir-simples) :invoices (fin-ir-invoices) :dirpf (fin-ir-dirpf-files)
+          :other-payers (fin-ir-other-payers) :reported-exempt (fin-ir-reported-exempt)
+          :defis (fin-ir-defis-files) :books (fin-ir-book-files)
+          :mei-until (fin-ir--last-period payments "0055"))))
 
 (defun fin-ir--declared-field (ctx year key config)
   "Cents of KEY in YEAR's filed return in CTX, CONFIG overriding.
