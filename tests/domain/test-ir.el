@@ -106,7 +106,12 @@
   (let ((p '(:year 2022 :exempt 600000 :book-profit 900000 :defis-exempt 0)))
     (should (equal '("DEFIS") (car (fin-dashboard--ir-exempt-gap p)))))
   (let ((p '(:year 2025 :exempt 600000 :defis-exempt 850000)))
-    (should (equal '("DEFIS") (car (fin-dashboard--ir-exempt-gap p))))))
+    (should (equal '("DEFIS") (car (fin-dashboard--ir-exempt-gap p)))))
+  ;; The payer's informe is checked like the declarations.
+  (let ((p '(:year 2021 :exempt 1529163 :defis-exempt 1529163 :declared-exempt 1529163
+             :reported-exempt 3240000)))
+    (should (equal '("informe") (car (fin-dashboard--ir-exempt-gap p))))
+    (should (string-search "informe 2021" (cadr (fin-dashboard--ir-exempt-line (list p)))))))
 
 (ert-deftest ir/profit-line-names-the-limit-each-year-stands-on ()
   (let* ((fin-ir-full-books 'yes)
@@ -284,28 +289,91 @@
       (delete-directory dir t))))
 
 (ert-deftest ir/defis-exempt-defaults-to-zero-when-filed ()
-  (let* ((dir (make-temp-file "fin-ir-" t)) (fin-ir-payments-dir dir) (fin-ir-defis-exempt '((2022 . 500))))
+  (let* ((dir (make-temp-file "fin-ir-" t)) (fin-ir-payments-dir dir) (fin-ir-defis-exempt '((2022 . 500)))
+         (ctx '(:defis ((2022 . 900) (2024 . 700)))))
     (unwind-protect
         (progn (make-directory (expand-file-name "defis" dir))
                (write-region "" nil (expand-file-name "defis/defis-cnpj-2021.pdf" dir))
-               (should (equal 0 (fin-ir--defis-exempt 2021)))
-               (should (equal 500 (fin-ir--defis-exempt 2022)))
-               (should-not (fin-ir--defis-exempt 2023)))
+               (write-region "" nil (expand-file-name "defis/defis-cnpj-2023-retificadora-002.pdf" dir))
+               (should (equal 0 (fin-ir--defis-exempt ctx 2021)))
+               (should (equal 500 (fin-ir--defis-exempt ctx 2022)))      ; override wins
+               (should (equal 0 (fin-ir--defis-exempt ctx 2023)))        ; a retificadora is filed too
+               (should (equal 700 (fin-ir--defis-exempt ctx 2024)))      ; the summary
+               (should-not (fin-ir--defis-exempt ctx 2025)))
       (delete-directory dir t))))
 
-(defun test-ir--dec (exercise fields &optional len)
+(ert-deftest ir/yearly-summaries-read-defis-and-books ()
+  (let* ((dir (make-temp-file "fin-ir-" t)) (fin-ir-payments-dir dir))
+    (unwind-protect
+        (progn
+          (should-not (fin-ir-defis-files))                              ; no defis/ folder
+          (make-directory (expand-file-name "defis" dir))
+          (with-temp-file (expand-file-name "defis/defis-cnpj-2021_2025-resumo.csv" dir)
+            (insert "ano,declaracao,isento\n2021,retificadora-002,15291.63\n2025,retificadora-002,85000.00\n"))
+          (with-temp-file (expand-file-name "dre-cnpj-2024-resumo.csv" dir)
+            (insert "ano,arquivo,lucro\n2024,teves/x.pdf,87277.64\n"))
+          (should (equal '((2021 . 1529163) (2025 . 8500000))
+                         (sort (fin-ir-defis-files) (lambda (a b) (< (car a) (car b))))))
+          (should (equal '((2024 . 8727764)) (fin-ir-book-files)))
+          (with-temp-file (expand-file-name "dre-cnpj-2024b-resumo.csv" dir)
+            (insert "ano,arquivo,lucro\n2024,y.pdf,1.00\n"))
+          (should-error (fin-ir-book-files))                             ; a year twice
+          (with-temp-file (expand-file-name "dre-cnpj-2024b-resumo.csv" dir)
+            (insert "ano,arquivo,lucro\nx,y.pdf,1.00\n"))
+          (should-error (fin-ir-book-files)))                            ; bad line
+      (delete-directory dir t))))
+
+(ert-deftest ir/book-summary-sets-the-limit-unless-overridden ()
+  (fin-test-with-db
+    (fin-bankdb-ensure)
+    (test-ir--seed-2025)
+    (let* ((fin-pj-income-payers '(("BP Educacao" . "bp")))
+           (fin-pj-tax-items '(("\\bDAS\\b" . "das")))
+           (fin-conv-salary-regexps '("OWN CNPJ"))
+           (fin-ir-pro-labore '((2025 :monthly 100000)))
+           (ctx (append (test-ir--ctx) '(:books ((2025 . 600000)) :reported-exempt ((2025 . 1))))))
+      (let ((p (fin-ir-position 2025 ctx)))
+        (should (= 600000 (plist-get p :book-profit)))
+        (should (= 1 (plist-get p :reported-exempt))))
+      (let ((fin-ir-book-profit '((2025 . 610000))))
+        (should (= 610000 (plist-get (fin-ir-position 2025 ctx) :book-profit)))))))
+
+(ert-deftest ir/reported-exempt-sums-non-zero-payers ()
+  (let* ((dir (make-temp-file "fin-ir-" t)) (fin-ir-payments-dir dir))
+    (unwind-protect
+        (progn
+          (make-directory (expand-file-name "fontes-pagadoras" dir))
+          (with-temp-file (expand-file-name "fontes-pagadoras/fontes.csv" dir)
+            (insert "ano,fonte,rendimento_tributavel,prev_oficial,irrf,isento,processado\n"
+                    "2021,A,15600.00,1716.00,0.00,32400.00,2022-02-22\n"
+                    "2021,B,250.00,0.00,0.00,0.00,2026-04-18\n"
+                    "2022,A,15600.00,1716.00,0.00,0.00,2023-02-27\n"))
+          (should (equal '((2021 . 3240000)) (fin-ir-reported-exempt)))
+          (with-temp-file (expand-file-name "fontes-pagadoras/fontes.csv" dir)
+            (insert "ano,fonte,rendimento_tributavel,prev_oficial,irrf,isento,processado\n"
+                    "2021,A,15600.00,1716.00\n"))
+          (should-error (fin-ir-reported-exempt)))                       ; no isento column
+      (delete-directory dir t))))
+
+(defun test-ir--dec (exercise fields &optional len exempt)
   "A .DEC text: IR header of EXERCISE, totals record of LEN (744) with
-FIELDS, (START . CENTS) each, as 13-digit fields."
+FIELDS, (START . CENTS) each, as 13-digit fields, then an exempt record 84
+per EXEMPT (CODE . CENTS)."
   (let ((rec (make-string (or len 744) ?0)))
     (aset rec 0 ?1) (aset rec 1 ?8)
     (dolist (f fields)
       (let ((d (format "%013d" (cdr f))))
         (dotimes (i 13) (aset rec (+ (car f) i) (aref d i)))))
-    (concat "IR      " (number-to-string exercise) "2025xx\r\n" rec "\r\nT9\r\n")))
+    (concat "IR      " (number-to-string exercise) "2025xx\r\n" rec "\r\n"
+            (mapconcat (lambda (e) (format "8400000000000T00000000000%s37554387000138%-60s%013d0000\r\n"
+                                           (car e) "PAYER" (cdr e)))
+                       exempt "")
+            "T9\r\n")))
 
 (ert-deftest ir/dec-totals-read-the-filed-return ()
   (let ((p (fin-ir-dec-totals (test-ir--dec 2026 '((456 . 1800000) (274 . 2864756) (287 . 7343061)
-                                                   (300 . 9540000) (326 . 241201))))))
+                                                   (300 . 9999999) (326 . 241201))
+                                            nil '(("0013" . 9540000) ("0012" . 19020))))))
     (should (= 2026 (plist-get p :exercise)))
     (should (= 9540000 (plist-get p :exempt)))
     (should (= 241201 (plist-get p :exclusive)))
@@ -313,19 +381,23 @@ FIELDS, (START . CENTS) each, as 13-digit fields."
     (should (= 2864756 (plist-get p :assets-before)))
     (should (= 1800000 (plist-get p :other-taxable))))
   ;; The filed 2023 return (ano 2022): same columns, shorter record.
-  (let ((p (fin-ir-dec-totals (test-ir--dec 2023 '((274 . 148650) (300 . 5542153) (326 . 10932)) 718))))
+  (let ((p (fin-ir-dec-totals (test-ir--dec 2023 '((274 . 148650) (300 . 5542153) (326 . 10932)) 718
+                                            '(("0013" . 5540933))))))
     (should (= 2023 (plist-get p :exercise)))
-    (should (= 5542153 (plist-get p :exempt)))
+    (should (= 5540933 (plist-get p :exempt)))           ; code 13, not the exempt total
     (should (= 10932 (plist-get p :exclusive)))
     (should (= 148650 (plist-get p :assets-before)))
     (should (= 0 (plist-get p :assets))))
   ;; The filed 2022 return (ano 2021): same layout as 2023.
   (let ((p (fin-ir-dec-totals (test-ir--dec 2022 '((287 . 148650) (300 . 1531065) (326 . 564)) 718))))
+    (should (= 0 (plist-get p :exempt)))                 ; no code 13 record
     (should (= 2022 (plist-get p :exercise)))
-    (should (= 1531065 (plist-get p :exempt)))
     (should (= 564 (plist-get p :exclusive)))
     (should (= 148650 (plist-get p :assets))))
   (should-error (fin-ir-dec-totals (test-ir--dec 2023 nil)))          ; 2023 is 718 long
+  (should-error (fin-ir-dec-totals                                     ; exempt value not numeric
+                 (replace-regexp-in-string "0000009540000" "00000095400x0"
+                                           (test-ir--dec 2026 nil nil '(("0013" . 9540000))))))
   (should-error (fin-ir-dec-totals (test-ir--dec 2027 nil)))          ; unknown layout
   (should-error (fin-ir-dec-totals (test-ir--dec 2026 nil 700))))     ; layout changed
 
@@ -375,6 +447,21 @@ FIELDS, (START . CENTS) each, as 13-digit fields."
       (let ((fin-ir-wrong-account-known '(("2025-06-06" 45191))))
         (should-not (fin-ir-wrong-account receita))))))
 
+(ert-deftest ir/receita-rows-are-the-tax-items-paid-to-receita ()
+  (fin-test-with-db
+    (fin-bankdb-ensure)
+    (test-ir--bank "g1" "pj" "2025-02-13" "out" 100 "GPS - INSS")
+    (test-ir--bank "c1" "pj" "2025-02-14" "out" 200 "Pix - TEVES ASSESSORIA")
+    (test-ir--bank "d1" "account" "2025-02-15" "out" 300 "Pix - das flores")
+    (let ((fin-pj-tax-items '(("\\bDAS\\b" . "das") ("\\bGPS\\b" . "gps") ("TEVES ASSESSORIA" . "contabilidade"))))
+      (should (equal '("g1") (mapcar #'car (fin-ir--receita-rows)))))))
+
+(ert-deftest ir/receita-codes-name-the-payer ()
+  (should (equal '("das" pj) (fin-ir-code "3333")))
+  (should (equal '("inss complement" cpf) (fin-ir-code "1872")))
+  (should (equal '("irpf fine" cpf) (fin-ir-code "5320")))
+  (should (equal '("9999" pj) (fin-ir-code "9999"))))   ; unknown: the company's
+
 (ert-deftest ir/third-party-darf-is-no-tax-of-either ()
   (fin-test-with-db
     (fin-bankdb-ensure)
@@ -394,7 +481,8 @@ FIELDS, (START . CENTS) each, as 13-digit fields."
     (fin-bankdb-ensure)
     (test-ir--bank "a" "pj" "2024-12-30" "out" 60931 "Pix - RECEITA FEDERAL")
     (test-ir--bank "b" "pj" "2025-01-03" "out" 60931 "Pix - RECEITA FEDERAL")
-    (let ((receita (fin-ir-receita-matches '(("2025-01-02" "3333" 60931)))))
+    (let* ((fin-pj-tax-items '(("RECEITA FED" . "darf")))
+           (receita (fin-ir-receita-matches '(("2025-01-02" "3333" 60931)))))
       (should (equal '(("a" . "3333") ("b"))
                      (mapcar (lambda (m) (cons (caar m) (cdr m))) receita))))))
 

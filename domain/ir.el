@@ -59,11 +59,11 @@ competencia, tomador_doc, tomador, valor, situacao, arquivo).  Nil or
 absent: none."
   :type '(choice directory (const nil)) :group 'fin)
 
-(defcustom fin-ir-receita-regexps '("RECEITA FED" "DARF" "\\bDAS\\b" "Simples Nacional" "SIMPLES NACIONAL")
-  "Bank descriptions of payments to Receita in the company and the personal
-account, matched case-sensitively: \"das\" is also a Portuguese word in shop
-names."
-  :type '(repeat regexp) :group 'fin)
+(defcustom fin-ir-receita-items '("das" "darf" "gps")
+  "Items of `fin-pj-tax-items' paid to Receita: their regexps find those
+payments in the company and the personal account, matched
+case-sensitively (\"das\" is also a Portuguese word in shop names)."
+  :type '(repeat string) :group 'fin)
 
 (defcustom fin-ir-payment-labels nil
   "Receita payments the Receita lists do not show, labelled by hand: list of
@@ -84,6 +84,7 @@ totals still count them."
 (defconst fin-ir-receita-codes
   '(("3333" "das" pj) ("0055" "das" pj) ("1410" "inss" pj) ("4444" "inss" pj)
     ("1099" "inss" pj) ("0211" "irpf" cpf) ("5320" "irpf fine" cpf)
+    ("1872" "inss complement" cpf)
     ("third-party" "third party" none))
   "Receita codes (código de receita) -> (ITEM PAYER): the tax item and who
 owes it, pj (the company), cpf (the partner) or none (another taxpayer's
@@ -92,8 +93,7 @@ their number and are the company's.")
 
 (defcustom fin-ir-defis-exempt nil
   "Exempt profit paid to the partner per DEFIS, by calendar year: list of
-(YEAR . CENTS).  A year with a defis/defis-cnpj-YEAR.pdf under
-`fin-ir-payments-dir' and no entry here reports 0."
+\(YEAR . CENTS); overrides the DEFIS summaries (`fin-ir-defis-files')."
   :type '(alist :key-type integer :value-type integer) :group 'fin)
 
 (defcustom fin-ir-declared-exempt nil
@@ -130,8 +130,9 @@ is exempt, the excess is the partner's taxable income."
 
 (defcustom fin-ir-book-profit nil
   "Net profit of the company's full books (DRE), by calendar year: list of
-\(YEAR . CENTS).  A year listed is exempt up to the larger of it and the
-presumed profit (LC 123 art. 14 §1); `fin-ir-full-books' covers the rest."
+\(YEAR . CENTS); overrides the DRE summaries (`fin-ir-book-files').  A year
+with books is exempt up to the larger of their profit and the presumed
+profit (LC 123 art. 14 §1); `fin-ir-full-books' covers the rest."
   :type '(alist :key-type integer :value-type integer) :group 'fin)
 
 (defcustom fin-ir-presumption 0.32
@@ -405,11 +406,13 @@ hash table, updated)."
     (when best (puthash best t used) (nth 1 best))))
 
 (defun fin-ir--receita-rows ()
-  "Bank rows paid to Receita (`fin-ir-receita-regexps') from the company or
+  "Bank rows paid to Receita (`fin-ir-receita-items') from the company or
 the personal account, oldest first: (id date account amount description)."
-  (let ((case-fold-search nil))
+  (let ((case-fold-search nil)
+        (res (mapcar #'car (cl-remove-if-not (lambda (i) (member (cdr i) fin-ir-receita-items))
+                                             fin-pj-tax-items))))
     (cl-remove-if-not
-     (lambda (r) (cl-some (lambda (re) (string-match-p re (nth 4 r))) fin-ir-receita-regexps))
+     (lambda (r) (cl-some (lambda (re) (string-match-p re (nth 4 r))) res))
      (fin-db-query "SELECT id, date, account, amount, description FROM bank_txn
                      WHERE type = 'out' AND account IN ('pj', 'account') ORDER BY date, id"))))
 
@@ -557,18 +560,35 @@ in-rows from own accounts (`fin-bank-own-regexps') that are not revenue."
 
 (defconst fin-ir--dec-layouts
   '((2026 :length 744 :other-taxable (456 . 469) :assets-before (274 . 287)
-          :assets (287 . 300) :exempt (300 . 313) :exclusive (326 . 339))
+          :assets (287 . 300) :exclusive (326 . 339))
     (2023 :length 718 :other-taxable (456 . 469) :assets-before (274 . 287)
-          :assets (287 . 300) :exempt (300 . 313) :exclusive (326 . 339))
+          :assets (287 . 300) :exclusive (326 . 339))
     (2022 :length 718 :other-taxable (456 . 469) :assets-before (274 . 287)
-          :assets (287 . 300) :exempt (300 . 313) :exclusive (326 . 339)))
+          :assets (287 . 300) :exclusive (326 . 339)))
   "Columns of the totals record (type 18) of a DIRPF .DEC file, by
 exercício: 13-digit cent fields, read off the filed 2026, 2023 and 2022 returns.
 A file of another exercício fails loud until its layout is added here.")
 
+(defconst fin-ir--dec-simples-code "0013"
+  "Exempt-income code (record 84) of a Simples company's profit paid to its
+partner: rendimento de sócio ou titular de ME/EPP optante pelo Simples.")
+
+(defun fin-ir--dec-simples-exempt (lines)
+  "Cents of the exempt records 84 among .DEC LINES with
+`fin-ir--dec-simples-code': code at columns 25-29, value at 103-116."
+  (let ((sum 0))
+    (dolist (l lines sum)
+      (when (and (string-prefix-p "84" l) (>= (length l) 116)
+                 (equal (substring l 25 29) fin-ir--dec-simples-code))
+        (let ((digits (substring l 103 116)))
+          (unless (string-match-p "\\`[0-9]+\\'" digits)
+            (error "fin-ir: .DEC exempt record value not numeric: %S" digits))
+          (cl-incf sum (string-to-number digits)))))))
+
 (defun fin-ir-dec-totals (text)
-  "Plist of a DIRPF .DEC TEXT: :exercise, then the cents of
-`fin-ir--dec-layouts' fields (:exempt :exclusive :other-taxable :assets
+  "Plist of a DIRPF .DEC TEXT: :exercise, :exempt (the Simples company's
+profit, `fin-ir--dec-simples-exempt'), then the cents of
+`fin-ir--dec-layouts' fields (:exclusive :other-taxable :assets
 :assets-before)."
   (let* ((lines (split-string text "\r?\n" t))
          (header (or (car (cl-member-if (lambda (l) (string-prefix-p "IR" l)) lines))
@@ -581,12 +601,41 @@ A file of another exercício fails loud until its layout is added here.")
     (unless (= (length totals) (plist-get layout :length))
       (error "fin-ir: .DEC %d totals record is %d long, layout says %d"
              exercise (length totals) (plist-get layout :length)))
-    (append (list :exercise exercise)
+    (append (list :exercise exercise :exempt (fin-ir--dec-simples-exempt lines))
             (cl-loop for (key cols) on (cddr layout) by #'cddr
                      append (let ((digits (substring totals (car cols) (cdr cols))))
                               (unless (string-match-p "\\`[0-9]+\\'" digits)
                                 (error "fin-ir: .DEC %d field %s not numeric: %S" exercise key digits))
                               (list key (string-to-number digits)))))))
+
+(defun fin-ir--yearly-row (line file)
+  "(YEAR . CENTS) of a yearly summary CSV LINE from FILE: ano first, the
+amount last."
+  (let ((cols (split-string line ",")))
+    (unless (and (cdr cols) (string-match-p "\\`[0-9]\\{4\\}\\'" (car cols))
+                 (string-match-p fin-ir--amount-re (car (last cols))))
+      (error "fin-ir: bad summary line in %s: %S" file line))
+    (cons (string-to-number (car cols)) (fin-ir--cents (car (last cols))))))
+
+(defun fin-ir--yearly (dir pattern)
+  "Alist YEAR -> CENTS of the summary CSVs in DIR matching PATTERN
+\(`fin-ir--yearly-row'); a year twice fails loud."
+  (let (out)
+    (dolist (r (fin-ir--csv dir pattern #'fin-ir--yearly-row) out)
+      (when (assq (car r) out) (error "fin-ir: %d twice in %s summaries" (car r) pattern))
+      (push r out))))
+
+(defun fin-ir-defis-files ()
+  "DEFIS exempt profit paid to the partner, alist YEAR -> CENTS, from
+defis/defis-*-resumo.csv under `fin-ir-payments-dir' (ano, declaracao,
+isento: the year's last declaration)."
+  (fin-ir--yearly (and fin-ir-payments-dir (expand-file-name "defis" fin-ir-payments-dir))
+                  "\\`defis-.*-resumo\\.csv\\'"))
+
+(defun fin-ir-book-files ()
+  "Net profit of the company's books (DRE), alist YEAR -> CENTS, from
+dre-*-resumo.csv in `fin-ir-payments-dir' (ano, lucro)."
+  (fin-ir--yearly fin-ir-payments-dir "\\`dre-.*-resumo\\.csv\\'"))
 
 (defun fin-ir-dirpf-files ()
   "Filed returns' totals: alist ANO-CALENDARIO -> `fin-ir-dec-totals' of
@@ -606,10 +655,13 @@ each dirpf/dirpf-cpf-ANO-original.zip under `fin-ir-payments-dir' (the
 (defun fin-ir-context ()
   "Inputs every year's position shares, read once: :receita
 (`fin-ir-receita-matches'), :simples (`fin-ir-simples'), :invoices
-(`fin-ir-invoices') and :dirpf (`fin-ir-dirpf-files')."
+(`fin-ir-invoices'), :dirpf (`fin-ir-dirpf-files'), :other-payers
+\(`fin-ir-other-payers'), :reported-exempt (`fin-ir-reported-exempt'),
+:defis (`fin-ir-defis-files') and :books (`fin-ir-book-files')."
   (list :receita (fin-ir-receita-matches (fin-ir-payments))
         :simples (fin-ir-simples) :invoices (fin-ir-invoices) :dirpf (fin-ir-dirpf-files)
-        :other-payers (fin-ir-other-payers)))
+        :other-payers (fin-ir-other-payers) :reported-exempt (fin-ir-reported-exempt)
+        :defis (fin-ir-defis-files) :books (fin-ir-book-files)))
 
 (defun fin-ir--declared-field (ctx year key config)
   "Cents of KEY in YEAR's filed return (CTX :dirpf), CONFIG overriding.
@@ -697,14 +749,15 @@ January through the last completed month for the current one."
           (t 0))))
 
 (defun fin-ir--fontes-row (line file)
-  "(YEAR TAXABLE INSS) of a payer-income CSV LINE from FILE (ano, fonte,
-rendimento_tributavel, prev_oficial, …).  A payer that withheld INSS is
-the company's pró-labore; any other is other taxable income."
+  "(YEAR TAXABLE INSS EXEMPT) of a payer-income CSV LINE from FILE (ano,
+fonte, rendimento_tributavel, prev_oficial, irrf, isento, …).  A payer that
+withheld INSS is the company's pró-labore; any other is other taxable income."
   (pcase (split-string line ",")
-    ((and `(,year ,_payer ,taxable ,inss . ,_)
+    ((and `(,year ,_payer ,taxable ,inss ,_irrf ,exempt . ,_)
           (guard (and (string-match-p "\\`[0-9]\\{4\\}\\'" year)
-                      (string-match-p fin-ir--amount-re taxable) (string-match-p fin-ir--amount-re inss))))
-     (list (string-to-number year) (fin-ir--cents taxable) (fin-ir--cents inss)))
+                      (string-match-p fin-ir--amount-re taxable) (string-match-p fin-ir--amount-re inss)
+                      (string-match-p fin-ir--amount-re exempt))))
+     (list (string-to-number year) (fin-ir--cents taxable) (fin-ir--cents inss) (fin-ir--cents exempt)))
     (_ (error "fin-ir: bad payer-income line in %s: %S" file line))))
 
 (defun fin-ir--dctfweb-row (line file)
@@ -723,9 +776,17 @@ TOTAL is nil when INSS is at the cap: the pró-labore may be any amount above it
 
 (defun fin-ir--fontes ()
   "Rows of the payer-income files (fontes-pagadoras/*.csv under
-`fin-ir-payments-dir'): (YEAR TAXABLE INSS) each."
+`fin-ir-payments-dir'): (YEAR TAXABLE INSS EXEMPT) each."
   (fin-ir--csv (and fin-ir-payments-dir (expand-file-name "fontes-pagadoras" fin-ir-payments-dir))
                "\\.csv\\'" #'fin-ir--fontes-row))
+
+(defun fin-ir-reported-exempt ()
+  "Alist YEAR -> exempt cents the payers reported paying (their informes):
+years they reported none are left out, as a payer that reports no exempt
+income is indistinguishable from one that did not report it."
+  (let (out)
+    (dolist (r (fin-ir--fontes) out)
+      (when (> (nth 3 r) 0) (setq out (fin-ir--bump out (car r) (nth 3 r)))))))
 
 (defun fin-ir-other-payers ()
   "Alist YEAR -> taxable cents from payers that withheld no INSS: income
@@ -813,7 +874,7 @@ paid, less what went back) beyond the pró-labore net of its INSS."
          (inss (nth 2 pl))
          (profit (and pl (max 0 (- drawn (- (car pl) inss)))))
          (presumed (max 0 (- (round (* fin-ir-presumption (car declared))) (cadr declared))))
-         (book (cdr (assq year fin-ir-book-profit)))
+         (book (cdr (or (assq year fin-ir-book-profit) (assq year (plist-get ctx :books)))))
          (limit (max presumed (or book 0)))
          (excess (and profit (max 0 (- profit limit))))
          ;; A year with books stands on them; the claim covers the others.
@@ -842,7 +903,8 @@ paid, less what went back) beyond the pró-labore net of its INSS."
            :profit profit :presumed presumed :book-profit book :excess excess
            :exempt (and profit (if books profit (min profit limit)))
            :excess-tax (and pl (fin-ir--excess-tax year base excess inss health retirement))
-           :defis-exempt (fin-ir--defis-exempt year)
+           :defis-exempt (fin-ir--defis-exempt ctx year)
+           :reported-exempt (cdr (assq year (plist-get ctx :reported-exempt)))
            :declared-exempt (fin-ir--declared-field ctx year :exempt fin-ir-declared-exempt)
            :exclusive (fin-ir--declared-field ctx year :exclusive fin-ir-exclusive)
            :assets (fin-ir--declared-field ctx year :assets fin-ir-assets-declared)
@@ -851,13 +913,16 @@ paid, less what went back) beyond the pró-labore net of its INSS."
            :individuals individuals)
      (and taxable (fin-ir--deductions year taxable inss health retirement)))))
 
-(defun fin-ir--defis-exempt (year)
-  "YEAR's DEFIS exempt profit: `fin-ir-defis-exempt', else 0 when the DEFIS
-is in the defis/ folder of `fin-ir-payments-dir', else nil."
-  (or (cdr (assq year fin-ir-defis-exempt))
-      (and fin-ir-payments-dir
-           (file-exists-p (expand-file-name (format "defis/defis-cnpj-%d.pdf" year) fin-ir-payments-dir))
-           0)))
+(defun fin-ir--defis-exempt (ctx year)
+  "YEAR's DEFIS exempt profit: `fin-ir-defis-exempt', else CTX :defis
+\(`fin-ir-defis-files'), else 0 when a DEFIS of YEAR (original or
+retificadora) is in the defis/ folder of `fin-ir-payments-dir', else nil."
+  (let ((dir (and fin-ir-payments-dir (expand-file-name "defis" fin-ir-payments-dir))))
+    (or (cdr (assq year fin-ir-defis-exempt))
+        (cdr (assq year (plist-get ctx :defis)))
+        (and dir (file-directory-p dir)
+             (directory-files dir nil (format "\\`defis-cnpj-%d\\(-retificadora-[0-9]+\\)?\\.pdf\\'" year))
+             0))))
 
 (defun fin-ir--filed ()
   "Returns delivered: `fin-ir-filed', then one per receipt in the dirpf/

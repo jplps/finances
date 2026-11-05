@@ -112,7 +112,8 @@ paid up to the books' profit, else nil; also the declarations off."
                                                      (< (cdr d) (- (min bank book) 100000)))
                                                (> (abs (- bank (cdr d))) 100000))))
                     (list (cons "DEFIS" (plist-get p :defis-exempt))
-                          (cons "DIRPF" (plist-get p :declared-exempt)))))))
+                          (cons "DIRPF" (plist-get p :declared-exempt))
+                          (cons "informe" (plist-get p :reported-exempt)))))))
     (when off
       (cons (mapcar #'car off)
             (format "%d: %s %s%s" (plist-get p :year) (if book "books" "bank")
@@ -121,7 +122,8 @@ paid up to the books' profit, else nil; also the declarations off."
                                off ""))))))
 
 (defun fin-dashboard--ir-exempt-line (positions)
-  "One line for the years whose DEFIS or DIRPF exempt profit is off the bank's."
+  "One line for the years whose DEFIS, DIRPF or informe exempt profit is off
+the bank's."
   (let* ((gaps (delq nil (mapcar (lambda (p) (let ((g (fin-dashboard--ir-exempt-gap p)))
                                                 (and g (cons (plist-get p :year) g))))
                                  positions)))
@@ -130,7 +132,7 @@ paid up to the books' profit, else nil; also the declarations off."
       (list nil (fin-dashboard--ir-detail-span
                  (format "rectify exempt profit: %s"
                          (mapconcat (lambda (doc) (format "%s %s" doc (fin-dashboard--ir-span (funcall by doc))))
-                                    (cl-remove-if-not by '("DEFIS" "DIRPF")) " · "))
+                                    (cl-remove-if-not by '("DEFIS" "DIRPF" "informe")) " · "))
                  (mapconcat #'cddr gaps "; "))))))
 
 (defun fin-dashboard--ir-profit-line (positions)
