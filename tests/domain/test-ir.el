@@ -123,6 +123,13 @@
   (let ((fin-ir-full-books 'yes))
     ;; Under R$ 1.000 over is no line; the open year alone is not a warning.
     (should-not (fin-dashboard--ir-profit-line '((:year 2023 :profit 100 :presumed 0 :excess 99999))))
+    ;; A filed return that taxed the excess (exempt declared at the limit) settles it.
+    (should-not (fin-dashboard--ir-profit-line
+                 '((:year 2021 :profit 3307826 :presumed 1529163 :excess 1778663
+                    :exempt 1529163 :declared-exempt 1531065))))
+    (should (fin-dashboard--ir-profit-line
+             '((:year 2021 :profit 3307826 :presumed 1529163 :excess 1778663
+                :exempt 1529163 :declared-exempt 3307826 :excess-tax 30462))))
     (should (car (fin-dashboard--ir-profit-line
                   '((:year 2026 :profit 500000 :presumed 100000 :excess 400000)))))))
 
@@ -312,6 +319,12 @@ FIELDS, (START . CENTS) each, as 13-digit fields."
     (should (= 10932 (plist-get p :exclusive)))
     (should (= 148650 (plist-get p :assets-before)))
     (should (= 0 (plist-get p :assets))))
+  ;; The filed 2022 return (ano 2021): same layout as 2023.
+  (let ((p (fin-ir-dec-totals (test-ir--dec 2022 '((287 . 148650) (300 . 1531065) (326 . 564)) 718))))
+    (should (= 2022 (plist-get p :exercise)))
+    (should (= 1531065 (plist-get p :exempt)))
+    (should (= 564 (plist-get p :exclusive)))
+    (should (= 148650 (plist-get p :assets))))
   (should-error (fin-ir-dec-totals (test-ir--dec 2023 nil)))          ; 2023 is 718 long
   (should-error (fin-ir-dec-totals (test-ir--dec 2027 nil)))          ; unknown layout
   (should-error (fin-ir-dec-totals (test-ir--dec 2026 nil 700))))     ; layout changed
