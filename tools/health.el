@@ -108,9 +108,6 @@ ids of the company account's rows, whose tax payments are not spending."
                                   (and (> bank 0) (> (abs (- led bank)) (* fin-health-gap-share bank)))))
                     (fin-health-months n)))
 
-(defconst fin-health--bill-regexp "\\`Pagamento d[ae] fatura\\|\\`Pagamento recebido\\'"
-  "A card bill payment: paid on the account, received on the card.")
-
 (defun fin-health--bank-cash (year month)
   "Signed cents all bank accounts gained in YEAR-MONTH, card bill payments
 left out."
@@ -120,7 +117,8 @@ left out."
                              (list year month))
                total)
       (pcase-let ((`(,type ,amount ,desc) r))
-        (unless (string-match-p fin-health--bill-regexp desc)
+        (unless (cl-some (lambda (re) (and re (string-match-p re desc)))
+                         (list fin-bank-bill-paid-regexp fin-bank-bill-received-regexp))
           (cl-incf total (if (equal type "in") amount (- amount))))))))
 
 (defun fin-health-cash (year month)

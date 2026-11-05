@@ -16,6 +16,10 @@
                                                  (mapcar #'car (fin-ir-pro-labore-files)))))
           #'<)))
 
+(defun fin-dashboard--ir-p ()
+  "Non-nil when there is imposto de renda to show: a year or obligations."
+  (or fin-duty-since (fin-dashboard--ir-years)))
+
 (defun fin-dashboard--ir-money (cents)
   "R$ CENTS, or ? when unknown."
   (if cents (concat "R$ " (fin-dashboard--money-str cents)) "?"))
@@ -577,21 +581,22 @@ for the current year from 2026 on."
                                      positions (fin-dashboard--ir-closed positions) ctx)))))))
 
 (defun fin-dashboard--panel-ir ()
-  (let* ((years (fin-dashboard--ir-years))
-         (ctx (and years (fin-ir-context)))
-         (positions (mapcar (lambda (y) (fin-ir-position y ctx)) years))
-         (closed (fin-dashboard--ir-closed positions))
-         (current (car (last positions))))
-    (fin-dashboard--panel
-     "IR" "ir"
-     "Imposto de renda per year: taxable and exempt income, filing duty and return, revenue, company taxes, money to the CPF, deductions and tax; risks are in the cockpit's to do"
-     (when current (fin-dashboard--ir-tiles current))
-     (when (or positions fin-duty-since)
-       (fin-dashboard--years-block positions closed ctx))
-     (when current
-       (fin-dashboard--block "Rules" "Hover a status for its detail"
-                             (fin-dashboard--ir-rules positions closed ctx)))
-     (fin-dashboard--ir-lines "Inputs" "Inputs the estimate still needs" (fin-dashboard--ir-input-lines)))))
+  (when (fin-dashboard--ir-p)
+    (let* ((years (fin-dashboard--ir-years))
+           (ctx (and years (fin-ir-context)))
+           (positions (mapcar (lambda (y) (fin-ir-position y ctx)) years))
+           (closed (fin-dashboard--ir-closed positions))
+           (current (car (last positions))))
+      (fin-dashboard--panel
+       "IR" "ir"
+       "Imposto de renda per year: taxable and exempt income, filing duty and return, revenue, company taxes, money to the CPF, deductions and tax; risks are in the cockpit's to do"
+       (when current (fin-dashboard--ir-tiles current))
+       (when (or positions fin-duty-since)
+         (fin-dashboard--years-block positions closed ctx))
+       (when current
+         (fin-dashboard--block "Rules" "Hover a status for its detail"
+                               (fin-dashboard--ir-rules positions closed ctx)))
+       (fin-dashboard--ir-lines "Inputs" "Inputs the estimate still needs" (fin-dashboard--ir-input-lines))))))
 
 (provide 'irpf)
 ;;; irpf.el ends here

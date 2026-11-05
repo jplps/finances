@@ -221,9 +221,15 @@ The net row replaces the first income; non-positive months stay as is."
   "Non-nil if CENTS is large and has cents, so unlikely to coincide."
   (and (>= cents fin-reconcile-exact-min) (/= 0 (% cents 100))))
 
+(defcustom fin-reconcile-installment-regexp nil
+  "Bank description of an installment; groups 1 and 2 are K and N of K/N."
+  :type '(choice (const nil) regexp) :group 'fin)
+
 (defun fin-reconcile-installment (s)
-  "\"k/n\" of an installment: bank \"... Parcela 3/10\" or ledger \"3/10\"; or nil."
-  (when (and s (or (string-match "Parcela \\([0-9]+\\)/\\([0-9]+\\)" s)
+  "\"k/n\" of an installment: bank `fin-reconcile-installment-regexp' or
+ledger \"3/10\"; or nil."
+  (when (and s (or (and fin-reconcile-installment-regexp
+                        (string-match fin-reconcile-installment-regexp s))
                    (string-match "\\`\\([0-9]+\\)/\\([0-9]+\\)\\'" s)))
     (format "%s/%s" (match-string 1 s) (match-string 2 s))))
 

@@ -72,7 +72,8 @@ In a month no card statement covers, the card bill paid from the account
       (dolist (b bank)
         (when (and (equal (nth 2 b) "out") (not (fin-conv--savings-p b))) (add b)))
       (dolist (b raw)
-        (when (and (equal (nth 2 b) "out") (string-match-p "\\`Pagamento d[ae] fatura" (nth 4 b))
+        (when (and (equal (nth 2 b) "out") fin-bank-bill-paid-regexp
+                   (string-match-p fin-bank-bill-paid-regexp (nth 4 b))
                    (not (member (substring (nth 1 b) 0 7) card)))
           (add b))))
     (maphash (lambda (ym v) (push (list ym v (or (cdr (assoc ym ledger)) 0)) out)) sums)
@@ -187,7 +188,7 @@ AMOUNT cents within 1%, up to 45 days before ISO DATE."
               "SELECT description FROM bank_txn
                 WHERE type = 'out' AND julianday(?) - julianday(date) BETWEEN 0 AND 45
                   AND abs(amount - ?) <= max(1, ? / 100) AND description LIKE ?"
-              (list date amount amount (format "%%Parcela %d/%d%%" k n))))))
+              (list date amount amount (format "%%%d/%d%%" k n))))))
 
 (defun fin-bank-fix--series (date amount k n desc)
   "(CATEGORY ITEM) of the ledger's installment K-1 of N before an

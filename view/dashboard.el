@@ -34,14 +34,20 @@
           ((< d 604800) (format "%dd" (/ d 86400)))
           (t (format-time-string "%Y-%m-%d %H:%M" ts)))))
 
+(defun fin-dashboard--shown-tabs ()
+  "`fin-dashboard--tabs' with a panel to show."
+  (if (fin-dashboard--ir-p) fin-dashboard--tabs
+    (assoc-delete-all "ir" (copy-sequence fin-dashboard--tabs))))
+
 (defun fin-dashboard--status-bar ()
   "Numbered link per panel, its number the accesskey, then the clock."
   (concat "<nav class=\"status\">"
-          (mapconcat (lambda (i)
-                       (pcase-let ((`(,id . ,label) (nth i fin-dashboard--tabs)))
-                         (format "<a href=\"#%s\" title=\"%s\" accesskey=\"%d\">%d:%s</a>"
-                                 id id (1+ i) (1+ i) label)))
-                     (number-sequence 0 (1- (length fin-dashboard--tabs))) "")
+          (let ((tabs (fin-dashboard--shown-tabs)))
+            (mapconcat (lambda (i)
+                         (pcase-let ((`(,id . ,label) (nth i tabs)))
+                           (format "<a href=\"#%s\" title=\"%s\" accesskey=\"%d\">%d:%s</a>"
+                                   id id (1+ i) (1+ i) label)))
+                       (number-sequence 0 (1- (length tabs))) ""))
           (format "<span class=\"clock\">%s</span></nav>"
                   (downcase (format-time-string "%H:%M %d-%b-%y")))))
 

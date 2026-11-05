@@ -3,20 +3,15 @@
 (require 'cl-lib)
 (require 'reconcile)
 
-(defcustom fin-conv-refund-re
-  "\\`\\(Estorno\\|Reembolso recebido\\|Devolução\\|Crédito de Confiança\\|Transferência devolvida\\)"
+(defcustom fin-conv-refund-re nil
   "Bank descriptions of money returned for a purchase."
-  :type 'regexp :group 'fin)
+  :type '(choice (const nil) regexp) :group 'fin)
 
 (defcustom fin-conv-refund-days 45
   "Max days between a purchase and its refund."
   :type 'natnum :group 'fin)
 
-(defcustom fin-conv-savings-regexps
-  '("\\`Aplicação RDB" "\\`Resgate RDB" "\\`Aplicação em investimento"
-    "\\`Compra de criptomoedas" "\\`Venda de criptomoedas"
-    "\\`Compra de ETF" "\\`Venda de ETF" "\\`Devolução - Aplicação"
-    "\\`Dinheiro guardado" "\\`Dinheiro resgatado")
+(defcustom fin-conv-savings-regexps nil
   "Bank descriptions of moves between the account and savings."
   :type '(repeat regexp) :group 'fin)
 
@@ -46,19 +41,39 @@ naming WORD relates to a ledger row in CATEGORY."
   "Category for money received from people."
   :type 'string :group 'fin)
 
-(defconst fin-conv--stopwords
-  '("compra" "debito" "via" "nupay" "transferencia" "enviada" "recebida" "pelo"
-    "pix" "credito" "conta" "ltda" "brasil" "com" "supermercados" "pagamento"
-    "boleto" "efetuado" "sao" "jose" "comercio" "servicos" "produtos" "loja"
-    "store" "instituicao" "pagamentos" "tecnologia" "super" "mercado" "parcela"
-    "dos" "das")
-  "Words too common in bank descriptions to relate rows.")
+(defcustom fin-conv-stopwords nil
+  "Words too common in bank descriptions to relate rows: lowercase, no accents."
+  :type '(repeat string) :group 'fin)
 
-(defconst fin-conv--prefix-re
-  (concat "\\`\\(Compra no débito via NuPay\\|Compra no débito"
-          "\\|Transferência enviada pelo Pix\\|Transferência enviada\\|Pix no Crédito"
-          "\\|Pagamento de boleto efetuado\\|Débito em conta\\|Antecipada\\)\\s-*-?\\s-*")
-  "Bank boilerplate in front of the payee name.")
+(defcustom fin-conv-prefix-regexps nil
+  "Bank boilerplate in front of the payee name, matched at the start of a
+description; first match wins, a following \" - \" goes with it."
+  :type '(repeat regexp) :group 'fin)
+
+(defcustom fin-conv-reversal-regexp nil
+  "Card debit taking back a dispute's provisional credits."
+  :type '(choice (const nil) regexp) :group 'fin)
+
+(defcustom fin-conv-dispute-credit-regexp nil
+  "Provisional card credit while a purchase is disputed."
+  :type '(choice (const nil) regexp) :group 'fin)
+
+(defcustom fin-conv-fee-rules nil
+  "Fees folded into their purchase: list of (REGEXP SAME-DAY), first match
+wins.  Group 1 of REGEXP, when present, names the merchant, found in the
+same month, or day when SAME-DAY; without it the host is the purchase
+sharing the fee's FITID, else the only one that day or month."
+  :type '(repeat (list regexp boolean)) :group 'fin)
+
+(defcustom fin-conv-pass-through nil
+  "(FUNDING-REGEXP . PAYMENT-REGEXP): card credit moved into the account
+to pay an out row matching PAYMENT-REGEXP the same day, same amount.
+The payment is dropped."
+  :type '(choice (const nil) (cons regexp regexp)) :group 'fin)
+
+(defcustom fin-conv-transfer-regexp nil
+  "Received transfers, named after their payer."
+  :type '(choice (const nil) regexp) :group 'fin)
 
 (defun fin-conv--money (cents)
   "CENTS as a decimal string."
@@ -66,7 +81,7 @@ naming WORD relates to a ledger row in CATEGORY."
 
 (defun fin-conv--bank-words (desc)
   "Non-stopword payee words of DESC, plus their `fin-conv-aliases'."
-  (let ((ws (cl-set-difference (fin-reconcile--words (fin-conv-item desc)) fin-conv--stopwords
+  (let ((ws (cl-set-difference (fin-reconcile--words (fin-conv-item desc)) fin-conv-stopwords
                                :test #'string=)))
     (delete-dups (append ws (delq nil (mapcar (lambda (w) (cdr (assoc w fin-conv-aliases))) ws))))))
 
@@ -83,7 +98,7 @@ with at least 5 chars."
 
 (defun fin-conv--item-hit-p (desc bank-words item)
   "Non-nil if ledger ITEM names the payee of DESC."
-  (let ((iw (cl-set-difference (fin-reconcile--words item) fin-conv--stopwords
+  (let ((iw (cl-set-difference (fin-reconcile--words item) fin-conv-stopwords
                                :test #'string=)))
     (and iw
          (or (fin-conv--word-hit-p bank-words iw)
@@ -126,8 +141,16 @@ or joined match."
 payee name, lowercase."
   (or (cdr (cl-find-if (lambda (a) (let ((case-fold-search nil)) (string-match-p (car a) desc)))
                        fin-conv-item-aliases))
-      (let* ((d (replace-regexp-in-string "\\s-*-\\s-*Parcela [0-9]+/[0-9]+" "" desc))
-             (d (replace-regexp-in-string fin-conv--prefix-re "" d))
+      (let* ((d (if fin-reconcile-installment-regexp
+                    (replace-regexp-in-string
+                     (concat "\\s-*-\\s-*\\(?:" fin-reconcile-installment-regexp "\\)") "" desc)
+                  desc))
+             (d (if fin-conv-prefix-regexps
+                    (replace-regexp-in-string
+                     (concat "\\`\\(?:" (mapconcat #'identity fin-conv-prefix-regexps "\\|")
+                             "\\)\\s-*-?\\s-*")
+                     "" d)
+                  d))
              (d (car (split-string d " - ")))
              (d (replace-regexp-in-string "\\`[A-Za-z]\\{1,4\\}\\s-*\\*\\s-*" "" d))
              (d (replace-regexp-in-string "\\*.*\\'" "" d)))
@@ -140,11 +163,11 @@ payee name, lowercase."
 
 (defun fin-conv-installment (desc)
   "(K N) of the installment named in bank DESC, or (nil nil)."
-  (if (string-match "Parcela \\([0-9]+\\)/\\([0-9]+\\)" desc)
+  (if (and fin-reconcile-installment-regexp (string-match fin-reconcile-installment-regexp desc))
       (list (string-to-number (match-string 1 desc)) (string-to-number (match-string 2 desc)))
     (list nil nil)))
 
-(defun fin-conv--match-p (re row) (string-match-p re (nth 4 row)))
+(defun fin-conv--match-p (re row) (and re (string-match-p re (nth 4 row))))
 
 (defun fin-conv--savings-p (row)
   (cl-some (lambda (re) (fin-conv--match-p re row)) fin-conv-savings-regexps))
@@ -156,9 +179,6 @@ payee name, lowercase."
 (defun fin-conv--refund-p (row)
   (and (equal (nth 2 row) "in") (fin-conv--match-p fin-conv-refund-re row)
        (not (fin-conv--savings-p row))))
-
-(defconst fin-conv--reversal-re "\\`Reversão do Crédito de Confiança"
-  "Card debit taking back a dispute's provisional credits.")
 
 (defun fin-conv--quoted (desc)
   "The merchant DESC quotes (`Estorno de \"Loja\"'), or nil."
@@ -172,7 +192,7 @@ payee name, lowercase."
    (cl-remove-if-not (lambda (r)
                        (and (not (gethash (car r) gone)) (equal (nth 2 r) "out")
                             (= (nth 3 r) (nth 3 refund)) (not (fin-conv--savings-p r))
-                            (not (fin-conv--match-p fin-conv--reversal-re r))
+                            (not (fin-conv--match-p fin-conv-reversal-regexp r))
                             (<= 0 (fin-conv--days r refund) fin-conv-refund-days)))
                      rows)))
 
@@ -210,7 +230,7 @@ amount, else all of them when they sum to it."
                      (cl-remove-if-not
                       (lambda (r)
                         (and (not (gethash (car r) gone)) (equal (nth 2 r) "in")
-                             (fin-conv--match-p "\\`\\(Crédito\\|Depósito\\) de Confiança" r)
+                             (fin-conv--match-p fin-conv-dispute-credit-regexp r)
                              (equal (fin-conv--quoted (nth 4 r)) name)
                              (<= 0 (fin-conv--days r reversal) fin-conv-refund-days)))
                       rows)))
@@ -219,7 +239,7 @@ amount, else all of them when they sum to it."
           ((and cands (= (apply #'+ (mapcar (lambda (r) (nth 3 r)) cands)) (nth 3 reversal))) cands))))
 
 (defun fin-conv--fee-p (row)
-  (string-match-p "\\`\\(IOF de \\|Desconto Antecipação \\)" (nth 4 row)))
+  (cl-some (lambda (rule) (fin-conv--match-p (car rule) row)) fin-conv-fee-rules))
 
 (defun fin-conv--merchant-key (desc)
   "First 6 lowercase chars of the merchant in DESC."
@@ -259,15 +279,14 @@ purchase's IOF the purchase's FITID."
 
 (defun fin-conv--fee-host (fee rows gone)
   "Purchase of ROWS that FEE folds into, or nil."
-  (let ((desc (nth 4 fee)))
-    (cond
-     ((string-match "\\`IOF de \"\\([^\"]+\\)\"" desc)
-      (fin-conv--host fee rows gone nil (fin-conv--merchant-key (match-string 1 desc))))
-     ((string-prefix-p "IOF de compra internacional" desc)
-      (or (fin-conv--same-fitid-host fee rows gone)
-          (fin-conv--host fee rows gone t nil)))
-     ((string-match "\\`Desconto Antecipação \\(.+\\)" desc)
-      (fin-conv--host fee rows gone t (fin-conv--merchant-key (match-string 1 desc)))))))
+  (let* ((desc (nth 4 fee))
+         (rule (cl-find-if (lambda (r) (string-match (car r) desc)) fin-conv-fee-rules)))
+    (when rule
+      (string-match (car rule) desc)
+      (if (match-beginning 1)
+          (fin-conv--host fee rows gone (cadr rule) (fin-conv--merchant-key (match-string 1 desc)))
+        (or (fin-conv--same-fitid-host fee rows gone)
+            (fin-conv--host fee rows gone (cadr rule) nil))))))
 
 (defun fin-conv-normalize (bank)
   "Fold and cancel BANK rows the ledger never books on their own.
@@ -278,15 +297,15 @@ a list of (row . reason) for every row removed."
         notes)
     (cl-flet ((drop (r why) (puthash (car r) t gone) (push (cons r why) notes)))
       (dolist (f bank)
-        (when (fin-conv--match-p "\\`Valor adicionado na conta por cartão" f)
+        (when (fin-conv--match-p (car fin-conv-pass-through) f)
           (let ((p (cl-find-if (lambda (r) (and (not (gethash (car r) gone))
                                                 (equal (nth 2 r) "out") (equal (nth 1 r) (nth 1 f))
                                                 (= (nth 3 r) (nth 3 f))
-                                                (fin-conv--match-p "Pix" r)))
+                                                (fin-conv--match-p (cdr fin-conv-pass-through) r)))
                                bank)))
-            (when p (drop p "pass-through: paid via Pix no Crédito")))))
+            (when p (drop p "pass-through: paid by card credit")))))
       (dolist (v bank)
-        (when (and (equal (nth 2 v) "out") (fin-conv--match-p fin-conv--reversal-re v)
+        (when (and (equal (nth 2 v) "out") (fin-conv--match-p fin-conv-reversal-regexp v)
                    (not (gethash (car v) gone)))
           (let ((cs (fin-conv--trust-credits v bank gone)))
             (when cs
@@ -304,7 +323,7 @@ a list of (row . reason) for every row removed."
               (dolist (p ps) (drop p "refunded installment"))))))
       (dolist (r bank)
         (when (and (fin-conv--refund-p r) (not (gethash (car r) gone)))
-          (let* ((payee (cl-set-difference (fin-reconcile--words (nth 4 r)) fin-conv--stopwords
+          (let* ((payee (cl-set-difference (fin-reconcile--words (nth 4 r)) fin-conv-stopwords
                                            :test #'string=))
                  (p (cl-find-if (lambda (x)
                                   (and (not (gethash (car x) gone)) (equal (nth 2 x) "out")
@@ -409,7 +428,7 @@ names the payee; salary gaps are reported."
 to a bank word, or the bank word, truncated, prefixes it (5+ chars).
 A single shared word (`uber' in `uber sk8') only suggests a category."
   (let ((bw (fin-conv--bank-words desc))
-        (iw (cl-set-difference (fin-reconcile--words item) fin-conv--stopwords :test #'string=)))
+        (iw (cl-set-difference (fin-reconcile--words item) fin-conv-stopwords :test #'string=)))
     (and iw (cl-every (lambda (w)
                         (cl-some (lambda (b) (or (string= b w)
                                                  (and (>= (length b) 5) (string-prefix-p b w))))
@@ -430,7 +449,7 @@ is the suggested one when it names the same payee, else the bank payee."
 (defun fin-conv--inflow-action (b)
   "Add money received B as income from its payer."
   (list :add (list (nth 1 b) "in" fin-conv-inflow-category
-                   (if (string-match-p "Transferência" (nth 4 b))
+                   (if (fin-conv--match-p fin-conv-transfer-regexp b)
                        (fin-conv--payer (nth 4 b))
                      (fin-conv-item (nth 4 b)))
                    (nth 3 b) nil nil)

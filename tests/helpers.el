@@ -31,6 +31,7 @@
 (require 'goals)
 (require 'bank)
 (require 'bankfix)
+(load (expand-file-name "../banks/nubank" (file-name-directory (or load-file-name buffer-file-name))) nil t)
 
 (defmacro fin-test-with-db (&rest body)
   "Run BODY on a fresh temp DB with no Receita payment lists, deleted after."

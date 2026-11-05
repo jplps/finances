@@ -47,9 +47,17 @@
 (ert-deftest dashboard/status-bar-links-every-panel ()
   (fin-test-with-db
     (let ((html (fin-test--render-html)))
-      (dolist (n (mapcar #'car fin-dashboard--tabs))
+      (dolist (n (mapcar #'car (fin-dashboard--shown-tabs)))
         (should (string-search (format "<section id=\"%s\"" n) html))
         (should (string-search (format "href=\"#%s\"" n) html))))))
+
+(ert-deftest dashboard/no-ir-panel-without-tax-data ()
+  (fin-test-with-db
+    (cl-letf (((symbol-function 'fin-dashboard--ir-years) #'ignore))
+      (let* ((fin-duty-since nil)
+             (html (fin-test--render-html)))
+        (should-not (string-search "<section id=\"ir\"" html))
+        (should-not (string-search "<a href=\"#ir\"" html))))))
 
 (ert-deftest dashboard/goal-row-shows-cents-and-signed-left ()
   (let ((none (make-hash-table :test #'equal)))

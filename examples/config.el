@@ -1,10 +1,8 @@
 ;;; config.el --- Personal settings, copy to infra/config.el  -*- lexical-binding: t; -*-
 
-(setq fin-bank-own-regexps '("YOUR NAME" "Your Company"))
+(load (expand-file-name "../banks/nubank" (file-name-directory load-file-name)) nil t)
 
-(setq fin-bank-ignore-regexps
-      '("\\`Pagamento de fatura\\'"
-        "\\`Pagamento recebido\\'"))
+(setq fin-bank-own-regexps '("YOUR NAME" "Your Company"))
 
 (setq fin-conv-salary-regexps '("\\`Transferência Recebida - YOUR NAME"))
 

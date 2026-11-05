@@ -19,6 +19,14 @@ reconciliation: card bill payments, card credit moved for a Pix and back,
 cent debt adjustments, dispute deposits and their reversals."
   :type '(repeat regexp) :group 'fin)
 
+(defcustom fin-bank-bill-paid-regexp nil
+  "Account debit paying the card bill."
+  :type '(choice (const nil) regexp) :group 'fin)
+
+(defcustom fin-bank-bill-received-regexp nil
+  "Card credit receiving the bill payment."
+  :type '(choice (const nil) regexp) :group 'fin)
+
 (defcustom fin-bank-own-regexps nil
   "Bank descriptions of transfers between own accounts (name, company).
 Ignored like `fin-bank-ignore-regexps', except `fin-conv-salary-regexps'."
@@ -219,12 +227,13 @@ default `fin-reconcile-window'."
 
 (defun fin-bank--tsv-row (bank-row)
   "BANK-ROW as one TSV line in ODS entries column order, category empty.
-Installments come from the bank's \"Parcela k/n\"."
+Installments come from `fin-reconcile-installment-regexp'."
   (pcase-let ((`(,_id ,date ,type ,amount ,desc) bank-row))
     (mapconcat #'identity
                (append (list date type "" (downcase (string-trim desc))
                              (number-to-string amount))
-                       (if (string-match "Parcela \\([0-9]+\\)/\\([0-9]+\\)" desc)
+                       (if (and fin-reconcile-installment-regexp
+                                (string-match fin-reconcile-installment-regexp desc))
                            (list (match-string 1 desc) (match-string 2 desc))
                          (list "" "")))
                "\t")))
