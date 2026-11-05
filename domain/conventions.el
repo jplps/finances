@@ -33,6 +33,11 @@ e.g. (\"veronica\" . \"aluguel\").  Words are lowercase without accents."
   "Bank descriptions -> ledger item: list of (REGEXP . ITEM), first wins."
   :type '(alist :key-type regexp :value-type string) :group 'fin)
 
+(defcustom fin-conv-payee-categories nil
+  "Bank words -> ledger category: list of (WORD . CATEGORY).  A bank row
+naming WORD relates to a ledger row in CATEGORY."
+  :type '(alist :key-type string :value-type string) :group 'fin)
+
 (defcustom fin-conv-default-category "free"
   "Category for purchases the history does not suggest."
   :type 'string :group 'fin)
@@ -112,7 +117,8 @@ or joined match."
   (lambda (b l)
     (let ((bw (fin-conv--bank-words (nth 4 b))))
       (or (and (nth 4 l) (fin-conv--item-hit-p (nth 4 b) bw (nth 4 l)))
-          (and (member "ifood" bw) (equal (nth 3 l) "food"))
+          (cl-some (lambda (p) (and (member (car p) bw) (equal (nth 3 l) (cdr p))))
+                   fin-conv-payee-categories)
           (equal (car (fin-conv-suggest (nth 4 b) history)) (nth 3 l))))))
 
 (defun fin-conv-item (desc)

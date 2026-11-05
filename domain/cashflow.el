@@ -5,7 +5,7 @@
 
 (defcustom fin-report-transfer-categories
   '(("out" "investments" "retirement" "reserve")
-    ("in"  "investments" "retirement" "reserve" "vacations"))
+    ("in"  "investments" "retirement" "reserve"))
   "Alist (TYPE CATEGORY...) of transfers between own accounts.
 An `out' row is a savings contribution, an `in' row a withdrawal; flow
 metrics count neither as spending nor income."

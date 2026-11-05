@@ -9,23 +9,23 @@
 (defconst fin-goals--measure
   '(("investments" save ("investments") ("reserve"))
     ("retirement"  save ("retirement"))
-    ("emergency"   save ("investments" . "emergency") ("reserve"))
-    ("vacations"   save ("investments" . "vacations"))
-    ("family"      save ("investments" . "family"))
     ("patrimony"   save))
   "Plan row -> (DIRECTION SOURCE...), SOURCE (CATEGORY) or (CATEGORY . ITEM).
-A source nets outflows minus inflows.  Unlisted rows are spending in the
-same-named category; `patrimony' also takes each register class's
+A source nets outflows minus inflows.  An unlisted child of a listed saving
+row saves into PARENT / CHILD; other unlisted rows are spending in the
+same-named category.  `patrimony' also takes each register class's
 caixinha; `reserve' rows are emergency reserve withdrawals.")
 
 (defun fin-goals--classes ()
   "Patrimony register classes."
   (mapcar #'car (fin-report--patrimony-summary)))
 
-(defun fin-goals--spec (category)
-  "(DIRECTION SOURCES) for plan CATEGORY."
+(defun fin-goals--spec (category &optional parent)
+  "(DIRECTION SOURCES) for plan CATEGORY under PARENT."
   (let ((m (assoc category fin-goals--measure)))
-    (cond ((null m) (list 'spend (list (list category))))
+    (cond ((and (null m) (eq 'save (nth 1 (assoc parent fin-goals--measure))))
+           (list 'save (list (cons parent category))))
+          ((null m) (list 'spend (list (list category))))
           ((equal category "patrimony")
            (list (nth 1 m) (append (nthcdr 2 m)
                                    (mapcar (lambda (c) (cons "investments" c)) (fin-goals--classes)))))
@@ -57,7 +57,7 @@ caixinha; `reserve' rows are emergency reserve withdrawals.")
     (if (> mtd target) 'over 'within)))
 
 (defun fin-goals--row (category kind parent target year month)
-  (pcase-let ((`(,dir ,sources) (fin-goals--spec category)))
+  (pcase-let ((`(,dir ,sources) (fin-goals--spec category parent)))
     (let ((mtd (apply #'fin-goals--net sources (fin-goals--month-range year month))))
       (list :category category :kind kind :parent parent :depth (if parent 1 0)
             :direction dir :target target :mtd mtd :status (fin-goals-status dir target mtd)))))

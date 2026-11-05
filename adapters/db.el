@@ -76,7 +76,10 @@
   (unless fin-db--conn
     (let ((dir (file-name-directory fin-db-path)))
       (unless (file-directory-p dir) (make-directory dir t)))
-    (setq fin-db--conn (sqlite-open fin-db-path)))
+    (setq fin-db--conn (sqlite-open fin-db-path))
+    (unless (sqlite-select fin-db--conn "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'entry'")
+      (with-sqlite-transaction fin-db--conn
+        (dolist (stmt fin-db--ddl) (sqlite-execute fin-db--conn stmt)))))
   fin-db--conn)
 
 (defun fin-db-close ()

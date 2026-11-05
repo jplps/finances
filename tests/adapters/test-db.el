@@ -7,6 +7,15 @@
 (ert-deftest db/available-p-true-in-emacs29 ()
   (should (fin-db-available-p)))
 
+(ert-deftest db/open-creates-schema-on-new-file ()
+  (let* ((dir (make-temp-file "fin-db-" t))
+         (fin-db-path (expand-file-name "new.db" dir))
+         (fin-db--conn nil))
+    (unwind-protect
+        (should (equal '((0)) (fin-db-query "SELECT COUNT(*) FROM entry")))
+      (fin-db-close)
+      (delete-directory dir t))))
+
 (ert-deftest db/rebuild-creates-all-tables ()
   (fin-test-with-db
     (let ((tables (mapcar #'car

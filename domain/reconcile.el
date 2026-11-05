@@ -16,7 +16,7 @@
   "Relative amount gap under which a near match needs no shared word."
   :type 'number :group 'fin)
 
-(defcustom fin-reconcile-net-rules '(("bp" . "cnpj"))
+(defcustom fin-reconcile-net-rules nil
   "Ledger (INCOME-CATEGORY . DEDUCTION-CATEGORY) pairs netted per month.
 The bank receives income minus deductions as one deposit."
   :type '(alist :key-type string :value-type string) :group 'fin)

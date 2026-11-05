@@ -459,10 +459,18 @@ personal account count too."
                         (mapconcat (lambda (_) "?") categories ","))
                 (append (list type) (fin-ir--year-arg year) categories)))
 
+(defcustom fin-ir-health-categories '("health")
+  "Ledger categories of health spending, deductible per `fin-ir-health-deductible'."
+  :type '(repeat string) :group 'fin)
+
+(defcustom fin-ir-retirement-categories '("retirement")
+  "Ledger categories of retirement savings."
+  :type '(repeat string) :group 'fin)
+
 (defun fin-ir-health (year)
-  "Deductible cents of YEAR's `health' entries."
+  "Deductible cents of YEAR's `fin-ir-health-categories' entries."
   (let ((case-fold-search t) (ok 0))
-    (dolist (e (fin-ir--entries year "out" '("health")) ok)
+    (dolist (e (fin-ir--entries year "out" fin-ir-health-categories) ok)
       (when (and (car e) (cl-some (lambda (re) (string-match-p re (car e))) fin-ir-health-deductible))
         (cl-incf ok (nth 1 e))))))
 
@@ -470,8 +478,8 @@ personal account count too."
   (apply #'+ (mapcar #'cadr rows)))
 
 (defun fin-ir-retirement (year)
-  "Cents put in `retirement' during YEAR."
-  (fin-ir--sum (fin-ir--entries year "out" '("retirement"))))
+  "Cents put in `fin-ir-retirement-categories' during YEAR."
+  (fin-ir--sum (fin-ir--entries year "out" fin-ir-retirement-categories)))
 
 (defun fin-ir-individuals (year)
   "Alist (YYYY-MM . CENTS) of YEAR's income from individuals, oldest first."

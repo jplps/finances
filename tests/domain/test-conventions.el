@@ -60,8 +60,9 @@
   (should (equal '(nil nil) (fin-conv-installment "Padaria"))))
 
 (ert-deftest conv/related-by-word-alias-or-suggested-category ()
-  (let ((rel (fin-conv-related-fn test-conv--history))
-        (b (test-conv--b "b" "2025-05-06" "out" 100 "Compra no débito - KOMPRAO KOCH")))
+  (let* ((fin-conv-payee-categories '(("ifood" . "food")))
+         (rel (fin-conv-related-fn test-conv--history))
+         (b (test-conv--b "b" "2025-05-06" "out" 100 "Compra no débito - KOMPRAO KOCH")))
     (should (funcall rel b (test-conv--l 1 "2025-05-10" "out" "food" "komprão" 100)))
     (should (funcall rel b (test-conv--l 2 "2025-05-10" "out" "food" "hippo" 100)))
     (should-not (funcall rel b (test-conv--l 3 "2025-05-10" "out" "car" "seguro" 100)))

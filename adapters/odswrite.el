@@ -14,13 +14,12 @@
           (user-error "unzip failed on %s" p)))
       (buffer-string))))
 
-(defun fin-odsw--sheet-bounds (content &optional sheet)
-  "(START . END) of SHEET (default \"entries\") in CONTENT."
-  (let* ((sheet (or sheet "entries"))
-         (start (or (string-search (format "<table:table table:name=\"%s\"" sheet) content)
-                    (error "fin-odsw: no %s sheet" sheet)))
+(defun fin-odsw--sheet-bounds (content)
+  "(START . END) of the entries sheet in CONTENT."
+  (let* ((start (or (string-search "<table:table table:name=\"entries\"" content)
+                    (error "fin-odsw: no entries sheet")))
          (end (or (string-search "</table:table>" content start)
-                  (error "fin-odsw: %s sheet not closed" sheet))))
+                  (error "fin-odsw: entries sheet not closed"))))
     (cons start end)))
 
 (defun fin-odsw--rows (content start end)
@@ -192,63 +191,6 @@ key hit exactly as many rows."
       (concat (substring content 0 first)
               (aref rowv 0)
               (apply #'concat (fin-odsw--merge data adds))
-              (substring content last)))))
-
-(defun fin-odsw-patrimony-row-xml (category item amount lifespan)
-  "Patrimony row in the sheet's own cell format.  AMOUNT in cents,
-LIFESPAN in months."
-  (cl-assert (and (stringp category) (not (string-empty-p category))))
-  (cl-assert (and (stringp item) (not (string-empty-p item))))
-  (cl-assert (and (integerp amount) (> amount 0)))
-  (cl-assert (and (integerp lifespan) (> lifespan 0)))
-  (concat "<table:table-row table:style-name=\"ro2\">"
-          (fin-odsw--string-cell category) (fin-odsw--string-cell item)
-          (fin-odsw--number-cell amount) (fin-odsw--number-cell lifespan)
-          "</table:table-row>"))
-
-(defun fin-odsw-apply-patrimony (content changes)
-  "CONTENT with CHANGES applied to the patrimony sheet.  Each change is
-  (:edit (CATEGORY ITEM) NEW-AMOUNT)
-  (:delete (CATEGORY ITEM))
-  (:add (CATEGORY ITEM AMOUNT LIFESPAN))
-A key names exactly one row; an added key must be new.  Adds follow the
-last row of their category, or end the sheet."
-  (pcase-let* ((`(,start . ,end) (fin-odsw--sheet-bounds content "patrimony"))
-               (`(,first ,last ,rows) (fin-odsw--rows content start end))
-               (rowv (vconcat rows))
-               (vals (mapcar (lambda (r) (fin-odsw--cells r 4)) rows))
-               (keys (mapcar (lambda (v) (seq-take v 2)) vals))
-               (gone (make-hash-table)) (adds nil))
-    (cl-assert (equal (car keys) '("category" "item")) nil
-               "fin-odsw: unexpected patrimony header %S" (car keys))
-    (cl-flet ((index (key)
-                (let ((hits (cl-loop for k in (cdr keys) for i from 1 when (equal k key) collect i)))
-                  (unless (= (length hits) 1)
-                    (error "fin-odsw: %d patrimony rows match %S" (length hits) key))
-                  (car hits))))
-      (dolist (c changes)
-        (pcase c
-          (`(:edit ,key ,new)
-           (let ((i (index key)))
-             (aset rowv i (fin-odsw--set-amount (aref rowv i) (nth 2 (nth i vals)) new))))
-          (`(:delete ,key) (puthash (index key) t gone))
-          (`(:add ,fields)
-           (when (member (seq-take fields 2) keys)
-             (error "fin-odsw: patrimony row %S exists" (seq-take fields 2)))
-           (push fields adds))
-          (_ (error "fin-odsw: bad patrimony change %S" c)))))
-    (let* ((adds (nreverse adds))
-           (tail (1- (length rowv)))
-           (anchor (lambda (cat) (or (cl-loop for i downfrom (1- (length rowv)) to 1
-                                              when (equal (car (nth i keys)) cat) return i)
-                                     tail))))
-      (concat (substring content 0 first)
-              (apply #'concat
-                     (cl-loop for i from 0 below (length rowv)
-                              unless (gethash i gone) collect (aref rowv i)
-                              append (cl-loop for a in adds
-                                              when (= (funcall anchor (car a)) i)
-                                              collect (apply #'fin-odsw-patrimony-row-xml a))))
               (substring content last)))))
 
 (defun fin-odsw-save (path content)
