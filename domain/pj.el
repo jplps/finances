@@ -32,19 +32,26 @@ FOLD non-nil ignores case."
 tax, `das' a Portuguese word in shop names."
   (and (equal (nth 2 b) "out") (fin-pj--lookup fin-pj-tax-items (nth 4 b) nil)))
 
-(defun fin-pj-months (first last)
-  "YYYY-MM months fully inside ISO dates FIRST .. LAST."
+(defun fin-pj-cover (first last from)
+  "(START . END) ISO dates the PJ statements spanning FIRST .. LAST cover on
+or after FROM: START the first day of the first whole month, END the last
+statement day.  Nil when empty."
   (cl-assert (not (string< last first)))
-  (pcase-let* ((`(,y ,m ,d) (mapcar #'string-to-number (split-string first "-")))
-               (`(,y ,m) (if (= d 1) (list y m) (if (= m 12) (list (1+ y) 1) (list y (1+ m)))))
-               (`(,ly ,lm ,ld) (mapcar #'string-to-number (split-string last "-")))
-               (`(,ly ,lm) (if (= ld (calendar-last-day-of-month lm ly)) (list ly lm)
-                             (if (= lm 1) (list (1- ly) 12) (list ly (1- lm)))))
-               (out nil))
-    (while (or (< y ly) (and (= y ly) (<= m lm)))
-      (push (format "%04d-%02d" y m) out)
-      (if (= m 12) (setq y (1+ y) m 1) (setq m (1+ m))))
-    (nreverse out)))
+  (pcase-let* ((s (if (string< first from) from first))
+               (`(,y ,m ,d) (mapcar #'string-to-number (split-string s "-")))
+               (start (cond ((= d 1) s)
+                            ((= m 12) (format "%04d-01-01" (1+ y)))
+                            (t (format "%04d-%02d-01" y (1+ m))))))
+    (unless (string< last start) (cons start last))))
+
+(defun fin-pj-month-end (date)
+  "Last day of ISO DATE's month, as an ISO date."
+  (let ((y (string-to-number (substring date 0 4))) (m (string-to-number (substring date 5 7))))
+    (format "%04d-%02d-%02d" y m (calendar-last-day-of-month m y))))
+
+(defun fin-pj-within-p (date start end)
+  "Non-nil if ISO DATE lies in START .. END, inclusive."
+  (not (or (string< date start) (string< end date))))
 
 (defun fin-pj--best (b ledger cat used)
   "Best unused LEDGER row in CAT for bank row B within `fin-pj-window'.
@@ -86,17 +93,19 @@ after B, then nearest date."
   "Non-nil if ledger row L is a `cnpj' estimate (no item) or one of ITEMS."
   (and (equal (nth 3 l) "cnpj") (or (null (nth 4 l)) (member (nth 4 l) items))))
 
-(defun fin-pj-plan-taxes (rows ledger months)
-  "Actions for PJ tax payments ROWS against `cnpj' LEDGER rows in MONTHS.
-Booked payments stay, others are added, item-less estimates deleted,
-unpaid booked rows reported."
+(defun fin-pj-plan-taxes (rows ledger cover)
+  "Actions for PJ tax payments ROWS against `cnpj' LEDGER rows, COVER being
+the statements' (START . END).  Booked payments stay, others are added;
+up to END, item-less estimates are deleted and unpaid booked rows reported."
+  (cl-assert (consp cover))
   (let* ((items (delete-dups (mapcar #'cdr fin-pj-tax-items)))
-         (in-months (lambda (date) (member (substring date 0 7) months)))
-         (cands (cl-remove-if-not (lambda (l) (and (funcall in-months (nth 1 l)) (fin-pj--tax-row-p l items)))
+         (start (car cover)) (end (cdr cover))
+         (cands (cl-remove-if-not (lambda (l) (and (fin-pj-within-p (nth 1 l) start (fin-pj-month-end end))
+                                                   (fin-pj--tax-row-p l items)))
                                   ledger))
          used out)
     (dolist (b rows)
-      (when (funcall in-months (nth 1 b))
+      (when (fin-pj-within-p (nth 1 b) start end)
         (let* ((item (fin-pj-tax-item b))
                (l (cl-find-if (lambda (l) (and (not (memq l used)) (equal (nth 1 l) (nth 1 b))
                                                (= (nth 5 l) (nth 3 b)) (equal (nth 4 l) item)))
@@ -105,7 +114,7 @@ unpaid booked rows reported."
           (if l (push l used)
             (push (list :add (list (nth 1 b) "out" "cnpj" item (nth 3 b) nil nil) (nth 4 b)) out)))))
     (dolist (l cands)
-      (unless (memq l used)
+      (unless (or (memq l used) (string< end (nth 1 l)))
         (push (if (nth 4 l)
                   (list :report l "tax row with no PJ payment")
                 (list :delete l "cnpj estimate replaced by the PJ payments"))

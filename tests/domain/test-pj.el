@@ -9,9 +9,14 @@
          (fin-pj-tax-items '(("\\bDAS\\b" . "das") ("DARF" . "darf"))))
      ,@body))
 
-(ert-deftest pj/months-are-the-fully-covered-ones ()
-  (should (equal '("2021-11" "2021-12" "2022-01") (fin-pj-months "2021-10-05" "2022-02-03")))
-  (should (equal '("2021-10") (fin-pj-months "2021-10-01" "2021-10-31"))))
+(ert-deftest pj/cover-starts-at-a-whole-month-and-ends-on-the-last-statement-day ()
+  (should (equal '("2021-11-01" . "2022-02-03") (fin-pj-cover "2021-10-05" "2022-02-03" "2021-01-01")))
+  (should (equal '("2021-10-01" . "2021-10-31") (fin-pj-cover "2021-10-01" "2021-10-31" "2021-01-01")))
+  (should (equal '("2024-01-01" . "2024-03-10") (fin-pj-cover "2021-10-05" "2024-03-10" "2024-01-01")))
+  (should (equal '("2024-02-01" . "2024-03-10") (fin-pj-cover "2021-10-05" "2024-03-10" "2024-01-15")))
+  (should (equal '("2027-01-01" . "2027-01-06") (fin-pj-cover "2026-12-05" "2027-01-06" "2026-01-01")))
+  (should-not (fin-pj-cover "2021-10-05" "2023-12-31" "2024-01-01"))
+  (should (equal "2026-02-28" (fin-pj-month-end "2026-02-10"))))
 
 (ert-deftest pj/income-edits-matches-adds-missing-reports-unreceived ()
   (test-pj--with-maps
@@ -35,11 +40,21 @@
           (outside '(4 "2024-06-30" "out" "cnpj" nil 112000 nil))
           (rows '(("a" "2024-03-20" "out" 60000 "Pagamento de boleto efetuado - DAS - Simples Nacional")
                   ("b" "2024-03-22" "out" 14520 "Pagamento de boleto efetuado - DARF")))
-          (acts (fin-pj-plan-taxes rows (list est booked personal outside) '("2024-03"))))
+          (acts (fin-pj-plan-taxes rows (list est booked personal outside) '("2024-03-01" . "2024-03-31"))))
      (should (equal (list '(:add ("2024-03-22" "out" "cnpj" "darf" 14520 nil nil)
                                  "Pagamento de boleto efetuado - DARF")
                           (list :delete est "cnpj estimate replaced by the PJ payments"))
                     acts)))))
+
+(ert-deftest pj/taxes-after-the-last-statement-day-are-left-alone ()
+  (test-pj--with-maps
+   (let* ((paid '(1 "2026-11-05" "out" "cnpj" "das" 78000 nil))
+          (later '(2 "2026-11-20" "out" "cnpj" "darf" 17831 nil))
+          (est '(3 "2026-11-30" "out" "cnpj" nil 112000 nil))
+          (rows '(("a" "2026-11-05" "out" 78000 "Pagamento de boleto efetuado - DAS")
+                  ("b" "2026-11-05" "out" 33000 "Pagamento de boleto efetuado - DARF"))))
+     (should (equal '((:add ("2026-11-05" "out" "cnpj" "darf" 33000 nil nil) "Pagamento de boleto efetuado - DARF"))
+                    (fin-pj-plan-taxes rows (list paid later est) '("2026-11-01" . "2026-11-06")))))))
 
 (ert-deftest pj/tax-items-match-case-sensitively ()
   (test-pj--with-maps

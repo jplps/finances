@@ -129,6 +129,32 @@
       (should (equal "free" (nth 2 (cadr (nth 2 acts)))))
       (should (equal "ifood" (nth 3 (cadr (nth 3 acts))))))))
 
+(ert-deftest bankfix/prepaid-installments-follow-the-first-resolved-one ()
+  (fin-test-with-db
+    (fin-test-insert-entry "2026-10-06" "out" "patrimony" 3599 "processador oster" 5 10)
+    (fin-bankdb-insert '(("n5" "t" "card" "2026-10-06" "out" 3599 "Newell Brands Brasil - Parcela 5/10")))
+    (let ((acts (fin-bank-fix--continue-series
+                 '((:add ("2026-11-05" "out" "free" "newell brands brasil" 3599 8 10) "Newell Brands Brasil - Parcela 8/10")
+                   (:add ("2026-11-05" "out" "free" "newell brands brasil" 3599 6 10) "Newell Brands Brasil - Parcela 6/10")
+                   (:add ("2026-11-05" "out" "free" "newell brands brasil" 3153 10 10) "Newell Brands Brasil - Parcela 10/10")
+                   (:add ("2026-11-05" "out" "free" "loja" 3599 7 10) "Loja - Parcela 7/10")))))
+      (should (equal '("patrimony" "patrimony" "patrimony" "free")
+                     (mapcar (lambda (a) (nth 2 (cadr a))) acts)))
+      (should (equal "processador oster" (nth 3 (cadr (nth 2 acts))))))))
+
+(ert-deftest bankfix/installments-follow-a-matched-installment-of-the-purchase ()
+  (fin-test-with-db
+    (let* ((pairs (list (cons '("b8" "2026-11-05" "out" 5090 "Propig *Center Car Com - Parcela 8/10")
+                              '(13 "2026-11-05" "out" "car" "bateria" 5090 "8/10"))
+                        (cons '("b0" "2026-11-05" "out" 900 "Padaria")
+                              '(14 "2026-11-05" "out" "food" "padaria" 900 nil))))
+           (acts (fin-bank-fix--continue-series
+                  '((:add ("2026-11-05" "out" "free" "propig" 5090 9 10) "Propig *Center Car Com - Parcela 9/10")
+                    (:add ("2026-11-05" "out" "free" "propig" 4837 10 10) "Propig *Center Car Com - Parcela 10/10"))
+                  pairs)))
+      (should (equal '(("car" "bateria") ("car" "bateria"))
+                     (mapcar (lambda (a) (list (nth 2 (cadr a)) (nth 3 (cadr a)))) acts))))))
+
 (ert-deftest bankfix/changes-take-adds-carrying-a-bank-id ()
   (should (equal '((:add ("2025-05-06" "out" "food" "x" 100 nil nil)))
                  (fin-bank-fix--changes (list (list :add '("2025-05-06" "out" "food" "x" 100 nil nil) "X" "id1"))))))
@@ -142,11 +168,25 @@
     (should (equal (list "nu:a:1" day "out" 500 "Loja - Parcela 1/2") (cadr (car acts))))
     (should (equal "nu:a:1" (caar (fin-bank-fix--flags acts))))))
 
-(ert-deftest bankfix/pj-months-start-at-the-fix-start ()
-  (should (equal '("2024-01" "2024-02") (fin-bank-fix--pj-months '("2021-10-05" . "2024-03-10") "2024-01-01")))
-  (should (equal '("2024-02") (fin-bank-fix--pj-months '("2021-10-05" . "2024-03-10") "2024-01-15")))
-  (should (equal '("2022-11") (fin-bank-fix--pj-months '("2022-10-05" . "2022-12-10") "2022-01-01")))
-  (should-not (fin-bank-fix--pj-months '("2021-10-05" . "2023-12-31") "2024-01-01")))
+(ert-deftest bankfix/pj-split-books-up-to-the-last-statement-day ()
+  (fin-test-with-db
+    (let ((fin-pj-income-payers '(("Brasil Paralelo" . "bp")))
+          (fin-pj-tax-items '(("\\bDAS\\b" . "das")))
+          (fin-conv-salary-regexps '("\\`Salario"))
+          (bank (list (list "pj:a" "2026-11-05" "in" 1300000 "Pix - Brasil Paralelo")
+                      (list "pj:b" "2026-11-05" "out" 78000 "Pagamento de boleto efetuado - DAS")
+                      (list "nu:c" "2026-11-05" "in" 910000 "Salario"))))
+      (fin-bankdb-insert (list (list "pj:a" "nubank-ofx" "pj" "2026-11-05" "in" 1300000 "Pix - Brasil Paralelo")
+                               (list "pj:b" "nubank-ofx" "pj" "2026-11-05" "out" 78000 "Pagamento de boleto efetuado - DAS")
+                               (list "pj:z" "nubank-ofx" "pj" "2026-10-23" "out" 100 "Tarifa")))
+      (fin-bankdb-record-balance "pj" "2026-11-06" 0)
+      (let* ((later '(9 "2026-11-20" "out" "cnpj" "das" 45000 nil))
+             (split (fin-bank-fix--pj-split bank (list later) "2026-10-01")))
+        (should-not (plist-get split :bank))
+        (should-not (plist-get split :raw))
+        (should (equal '((:add ("2026-11-05" "in" "bp" nil 1300000 nil nil) "Pix - Brasil Paralelo")
+                         (:add ("2026-11-05" "out" "cnpj" "das" 78000 nil nil) "Pagamento de boleto efetuado - DAS"))
+                       (plist-get split :pj)))))))
 
 (ert-deftest bankfix/settle-refreshes-until-a-pass-changes-nothing ()
   (let* ((results (list '(a b) '(c) nil))

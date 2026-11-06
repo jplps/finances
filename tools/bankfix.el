@@ -92,24 +92,21 @@ In a month no card statement covers, the card bill paid from the account
     (when (file-exists-p lock)
       (user-error "fin-bank: close %s in LibreOffice first" (file-name-nondirectory path)))))
 
-(defun fin-bank-fix--pj-months (span from)
-  "YYYY-MM months the PJ statement SPAN (FIRST . LAST) fully covers on or
-after ISO FROM, where the bank rows start."
-  (let ((first (if (string< (car span) from) from (car span))))
-    (unless (string< (cdr span) first) (fin-pj-months first (cdr span)))))
-
 (defun fin-bank-fix--pj-split (bank raw from)
   "Split BANK rows since FROM and RAW ledger rows for the PJ account.
 Return plist :bank and :raw (left to the general match) and :pj (actions).
-In months a PJ statement fully covers, client and tax payments match
-income and `cnpj' rows and company transfers stop counting as salary;
-PJ rows of other months are dropped."
-  (pcase-let* ((`(,ids . ,span) (fin-bankdb-account-rows "pj")))
-    (if (null span)
-        (list :bank bank :raw raw :pj nil)
-      (let* ((months (fin-bank-fix--pj-months span from))
+From the first whole month the PJ statements cover to their last day
+(`fin-pj-cover'), client and tax payments match income and `cnpj' rows of
+those months and company transfers stop counting as salary; ledger rows
+after the last statement day are left alone; other PJ rows are dropped."
+  (pcase-let* ((`(,ids . ,span) (fin-bankdb-account-rows "pj"))
+               (cover (and span (fin-pj-cover (car span) (cdr span) from))))
+    (if (null cover)
+        (list :bank (cl-remove-if (lambda (b) (member (car b) ids)) bank) :raw raw :pj nil)
+      (let* ((start (car cover)) (end (cdr cover))
              (pj (let ((h (make-hash-table :test #'equal))) (dolist (i ids) (puthash i t h)) h))
-             (cov (lambda (r) (member (substring (nth 1 r) 0 7) months)))
+             (cov (lambda (r) (fin-pj-within-p (nth 1 r) start end)))
+             (cov-led (lambda (l) (fin-pj-within-p (nth 1 l) start (fin-pj-month-end end))))
              (pj-row (lambda (b) (gethash (car b) pj)))
              (income (cl-remove-if-not (lambda (b) (and (funcall pj-row b) (funcall cov b) (fin-pj-income-category b))) bank))
              (taxes (cl-remove-if-not (lambda (b) (and (funcall pj-row b) (funcall cov b) (fin-pj-tax-item b))) bank))
@@ -119,14 +116,15 @@ PJ rows of other months are dropped."
                                  bank))
              (cats (delete-dups (mapcar #'cdr fin-pj-income-payers)))
              (items (delete-dups (mapcar #'cdr fin-pj-tax-items)))
-             (led-in (cl-remove-if-not (lambda (l) (and (funcall cov l) (equal (nth 2 l) "in") (null (nth 4 l))
+             (led-in (cl-remove-if-not (lambda (l) (and (funcall cov-led l) (equal (nth 2 l) "in") (null (nth 4 l))
                                                         (member (nth 3 l) cats)))
                                        raw))
-             (led-tax (cl-remove-if-not (lambda (l) (and (funcall cov l) (fin-pj--tax-row-p l items))) raw)))
+             (led-tax (cl-remove-if-not (lambda (l) (and (funcall cov-led l) (fin-pj--tax-row-p l items))) raw)))
         (list :bank bank
               :raw (cl-remove-if (lambda (l) (or (memq l led-in) (memq l led-tax))) raw)
-              :pj (append (fin-pj-plan-income income led-in)
-                          (fin-pj-plan-taxes taxes led-tax months)))))))
+              :pj (append (cl-remove-if (lambda (a) (and (eq (car a) :report) (string< end (nth 1 (nth 1 a)))))
+                                        (fin-pj-plan-income income led-in))
+                          (fin-pj-plan-taxes taxes led-tax cover)))))))
 
 (defun fin-bank-fix--reconcile (from)
   "Reconcile bank rows since FROM.  Return plist of match buckets and
@@ -210,17 +208,35 @@ K-1.  Nil when K is 1 or none is booked."
                (fin-bank-fix--merchant-installment-p date amount (1- k) n desc)
                (car cands))))))
 
-(defun fin-bank-fix--continue-series (actions)
-  "ACTIONS with each installment add booked like its previous installment."
-  (mapcar (lambda (a)
-            (pcase a
-              (`(:add (,date ,type ,_cat ,_item ,amount ,k ,n) ,src . ,id)
-               (let ((s (fin-bank-fix--series date amount k n src)))
-                 (if (and s (equal type "out"))
-                     (append (list :add (list date type (car s) (cadr s) amount k n) src) id)
-                   a)))
-              (_ a)))
-          actions))
+(defun fin-bank-fix--continue-series (actions &optional pairs)
+  "ACTIONS with each installment add booked like its previous installment:
+the ledger's, else that of the same merchant's N-installment purchase in
+PAIRS (bank . ledger) matches or resolved earlier in ACTIONS (prepaid
+installments arrive together, discounted)."
+  (let ((known (make-hash-table :test #'equal))
+        (resolved (make-hash-table :test #'eq))
+        (k-of (lambda (a) (or (nth 5 (nth 1 a)) 0))))
+    (dolist (p (sort (cl-remove-if-not (lambda (p) (car (fin-conv-installment (nth 4 (car p))))) (copy-sequence pairs))
+                     (lambda (x y) (< (car (fin-conv-installment (nth 4 (car x))))
+                                      (car (fin-conv-installment (nth 4 (car y))))))))
+      (let ((l (cdr p)))
+        (when (equal (nth 2 l) "out")
+          (puthash (list (fin-conv-item (nth 4 (car p))) (cadr (fin-conv-installment (nth 4 (car p)))))
+                   (list (nth 3 l) (nth 4 l)) known))))
+    (dolist (a (sort (copy-sequence actions) (lambda (x y) (< (funcall k-of x) (funcall k-of y)))))
+      (pcase a
+        (`(:add (,date "out" ,_cat ,_item ,amount ,(and k (pred integerp)) ,n) ,src . ,_)
+         (let* ((key (list (fin-conv-item src) n))
+                (s (or (fin-bank-fix--series date amount k n src) (gethash key known))))
+           (when s
+             (puthash key s known)
+             (puthash a s resolved))))))
+    (mapcar (lambda (a)
+              (let ((s (gethash a resolved)))
+                (if (null s) a
+                  (pcase-let ((`(:add (,date ,type ,_ ,_ ,amount ,k ,n) ,src . ,id) a))
+                    (append (list :add (list date type (car s) (cadr s) amount k n) src) id)))))
+            actions)))
 
 (defun fin-bank-fix--key (l)
   "ODS row key of ledger row L."
@@ -310,7 +326,8 @@ something changed."
                                  :history (plist-get r :history)
                                  :months (plist-get r :months)))
          (actions (append actions (plist-get r :pj) (cdr gone)))
-         (actions (fin-bank-fix--continue-series actions))
+         (actions (fin-bank-fix--continue-series
+                   actions (append (plist-get r :matched) (plist-get r :near) (plist-get r :shifted))))
          (changes (fin-bank-fix--changes actions))
          (written (when (and changes (not dry-run))
                    (fin-odsw-save fin-ods-path (fin-odsw-apply (fin-odsw-read fin-ods-path) changes)))))
