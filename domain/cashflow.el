@@ -33,7 +33,7 @@ negative, so `in' is income and `out' spending.  SQL is a SELECT, or
   (let ((tr (fin-cashflow--transfer-sql)))
     (fin-db-query
      (format "WITH flow AS (
-                SELECT id, date, category, item,
+                SELECT id, date, category, item, installment, installments,
                        CASE WHEN %s THEN 'save' ELSE type END AS type,
                        CASE WHEN type='in' AND (%s) THEN -amount ELSE amount END AS amount
                   FROM entry) %s"
@@ -66,13 +66,20 @@ negative, so `in' is income and `out' spending.  SQL is a SELECT, or
 
 (defun fin-cashflow--month-items (year month)
   "Spending rows (ITEM CATEGORY AMOUNT DATE) of YEAR-MONTH by date.
-ITEM falls back to the category."
+ITEM falls back to the category; installments of one purchase in the month
+join into one row named `ITEM k–l/n'."
   (fin-cashflow--flow-query
-   "SELECT COALESCE(item, category), category, amount, date
+   "SELECT COALESCE(item, category)
+           || CASE WHEN installments IS NULL THEN ''
+                   WHEN MIN(installment) = MAX(installment) THEN ' ' || MIN(installment) || '/' || installments
+                   ELSE ' ' || MIN(installment) || '–' || MAX(installment) || '/' || installments END,
+           category, SUM(amount), MIN(date)
       FROM flow
      WHERE strftime('%Y-%m', date) = printf('%04d-%02d', ?, ?)
        AND type = 'out'
-     ORDER BY date ASC, id ASC"
+     GROUP BY CASE WHEN installments IS NULL THEN 'id:' || id
+                   ELSE COALESCE(item, category) || '|' || category || '|' || installments END
+     ORDER BY MIN(date) ASC, MIN(id) ASC"
    (list year month)))
 
 (defun fin-cashflow--annual-sums ()

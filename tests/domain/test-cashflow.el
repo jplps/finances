@@ -25,6 +25,16 @@
       (should (equal "butter" (nth 0 (nth 2 rows))))
       (should (= 600 (apply #'+ (mapcar (lambda (r) (nth 2 r)) rows)))))))
 
+(ert-deftest cashflow/month-items-join-a-purchase-installments ()
+  (fin-test-with-db
+    (dolist (k '(7 8 9 10)) (fin-test-insert-entry "2026-11-05" "out" "patrimony" 3599 "oster" k 10))
+    (fin-test-insert-entry "2026-11-06" "out" "car" 5090 "bateria" 8 10)
+    (fin-test-insert-entry "2026-11-07" "out" "food" 900 "padaria")
+    (should (equal '(("oster 7–10/10" "patrimony" 14396 "2026-11-05")
+                     ("bateria 8/10" "car" 5090 "2026-11-06")
+                     ("padaria" "food" 900 "2026-11-07"))
+                   (fin-cashflow--month-items 2026 11)))))
+
 (ert-deftest cashflow/annual-sums-derives-save-pct ()
   (fin-test-with-db
     (fin-test-insert-entry "2025-01-31" "in"  "salary" 1000 nil)

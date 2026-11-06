@@ -129,17 +129,14 @@
   (let* ((cat (plist-get r :category)) (target (plist-get r :target)) (mtd (plist-get r :mtd))
          (anc (fin-dashboard--goal-ancestors r parents))
          (toggle (cl-some (lambda (p) (equal p cat)) (hash-table-values parents)))
-         (over (and (not (eq (plist-get r :direction) 'save)) (> mtd target)))
-         (diff (- (round target) (round mtd))))
-    (format "<tr class=\"goal%s\"%s><td class=\"cat\">%s</td><td class=\"num%s\">%s</td><td class=\"num dim\">%s</td><td class=\"num %s\">%s</td></tr>"
+         (save (and (eq (plist-get r :direction) 'save) (not (plist-get r :live)))))
+    (format "<tr class=\"goal%s\"%s><td class=\"cat\">%s</td><td class=\"num%s\">%s</td><td class=\"num dim\">%s</td></tr>"
             (pcase (plist-get r :depth) (1 " child") (2 " child deep") (_ ""))
             (if anc (format " data-anc=\"%s\"" (fin-dashboard--esc (string-join anc " "))) "")
             (fin-dashboard--goal-cat cat toggle)
-            (if over " neg" "")
-            (fin-dashboard--money-str (round mtd))
-            (fin-dashboard--money-str (round target))
-            (cond ((> diff 0) "pos") ((< diff 0) "neg") (t ""))
-            (fin-dashboard--money-str diff))))
+            (cond (save "") ((> mtd target) " neg") (t " pos"))
+            (if save "" (fin-dashboard--money-str (round mtd)))
+            (fin-dashboard--money-str (round target)))))
 
 (defun fin-dashboard--goals-fold-css (parents)
   "<style> hiding the rows under each unchecked parent of PARENTS."
@@ -157,7 +154,7 @@
       (when (plist-get r :parent) (puthash (plist-get r :category) (plist-get r :parent) parents)))
     (concat (fin-dashboard--goals-fold-css parents)
             "<table class=\"goals\"><thead><tr><th>category</th>"
-            "<th class=\"num\">month</th><th class=\"num\">plan</th><th class=\"num\">left</th></tr></thead><tbody>"
+            "<th class=\"num\">month</th><th class=\"num\">plan</th></tr></thead><tbody>"
             (mapconcat (lambda (r) (fin-dashboard--goal-row r parents)) rows "")
             "</tbody></table>")))
 
@@ -436,7 +433,6 @@ The current year's future months take `fin-budget--planned-month'."
          (pf (fin-bankdb-latest-balance "account"))
          (pj (fin-bankdb-latest-balance "pj"))
          (bal (+ (or (cdr pf) 0) (or (cdr pj) 0)))
-         (saved (- (fin-accounts--total) (fin-accounts--total :cash)))
          (left (car (fin-health-cash now-y now-m)))
          (money (lambda (c) (concat "R$ " (fin-dashboard--money-str c)))))
     (concat
@@ -445,7 +441,7 @@ The current year's future months take `fin-budget--planned-month'."
                                  (fin-dashboard--money-str (nth 1 m)) (fin-dashboard--money-str (nth 2 m))
                                  (fin-dashboard--money-str (fin-accounts--bank-saved (format "%04d-%02d" now-y now-m))))
                          (if (< left 0) "bad" "good"))
-     (fin-dashboard--kpi "savings" (funcall money saved) "accounts"))))
+     (fin-dashboard--kpi "savings" (funcall money (fin-accounts--total)) "all accounts"))))
 
 (defun fin-dashboard--panel-wealth ()
   (let* ((now-y (fin-cashflow--year-now))

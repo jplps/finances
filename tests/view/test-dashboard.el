@@ -59,14 +59,20 @@
         (should-not (string-search "<section id=\"ir\"" html))
         (should-not (string-search "<a href=\"#ir\"" html))))))
 
-(ert-deftest dashboard/goal-row-shows-cents-and-signed-left ()
+(ert-deftest dashboard/goal-row-shows-month-and-plan-red-when-over ()
   (let ((none (make-hash-table :test #'equal)))
     (let ((row (fin-dashboard--goal-row '(:category "food" :target 300000 :mtd 160300) none)))
-      (should (string-search ">1,603.00<" row))
+      (should (string-search "num pos\">1,603.00<" row))
       (should (string-search ">3,000.00<" row))
-      (should (string-search "num pos\">1,397.00<" row)))
-    (should (string-search "num neg\">-0.14<"
+      (should-not (string-search "1,397.00" row)))
+    (should (string-search "num neg\">162.00<"
                            (fin-dashboard--goal-row '(:category "wear" :target 16186 :mtd 16200) none)))))
+
+(ert-deftest dashboard/saving-goal-row-shows-only-the-plan ()
+  (let ((row (fin-dashboard--goal-row '(:category "retirement" :target 116000 :mtd 50000 :direction save)
+                                      (make-hash-table :test #'equal))))
+    (should (string-search ">1,160.00<" row))
+    (should-not (string-search "500.00" row))))
 
 (ert-deftest dashboard/cockpit-tiles-month-savings-runway ()
   (fin-test-with-db

@@ -5,6 +5,13 @@
 (require 'db)
 (require 'budget)
 (require 'patrimony)
+(require 'accounts)
+
+(defcustom fin-goals-unassigned "emergency"
+  "Child of `investments' holding the month's savings not split by hand:
+the bank's net savings less the other caixinhas and retirement.  When set,
+`investments' shows the bank's net savings less retirement."
+  :type '(choice string (const nil)) :group 'fin)
 
 (defconst fin-goals--measure
   '(("investments" save ("investments") ("reserve"))
@@ -56,10 +63,26 @@ caixinha; `reserve' rows are emergency reserve withdrawals.")
       (if (>= mtd target) 'reached 'pending)
     (if (> mtd target) 'over 'within)))
 
+(defun fin-goals--unassigned (year month)
+  "Cents of YEAR-MONTH's bank savings not booked to another caixinha or
+retirement."
+  (let ((range (fin-goals--month-range year month)))
+    (- (fin-accounts--bank-saved (format "%04d-%02d" year month))
+       (- (apply #'fin-goals--net '(("investments")) range)
+          (apply #'fin-goals--net (list (cons "investments" fin-goals-unassigned)) range))
+       (apply #'fin-goals--net '(("retirement")) range))))
+
 (defun fin-goals--row (category kind parent target year month)
   (pcase-let ((`(,dir ,sources) (fin-goals--spec category parent)))
-    (let ((mtd (apply #'fin-goals--net sources (fin-goals--month-range year month))))
-      (list :category category :kind kind :parent parent :depth (if parent 1 0)
+    (let* ((range (fin-goals--month-range year month))
+           (unassigned (and fin-goals-unassigned (equal parent "investments") (equal category fin-goals-unassigned)))
+           (total (and fin-goals-unassigned (null parent) (equal category "investments")))
+           (live (or unassigned total))
+           (mtd (cond (unassigned (fin-goals--unassigned year month))
+                      (total (- (fin-accounts--bank-saved (format "%04d-%02d" year month))
+                                (apply #'fin-goals--net '(("retirement")) range)))
+                      (t (apply #'fin-goals--net sources range)))))
+      (list :category category :kind kind :parent parent :depth (if parent 1 0) :live live
             :direction dir :target target :mtd mtd :status (fin-goals-status dir target mtd)))))
 
 (defun fin-goals--patrimony-rows (kind year month)

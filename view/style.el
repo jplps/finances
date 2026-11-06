@@ -101,7 +101,7 @@ p b     { font-weight: 600; }
 section > .stat-block.register:first-child { margin-top: 0; }
 table.goals { table-layout: fixed; }
 table.goals td { padding-top: 6px; padding-bottom: 6px; vertical-align: middle; }
-table.goals th:nth-child(1) { width: 64%; }
+table.goals th:nth-child(1) { width: 76%; }
 table.goals th:nth-child(n+2) { width: 12%; }
 table.goals td.cat { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 table.goals tr.child td.cat { padding-left: 22px; color: var(--text-2); }
@@ -182,7 +182,7 @@ table td > details[open] > summary::before { transform: rotate(90deg); color: va
   :root { --pad: 12px; --font-sm: 12px; }
   header .meta, nav.status .clock { display: none; }
   nav.status { flex-wrap: nowrap; overflow-x: auto; white-space: nowrap; gap: 10px; font-size: var(--font-xs); }
-  table.goals th:nth-child(1) { width: 40%; }
+  table.goals th:nth-child(1) { width: 60%; }
   table.goals th:nth-child(n+2) { width: 20%; }
 }
 "))
