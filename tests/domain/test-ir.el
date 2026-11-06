@@ -556,5 +556,23 @@ per EXEMPT (CODE . CENTS)."
     (should (equal "5320" (fin-ir--labelled-code '("x" "2026-06-08" "pj" 17831 "Pix - RECEITA FEDERAL"))))
     (should-not (fin-ir--labelled-code '("x" "2026-06-08" "pj" 17830 "Pix - RECEITA FEDERAL")))))
 
+(ert-deftest ir/dirpf-files-prefer-the-retificadora ()
+  (let* ((root (make-temp-file "fin-ir-" t))
+         (dir (expand-file-name "dirpf" root))
+         (fin-ir-payments-dir root))
+    (unwind-protect
+        (progn
+          (make-directory dir)
+          (dolist (kind '("original" "retificadora"))
+            (let ((dec (expand-file-name "X.DEC" root)))
+              (write-region kind nil dec)
+              (should (zerop (call-process "zip" nil nil nil "-jq"
+                                           (expand-file-name (format "dirpf-cpf-2025-%s.zip" kind) dir) dec)))
+              (delete-file dec)))
+          (cl-letf (((symbol-function 'fin-ir-dec-totals)
+                     (lambda (s) (list :exercise 2026 :kind (string-trim s)))))
+            (should (equal '((2025 :exercise 2026 :kind "retificadora")) (fin-ir-dirpf-files)))))
+      (delete-directory root t))))
+
 (provide 'test-ir)
 ;;; test-ir.el ends here

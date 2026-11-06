@@ -560,17 +560,18 @@ Fields are 13-digit cents; an unlisted exercício fails loud.")
   (fin-ir--yearly fin-ir-payments-dir "\\`dre-.*-resumo\\.csv\\'"))
 
 (defun fin-ir-dirpf-files ()
-  "Alist ANO-CALENDARIO -> `fin-ir-dec-totals' of each filed return."
+  "Alist ANO-CALENDARIO -> `fin-ir-dec-totals' of each filed return: the
+retificadora's (dirpf-cpf-YYYY-retificadora.zip) over the original's."
   (let ((dir (and fin-ir-payments-dir (expand-file-name "dirpf" fin-ir-payments-dir))) out)
     (dolist (f (and dir (file-directory-p dir)
-                    (directory-files dir t "\\`dirpf-cpf-[0-9]\\{4\\}-original\\.zip\\'"))
+                    (directory-files dir t "\\`dirpf-cpf-[0-9]\\{4\\}-\\(original\\|retificadora\\)\\.zip\\'"))
                out)
       (with-temp-buffer
         (let ((coding-system-for-read 'latin-1))
           (unless (zerop (call-process "unzip" nil t nil "-p" f "*.DEC"))
             (error "fin-ir: unzip failed on %s" f)))
         (let ((totals (fin-ir-dec-totals (buffer-string))))
-          (push (cons (1- (plist-get totals :exercise)) totals) out))))))
+          (setf (alist-get (1- (plist-get totals :exercise)) out) totals))))))
 
 (defun fin-ir--last-period (payments code)
   "Latest PERIOD (YYYY-MM) of PAYMENTS paid with Receita CODE, or nil."
