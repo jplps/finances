@@ -238,6 +238,37 @@ installments arrive together, discounted)."
                     (append (list :add (list date type (car s) (cadr s) amount k n) src) id)))))
             actions)))
 
+(defun fin-bank-fix--renumber (pairs)
+  "(:renumber LEDGER-ROW OLD-K NEW-K SOURCE) for matched PAIRS (bank .
+ledger) whose ledger installment numbers differ from the bank's: within
+rows of one ledger key, numbers the bank lacks take those the ledger lacks."
+  (let ((groups (make-hash-table :test #'equal)) out)
+    (dolist (p pairs)
+      (pcase-let ((`(,k ,n) (fin-conv-installment (nth 4 (car p))))
+                  (lk (nth 6 (cdr p))))
+        (when (and k lk (string-match "\\`\\([0-9]+\\)/\\([0-9]+\\)\\'" lk)
+                   (= n (string-to-number (match-string 2 lk))))
+          (push (list k (string-to-number (match-string 1 lk)) (cdr p) (nth 4 (car p)))
+                (gethash (fin-bank-fix--key (cdr p)) groups)))))
+    (maphash
+     (lambda (_ g)
+       (let ((bank-ks (sort (mapcar #'car g) #'<))
+             (led-ks (sort (mapcar #'cadr g) #'<)))
+         (cl-loop for old in (sort (cl-loop with rest = (copy-sequence bank-ks)
+                                            for k in led-ks
+                                            if (memql k rest) do (setq rest (cl-remove k rest :count 1))
+                                            else collect k)
+                                   #'<)
+                  for new in (sort (cl-loop with rest = (copy-sequence led-ks)
+                                            for k in bank-ks
+                                            if (memql k rest) do (setq rest (cl-remove k rest :count 1))
+                                            else collect k)
+                                   #'<)
+                  for hit = (cl-find old g :key #'cadr)
+                  do (push (list :renumber (nth 2 hit) old new (nth 3 hit)) out))))
+     groups)
+    (nreverse out)))
+
 (defun fin-bank-fix--key (l)
   "ODS row key of ledger row L."
   (cl-assert (integerp (car l)) nil "fin-bank: not a ledger row: %S" l)
@@ -262,6 +293,10 @@ edit and one delete.  Deletes of distinct identical rows all stay."
          (unless (memql (car l) deleted-ids)
            (push (car l) deleted-ids)
            (push (list :delete (fin-bank-fix--key l)) out)))
+        (`(:renumber ,l ,old ,new ,_)
+         (let ((k (fin-bank-fix--key l)))
+           (unless (member k deleted)
+             (push (list :renumber k old new) out))))
         (`(,(or :report :skip) . ,_) nil)
         (_ (error "fin-bank: bad action %S" a))))
     (nreverse out)))
@@ -291,6 +326,11 @@ nothing to change).  QUIET fills the buffer without showing it."
            (lambda (a) (let ((l (cadr a)))
                          (format "%s %s / %s  %s → %s  (%s)" (nth 1 l) (nth 3 l) (or (nth 4 l) "-")
                                  (money (nth 5 l)) (money (caddr a)) (cadddr a)))))
+          (fin-bank-fix--insert-section
+           "Renumbered" (of :renumber)
+           (lambda (a) (pcase-let ((`(:renumber ,l ,old ,new ,src) a))
+                         (format "%s %s / %s  %s  installment %d → %d  (%s)" (nth 1 l) (nth 3 l)
+                                 (or (nth 4 l) "-") (money (nth 5 l)) old new src))))
           (fin-bank-fix--insert-section
            "Deleted" (of :delete)
            (lambda (a) (let ((l (cadr a)))
@@ -328,6 +368,7 @@ something changed."
          (actions (append actions (plist-get r :pj) (cdr gone)))
          (actions (fin-bank-fix--continue-series
                    actions (append (plist-get r :matched) (plist-get r :near) (plist-get r :shifted))))
+         (actions (append actions (fin-bank-fix--renumber (plist-get r :matched))))
          (changes (fin-bank-fix--changes actions))
          (written (when (and changes (not dry-run))
                    (fin-odsw-save fin-ods-path (fin-odsw-apply (fin-odsw-read fin-ods-path) changes)))))

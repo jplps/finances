@@ -100,10 +100,11 @@ file was already imported."
         (progn (message "fin-bank: already imported %s" path) nil)
       (pcase-let* ((`(,rows . ,skipped)
                     (fin-bank--ofx-rows (fin-bank--name path) text))
+                   (moved (fin-bankdb-drop-relisted rows))
                    (n (fin-bankdb-insert rows)))
         (fin-bankdb-record-import sha1 (expand-file-name path) n)
-        (message "fin-bank: %s — %d txns, %d new, %d skipped"
-                 (file-name-nondirectory path) (length rows) n skipped)
+        (message "fin-bank: %s — %d txns, %d new, %d skipped, %d relisted"
+                 (file-name-nondirectory path) (length rows) n skipped moved)
         n))))
 
 (defun fin-bank--canonical-name (bank text)

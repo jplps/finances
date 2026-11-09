@@ -92,6 +92,26 @@ All rows are validated before any write.  Return the number inserted."
         (setq n (+ n (sqlite-execute db sql row)))))
     n))
 
+(defun fin-bankdb-drop-relisted (rows)
+  "Delete bank_txn rows that ROWS list again under another date: same
+account, id prefix (bank and FITID), amount and description, id not in
+ROWS.  Return the number deleted."
+  (mapc #'fin-bankdb--check-row rows)
+  (let* ((db (fin-bankdb-ensure))
+         (keep (mapcar #'car rows))
+         (gone (delete-dups
+                (cl-loop for (id _source account _date _type amount desc) in rows
+                         for prefix = (substring id 0 (1+ (string-match ":[^:]*\\'" id)))
+                         append (cl-remove-if
+                                 (lambda (old) (member old keep))
+                                 (mapcar #'car (fin-db-query
+                                                "SELECT id FROM bank_txn WHERE account = ? AND amount = ?
+                                                   AND description = ? AND substr(id, 1, length(?)) = ?"
+                                                (list account amount desc prefix prefix))))))))
+    (with-sqlite-transaction db
+      (dolist (id gone) (sqlite-execute db "DELETE FROM bank_txn WHERE id = ?" (list id))))
+    (length gone)))
+
 (defun fin-bankdb-file-imported-p (sha1)
   "Non-nil if a file with SHA1 was already imported."
   (fin-bankdb-ensure)

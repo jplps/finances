@@ -76,12 +76,13 @@ Accounts are not a sheet: =fin-accounts-derived= rebuilds each balance from the 
 
 * Bank
 
-- *Import*: =fin-bank-import= reads any bank folder under =infra/inbox/=, renames files to =<bank>-<kind>-<start>_<end>.ofx=, replaces re-exports and dedups rows into the DB.  Bank tables survive =fin-db-rebuild=.
+- *Import*: =fin-bank-import= reads any bank folder under =infra/inbox/=, renames files to =<bank>-<kind>-<start>_<end>.ofx=, replaces re-exports and dedups rows into the DB, also a row a re-export lists under another date.  Bank tables survive =fin-db-rebuild=.
 - *Profiles*: =banks/<bank>.el= holds a bank's statement wording (installments, refunds, fees, savings moves, bill payments); load it from =infra/config.el=, as =examples/config.el= does with =banks/nubank.el=.  Without a profile those folds are off.
 - *Fix*: =fin-bank-fix= compares bank rows since =fin-bank-fix-from= (default: first day of last month) with the ledger and writes the fixes into the ODS.  Running it again changes nothing.
   - folds refunds, fees and pass-through payments into their purchases;
   - ignores card bill payments, own transfers and savings moves;
   - matches rows exact, near, shifted or combined;
+  - renumbers matched installments to the bank's /k/ of /n/;
   - adds bank-only outflows under the payee's usual category, inflows from people under =extras=;
   - edits near amounts when the ledger item names the payee;
   - reports what it cannot settle (salary gaps, refunds with no purchase) under /Needs a look/.

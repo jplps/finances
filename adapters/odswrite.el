@@ -148,6 +148,7 @@ Within one date, existing rows come first."
   (:delete (date type category item amount))
   (:add (date type category item amount installment installments [via]))
   (:via (date type category item amount) VIA)
+  (:renumber (date type category item amount) OLD-INSTALLMENT NEW-INSTALLMENT)
 Item is \"\" when empty; VIA \"\" clears it.  Signals unless every edit or
 via finds a row (identical rows are interchangeable) and the deletes of a
 key hit exactly as many rows."
@@ -180,6 +181,16 @@ key hit exactly as many rows."
                       (error "fin-odsw: no row left matching %S" key))))
            (puthash i t edited)
            (aset rowv i (fin-odsw--rebuild-row (fin-odsw--row-values (aref rowv i)) via))))
+        (`(:renumber ,key ,old ,new)
+         (let* ((i (or (cl-loop for k in (cdr keys) for i from 1
+                                when (and (equal k key) (not (gethash i gone)) (not (gethash i edited))
+                                          (eql old (nth 5 (fin-odsw--row-values (aref rowv i)))))
+                                return i)
+                       (error "fin-odsw: no row left matching %S installment %S" key old)))
+                (vals (copy-sequence (fin-odsw--row-values (aref rowv i)))))
+           (puthash i t edited)
+           (setf (nth 5 vals) new)
+           (aset rowv i (fin-odsw--rebuild-row vals (nth 7 vals)))))
         (`(:delete ,_) nil)
         (`(:add ,fields)
          (push (cons (car fields) (apply #'fin-odsw-row-xml fields)) adds))

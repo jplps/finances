@@ -204,5 +204,17 @@
     (should (= fin-bank-fix-passes refreshes)))
   (should-error (fin-bank-fix-settle nil)))
 
+(ert-deftest bankfix/renumber-follows-bank-installments ()
+  (let* ((fin-reconcile-installment-regexp "Parcela \\([0-9]+\\)/\\([0-9]+\\)")
+         (b (lambda (k) (list (format "b%d" k) "2026-11-05" "out" 3599 (format "Loja - Parcela %d/10" k))))
+         (l (lambda (id k) (list id "2026-11-05" "out" "patrimony" "oster" 3599 (format "%d/10" k))))
+         (pairs (list (cons (funcall b 6) (funcall l 1 6)) (cons (funcall b 7) (funcall l 2 7))
+                      (cons (funcall b 10) (funcall l 3 6))))
+         (acts (fin-bank-fix--renumber pairs)))
+    (should (equal '((6 10)) (mapcar (lambda (a) (list (nth 2 a) (nth 3 a))) acts)))
+    (should (equal '((:renumber ("2026-11-05" "out" "patrimony" "oster" 3599) 6 10))
+                   (fin-bank-fix--changes acts)))
+    (should-not (fin-bank-fix--renumber (butlast pairs)))))
+
 (provide 'test-bankfix)
 ;;; test-bankfix.el ends here

@@ -57,6 +57,21 @@
                                                        (`(,_f ,_l ,rows) (fin-odsw--rows c s e)))
                                             (mapcar #'fin-odsw--row-values (cdr rows))))))))))
 
+(ert-deftest odsw/renumber-fixes-one-of-identical-installments ()
+  (let* ((row '("2026-11-05" "out" "patrimony" "oster" 3599))
+         (out (fin-odsw-apply test-odsw--base
+                              (list (list :add (append row '(6 10)))
+                                    (list :add (append row '(6 10)))
+                                    (list :add (append row '(7 10))))))
+         (ks (lambda (c) (pcase-let* ((`(,s . ,e) (fin-odsw--sheet-bounds c))
+                                      (`(,_f ,_l ,rows) (fin-odsw--rows c s e)))
+                           (sort (cl-loop for r in (cdr rows)
+                                          for v = (fin-odsw--row-values r)
+                                          when (equal (nth 3 v) "oster") collect (nth 5 v))
+                                 #'<)))))
+    (should (equal '(6 7 10) (funcall ks (fin-odsw-apply out (list (list :renumber row 6 10))))))
+    (should-error (fin-odsw-apply out (list (list :renumber row 9 10))))))
+
 (ert-deftest odsw/row-xml-rejects-bad-installment ()
   (should-error (fin-odsw-row-xml "2026-01-01" "out" "car" "x" 100 3 nil))
   (should-error (fin-odsw-row-xml "2026-01-01" "out" "car" "x" 100 11 10)))

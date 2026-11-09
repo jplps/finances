@@ -94,5 +94,20 @@
     (should (equal '("a2" "c1") (mapcar #'car (fin-db-query "SELECT id FROM bank_txn ORDER BY id"))))
     (should-error (fin-bankdb-drop-superseded "account" "2025-3-1" "2025-03-31" nil))))
 
+(ert-deftest bankdb/relisted-row-replaces-its-old-date ()
+  (fin-test-with-db
+    (fin-bankdb-insert
+     (list (list "nubank:F1:aaa" "t" "card" "2026-11-05" "out" 54990 "Ebn*Playstation")
+           (list "nubank:F2:bbb" "t" "card" "2026-10-06" "out" 3599 "Loja - Parcela 5/10")
+           (list "nubank:F1:eee" "t" "account" "2026-11-05" "out" 54990 "Ebn*Playstation")
+           (list "nubank:F3:fff" "t" "card" "2026-11-05" "out" 54990 "Ebn*Playstation")))
+    (let ((rows (list (list "nubank:F1:ddd" "t" "card" "2026-11-06" "out" 54990 "Ebn*Playstation")
+                      (list "nubank:F2:ccc" "t" "card" "2026-11-06" "out" 3599 "Loja - Parcela 6/10"))))
+      (should (= 1 (fin-bankdb-drop-relisted rows)))
+      (should (= 2 (fin-bankdb-insert rows)))
+      (should (= 0 (fin-bankdb-drop-relisted rows))))
+    (should (equal '("nubank:F1:ddd" "nubank:F1:eee" "nubank:F2:bbb" "nubank:F2:ccc" "nubank:F3:fff")
+                   (mapcar #'car (fin-db-query "SELECT id FROM bank_txn ORDER BY id"))))))
+
 (provide 'test-bankdb)
 ;;; test-bankdb.el ends here
